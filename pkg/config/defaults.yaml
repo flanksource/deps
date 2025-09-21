@@ -1,0 +1,409 @@
+# Default dependencies registry
+# This file contains built-in dependency definitions that can be overridden
+# by user's local deps.yaml
+# envsubst
+# gcloud
+# powershell
+# aws-cli
+#firebase-cli
+# supabase
+# vercel CLI
+# netlify CLI
+# gh
+# taskfile
+
+dependencies: {}
+registry:
+    helm:
+        name: helm
+
+        repo: helm/helm
+        url_template: https://get.helm.sh/{{.asset}}
+        asset_patterns:
+            darwin-amd64: helm-{{.tag}}-darwin-amd64.tar.gz
+            darwin-arm64: helm-{{.tag}}-darwin-arm64.tar.gz
+            linux-amd64: helm-{{.tag}}-linux-amd64.tar.gz
+            linux-arm64: helm-{{.tag}}-linux-arm64.tar.gz
+            windows-amd64: helm-{{.tag}}-windows-amd64.zip
+        checksum_file: https://get.helm.sh/{{.asset}}.sha256sum
+        version_command: version --short
+        version_pattern: v(\d+\.\d+\.\d+)
+    jq:
+        name: jq
+        repo: jqlang/jq
+        asset_patterns:
+            darwin-amd64: jq-osx-amd64
+            linux-amd64: jq-linux64
+            windows-amd64: jq-win64.exe
+        version_command: --version
+        version_pattern: jq-(\d+\.\d+)
+    kubectl:
+        name: kubectl
+        repo: kubernetes/kubernetes
+        url_template: https://dl.k8s.io/release/{{.tag}}/bin/{{.os}}/{{.arch}}/kubectl
+        version_command: version --client
+        version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
+
+    commons-lang3:
+        name: commons-lang3
+        manager: maven
+        extra:
+            group_id: org.apache.commons
+            artifact_id: commons-lang3
+            packaging: jar
+            repository: https://repo1.maven.org/maven2
+    postgres:
+        name: postgres-embedded
+        manager: maven
+        extra:
+            group_id: io.zonky.test.postgres
+            artifact_id: embedded-postgres-binaries-{{.os}}-{{.arch}}
+            packaging: jar
+            repository: https://repo1.maven.org/maven2
+    gomplate:
+        repo: hairyhenderson/gomplate
+        asset_patterns:
+            darwin-amd64: gomplate_darwin-amd64
+            darwin-arm64: gomplate_darwin-arm64
+            linux-amd64: gomplate_linux-amd64
+            linux-arm64: gomplate_linux-arm64
+            windows-amd64: gomplate_windows-amd64.exe
+    jb:
+        name: jb
+
+        repo: jsonnet-bundler/jsonnet-bundler
+        asset_patterns:
+            darwin-amd64: jb-darwin-amd64
+            darwin-arm64: jb-darwin-arm64
+            linux-amd64: jb-linux-amd64
+            linux-arm64: jb-linux-arm64
+            windows-amd64: jb-windows-amd64.exe
+    yaml-cli:
+        name: yaml-cli
+
+        repo: flanksource/yaml-cli
+        asset_patterns:
+            darwin-amd64: yaml_darwin-amd64
+            darwin-arm64: yaml_darwin-arm64
+            linux-amd64: yaml_linux-amd64
+            linux-arm64: yaml_linux-arm64
+            windows-amd64: yaml_windows-amd64.exe
+    kind:
+        name: kind
+
+        repo: kubernetes-sigs/kind
+        asset_patterns:
+            darwin-amd64: kind-darwin-amd64
+            darwin-arm64: kind-darwin-arm64
+            linux-amd64: kind-linux-amd64
+            linux-arm64: kind-linux-arm64
+            windows-amd64: kind-windows-amd64
+    helmfile:
+        name: helmfile
+
+        repo: roboll/helmfile
+        asset_patterns:
+            darwin-amd64: helmfile_darwin_amd64
+            darwin-arm64: helmfile_darwin_arm64
+            linux-amd64: helmfile_linux_amd64
+            linux-arm64: helmfile_linux_arm64
+            windows-amd64: helmfile_windows_amd64.exe
+
+    ketall:
+        name: ketall
+
+        repo: corneliusweig/ketall
+        asset_patterns:
+            darwin-amd64: get-all-amd64-darwin.tar.gz
+            darwin-arm64: get-all-arm64-darwin.tar.gz
+            linux-amd64: get-all-amd64-linux.tar.gz
+            linux-arm64: get-all-arm64-linux.tar.gz
+            windows-amd64: get-all-amd64-windows.tar.gz
+        binary_name: get-all
+    sops:
+        name: sops
+        repo: getsops/sops
+        checksum_file: sops-{{.version}}.checksums.txt
+        asset_patterns:
+            darwin-amd64: sops-{{.version}}.darwin
+            darwin-arm64: sops-{{.version}}.darwin
+            linux-amd64: sops-{{.version}}.linux
+            windows-amd64: sops-{{.version}}.exe
+    kubeseal:
+        name: kubeseal
+
+        repo: bitnami-labs/sealed-secrets
+        asset_patterns:
+            darwin-amd64: kubeseal-darwin-amd64
+            darwin-arm64: kubeseal-darwin-arm64
+            linux-amd64: kubeseal-linux-amd64
+            linux-arm64: kubeseal-linux-arm64
+            windows-amd64: kubeseal-windows-amd64.exe
+    reg:
+        name: reg
+
+        repo: genuinetools/reg
+        asset_patterns:
+            darwin-amd64: reg-darwin-amd64
+            darwin-arm64: reg-darwin-arm64
+            linux-amd64: reg-linux-amd64
+            linux-arm64: reg-linux-arm64
+            windows-amd64: reg-windows-amd64.exe
+    yq:
+        name: yq
+
+        repo: mikefarah/yq
+        asset_patterns:
+            darwin-amd64: yq_darwin_amd64
+            darwin-arm64: yq_darwin_arm64
+            linux-amd64: yq_linux_amd64
+            linux-arm64: yq_linux_arm64
+            windows-amd64: yq_windows_amd64.exe
+        version_command: --version
+        version_pattern: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
+        checksum_file: checksums,checksums_hashes_order
+        checksum_expr: |
+            'sha256:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
+                checksums_hashes_order.split('\n').indexOf('SHA-256') + 1
+            ]
+    canary-checker:
+        name: canary-checker
+
+        repo: flanksource/canary-checker
+        asset_patterns:
+            darwin-amd64: canary-checker_darwin_amd64
+            darwin-arm64: canary-checker_darwin_arm64
+            linux-amd64: canary-checker_linux_amd64
+            linux-arm64: canary-checker_linux_arm64
+            windows-amd64: canary-checker_windows_amd64.exe
+    eksctl:
+        name: eksctl
+
+        repo: weaveworks/eksctl
+        asset_patterns:
+            darwin-amd64: eksctl_Darwin_amd64.tar.gz
+            darwin-arm64: eksctl_Darwin_arm64.tar.gz
+            linux-amd64: eksctl_Linux_amd64.tar.gz
+            linux-arm64: eksctl_Linux_arm64.tar.gz
+            windows-amd64: eksctl_Windows_amd64.tar.gz
+    trivy:
+        name: trivy
+
+        repo: aquasecurity/trivy
+        checksum_file: trivy_{{.version}}_checksums.txt
+        url_template: https://get.trivy.dev/trivy?type=tar.gz&version={{.version}}&os={{.os}}&arch={{.arch}}
+        version_command: version
+        version_pattern: .*Version:\s+v?(\d+\.\d+\.\d+)
+    postgrest:
+        name: postgrest
+
+        repo: PostgREST/postgrest
+        asset_patterns:
+            darwin-amd64: postgrest-{{.version}}-macos-x86-64.tar.xz
+            darwin-arm64: postgrest-{{.version}}-macos-aarch64.tar.xz
+            linux-amd64: postgrest-{{.version}}-linux-static-x86-64.tar.xz
+            linux-arm64: postgrest-{{.version}}-ubuntu-aarch64.tar.xz
+            windows-amd64: postgrest-{{.version}}-windows-x86-64.zip
+        version_command: --help
+        version_pattern: .*PostgREST\s+v?(\d+\.\d+\.\d+)
+    wal-g:
+        name: wal-g
+
+        repo: wal-g/wal-g
+        asset_patterns:
+            linux-amd64: wal-g-pg-ubuntu-20.04-amd64.tar.gz
+            linux-arm64: wal-g-pg-ubuntu-20.04-aarch64.tar.gz
+        version_command: --version
+        version_pattern: wal-g\s+version\s+v?(\d+\.\d+\.\d+)
+
+    terraform:
+        repo: hashicorp/terraform
+        url_template: https://releases.hashicorp.com/terraform/{{.version}}/terraform_{{.version}}_{{.os}}_{{.arch}}.zip
+        checksum_file: https://releases.hashicorp.com/terraform/{{.version}}/terraform_{{.version}}_SHA256SUMS
+        version_command: version
+        version_pattern: Terraform\s+v?(\d+\.\d+\.\d+)
+    # go-getter:
+    #     name: go-getter
+    #     manager: direct
+    # url_template: https://github.com/hashicorp/go-getter/releases/download/v{{.version}}/go-getter_{{.version}}_{{.os}}_{{.arch}}.zip
+    expenv:
+        name: expenv
+
+        repo: TheWolfNL/expenv
+        asset_patterns:
+            darwin-amd64: expenv_darwin_amd64
+            darwin-arm64: expenv_darwin_arm64
+            linux-amd64: expenv_linux_amd64
+            linux-arm64: expenv_linux_arm64
+            windows-amd64: expenv_windows_amd64.exe
+    packer:
+        repo: hashicorp/packer
+        url_template: https://releases.hashicorp.com/packer/{{.version}}/packer_{{.version}}_{{.os}}_{{.arch}}.zip
+        checksum_file: https://releases.hashicorp.com/packer/{{.version}}/packer_{{.version}}_SHA256SUMS
+        version_command: version
+        version_pattern: Packer\s+v?(\d+\.\d+\.\d+)
+    aws-iam-authenticator:
+        name: aws-iam-authenticator
+        manager: direct
+        url_template: https://amazon-eks.s3-us-west-2.amazonaws.com/{{.version}}/bin/{{.os}}/{{.arch}}/aws-iam-authenticator
+    etcd:
+        name: etcd
+        repo: etcd-io/etcd
+        asset_patterns:
+            darwin-amd64: etcd-{{.version}}-darwin-amd64.zip
+            darwin-arm64: etcd-{{.version}}-darwin-arm64.zip
+            linux-amd64: etcd-{{.version}}-linux-amd64.tar.gz
+            linux-arm64: etcd-{{.version}}-linux-arm64.tar.gz
+            windows-amd64: etcd-{{.version}}-windows-amd64.zip
+        version_command: --version
+        version_pattern: etcd\s+Version:\s+(\d+\.\d+\.\d+)
+    envtest:
+        name: envtest
+        repo: kubernetes-sigs/controller-tools
+        url_template: https://github.com/kubernetes-sigs/controller-tools/releases/download/{{.version}}/{{.version}}-{{.os}}-{{.arch}}.tar.gz
+        checksum_file: https://github.com/kubernetes-sigs/controller-tools/releases/download/{{.version}}/{{.version}}-{{.os}}-{{.arch}}.tar.gz.sha256
+        version_command: kube-apiserver --version
+        version_pattern: GitVersion:"v(\d+\.\d+\.\d+)"
+    kube-apiserver:
+        name: kube-apiserver
+        repo: kubernetes/kubernetes
+        url_template: https://dl.k8s.io/{{.tag}}/bin/{{.os}}/{{.arch}}/kube-apiserver
+        asset_patterns:
+            "linux-*": "kube-apiserver"
+            "darwin-*,windows-*": "https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-{{.tag}}/envtest-{{.tag}}-{{.os}}-{{.arch}}.tar.gz"
+        binary_path: |
+            os in ["darwin", "windows"] ? "controller-tools/envtest/kube-apiserver" : ""
+        checksum_file: |
+            os == "linux" ? "{{.asset}}.sha256" : "https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/master/envtest-releases.yaml"
+        version_command: --version
+        version_pattern: GitVersion:"v(\d+\.\d+\.\d+)"
+    gojsontoyaml:
+        name: gojsontoyaml
+
+        repo: hongkailiu/gojsontoyaml
+        asset_patterns:
+            linux-amd64: gojsontoyaml
+    actions-runner:
+        name: actions-runner
+        repo: actions/runner
+        asset_patterns:
+            darwin-amd64: actions-runner-osx-x64-{{.version}}.tar.gz
+            darwin-arm64: actions-runner-osx-arm64-{{.version}}.tar.gz
+            linux-amd64: actions-runner-linux-x64-{{.version}}.tar.gz
+            linux-arm64: actions-runner-linux-arm64-{{.version}}.tar.gz
+    buildkitd:
+        name: buildkitd
+        repo: moby/buildkit
+        asset_patterns:
+            linux-amd64: buildkit-{{.version}}.linux-amd64.tar.gz
+            linux-arm64: buildkit-{{.version}}.linux-arm64.tar.gz
+    caddy:
+        name: caddy
+        repo: caddyserver/caddy
+        asset_patterns:
+            darwin-amd64: caddy_{{.version}}_mac_amd64.tar.gz
+            darwin-arm64: caddy_{{.version}}_mac_arm64.tar.gz
+            linux-amd64: caddy_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: caddy_{{.version}}_linux_arm64.tar.gz
+            windows-amd64: caddy_{{.version}}_windows_amd64.zip
+        version_command: version
+        version_pattern: v(\d+\.\d+\.\d+)
+    cni:
+        name: cni
+        repo: containernetworking/plugins
+        asset_patterns:
+            darwin-amd64: cni-plugins-darwin-amd64-{{.version}}.tgz
+            darwin-arm64: cni-plugins-darwin-arm64-{{.version}}.tgz
+            linux-amd64: cni-plugins-linux-amd64-{{.version}}.tgz
+            linux-arm64: cni-plugins-linux-arm64-{{.version}}.tgz
+            windows-amd64: cni-plugins-windows-amd64-{{.version}}.tgz
+    containerd:
+        name: containerd
+        repo: containerd/containerd
+        asset_patterns:
+            darwin-amd64: containerd-{{.version}}-darwin-amd64.tar.gz
+            darwin-arm64: containerd-{{.version}}-darwin-arm64.tar.gz
+            linux-amd64: containerd-{{.version}}-linux-amd64.tar.gz
+            linux-arm64: containerd-{{.version}}-linux-arm64.tar.gz
+        version_command: --version
+        version_pattern: containerd\s+v?(\d+\.\d+\.\d+)
+    firecracker:
+        name: firecracker
+        repo: firecracker-microvm/firecracker
+        asset_patterns:
+            linux-amd64: firecracker-{{.version}}-x86_64.tgz
+            linux-arm64: firecracker-{{.version}}-aarch64.tgz
+    node_exporter:
+        name: node_exporter
+        repo: prometheus/node_exporter
+        asset_patterns:
+            darwin-amd64: node_exporter-{{.version}}.darwin-amd64.tar.gz
+            darwin-arm64: node_exporter-{{.version}}.darwin-arm64.tar.gz
+            linux-amd64: node_exporter-{{.version}}.linux-amd64.tar.gz
+            linux-arm64: node_exporter-{{.version}}.linux-arm64.tar.gz
+        version_command: --version
+        version_pattern: node_exporter.*version\s+(\d+\.\d+\.\d+)
+    powershell:
+        name: powershell
+        repo: PowerShell/PowerShell
+        asset_patterns:
+            darwin-amd64: powershell-{{.version}}-osx-x64.tar.gz
+            darwin-arm64: powershell-{{.version}}-osx-arm64.tar.gz
+            linux-amd64: powershell-{{.version}}-linux-x64.tar.gz
+            linux-arm64: powershell-{{.version}}-linux-arm64.tar.gz
+    prometheus:
+        name: prometheus
+        repo: prometheus/prometheus
+        asset_patterns:
+            darwin-amd64: prometheus-{{.version}}.darwin-amd64.tar.gz
+            darwin-arm64: prometheus-{{.version}}.darwin-arm64.tar.gz
+            linux-amd64: prometheus-{{.version}}.linux-amd64.tar.gz
+            linux-arm64: prometheus-{{.version}}.linux-arm64.tar.gz
+        version_command: --version
+        version_pattern: prometheus.*version\s+(\d+\.\d+\.\d+)
+    registry:
+        name: registry
+        repo: distribution/distribution
+        asset_patterns:
+            darwin-amd64: registry_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: registry_{{.version}}_darwin_arm64.tar.gz
+            linux-amd64: registry_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: registry_{{.version}}_linux_arm64.tar.gz
+    gitlab-runner:
+        name: gitlab-runner
+        manager: direct
+        url_template: https://gitlab-runner-downloads.s3.amazonaws.com/{{.version}}/binaries/gitlab-runner-{{.os}}-{{.arch}}
+        version_command: --version
+        version_pattern: gitlab-runner\s+(\d+\.\d+\.\d+)
+    go:
+        name: go
+        manager: direct
+        url_template: https://go.dev/dl/go{{.version}}.{{.os}}-{{.arch}}.tar.gz
+        version_command: version
+        version_pattern: go(\d+\.\d+\.?\d*)
+    node:
+        name: node
+        manager: direct
+        url_template: https://nodejs.org/download/release/{{.version}}/node-{{.version}}-{{.os}}-{{.arch}}.tar.gz
+        version_command: --version
+        version_pattern: v(\d+\.\d+\.\d+)
+    kubebuilder:
+        name: kubebuilder
+        repo: kubernetes-sigs/kubebuilder
+        checksum_file: checksums.txt
+        asset_patterns:
+            darwin-amd64: kubebuilder_darwin_amd64
+            darwin-arm64: kubebuilder_darwin_arm64
+            linux-amd64: kubebuilder_linux_amd64
+            linux-arm64: kubebuilder_linux_arm64
+            linux-ppc64le: kubebuilder_linux_ppc64le
+            linux-s390x: kubebuilder_linux_s390x
+        version_command: version
+        version_pattern: Version:\s*v?(\d+\.\d+\.\d+)
+
+settings:
+    bin_dir: ./bin
+    platform:
+        os: darwin
+        arch: arm64
+    parallel: true

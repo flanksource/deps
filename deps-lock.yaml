@@ -1,0 +1,28 @@
+version: "1.0"
+dependencies:
+    kube-apiserver:
+        version: v1.34.1
+        version_command: --version
+        version_pattern: GitVersion:"v(\d+\.\d+\.\d+)"
+        platforms:
+            darwin-amd64:
+                url: https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.34.1/envtest-v1.34.1-darwin-amd64.tar.gz
+                checksum: sha256:84d47d6c3a2fa4d14571249b4cccfafad1eb77087bb680693553b438b8ec8c43
+                size: 53017836
+                archive: true
+                binary_path: controller-tools/envtest/kube-apiserver
+            darwin-arm64:
+                url: https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.34.1/envtest-v1.34.1-darwin-arm64.tar.gz
+                checksum: sha256:f25c213bc88582750935b370fa2c6108f0259b9c8f59ece5a82345d48858fc7d
+                size: 49268801
+                archive: true
+                binary_path: controller-tools/envtest/kube-apiserver
+        github:
+            repo: kubernetes/kubernetes
+            tag: v1.34.1
+            checksum_file: |
+                os == "linux" ? "{{.asset}}.sha256" : "https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/master/envtest-releases.yaml"
+generated: 2025-09-20T23:56:03.369998+03:00
+current_platform:
+    os: darwin
+    arch: arm64
