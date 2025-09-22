@@ -84,7 +84,7 @@ func TestVersionResolver_ResolveConstraint(t *testing.T) {
 			constraint:    "v3.0.0",
 			versions:      testVersions,
 			wantError:     true,
-			errorContains: "version v3.0.0 not found",
+			errorContains: "Version v3.0.0 not found",
 		},
 		{
 			name:        "semver constraint ^1.0.0 returns latest 1.x",
@@ -234,7 +234,7 @@ func TestVersionResolver_SelectBestVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolver.selectBestVersion(tt.versions, tt.constraint)
+			got, err := resolver.selectBestVersion(types.Package{}, tt.versions, tt.constraint)
 
 			if tt.wantError {
 				if err == nil {
@@ -359,13 +359,13 @@ func TestVersionResolver_FindExactVersion(t *testing.T) {
 			versions:      testVersions,
 			target:        "v3.0.0",
 			wantError:     true,
-			errorContains: "version v3.0.0 not found",
+			errorContains: "Version v3.0.0 not found",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolver.findExactVersion(tt.versions, tt.target)
+			got, err := resolver.findExactVersion(types.Package{}, tt.versions, tt.target)
 
 			if tt.wantError {
 				if err == nil {

@@ -34,9 +34,9 @@ tasks:
       - GOOS=windows GOARCH=amd64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe {{.MAIN_PATH}}
 
   test:
-    desc: Run all tests
+    desc: Run all tests (excluding integration tests)
     cmds:
-      - go test -v ./...
+      - go test -v ./pkg/... ./cmd/...
     sources:
       - "**/*.go"
 

@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== flanksource/gomplate Template and CEL Examples ===\n")
+	fmt.Println("=== flanksource/gomplate Template and CEL Examples ===")
 
 	// Example 1: Traditional Go template
 	fmt.Println("1. Traditional Go Template:")
