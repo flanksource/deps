@@ -382,7 +382,7 @@ func TestMavenManager_Resolve(t *testing.T) {
 			t.Errorf("Expected download URL '%s', got '%s'", expectedURL, resolution.DownloadURL)
 		}
 
-		expectedChecksumURL := expectedURL + ".sha1"
+		expectedChecksumURL := expectedURL + ".sha256"
 		if resolution.ChecksumURL != expectedChecksumURL {
 			t.Errorf("Expected checksum URL '%s', got '%s'", expectedChecksumURL, resolution.ChecksumURL)
 		}
