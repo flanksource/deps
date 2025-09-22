@@ -1,0 +1,91 @@
+version: '3'
+
+vars:
+  BINARY_NAME: deps
+  BUILD_DIR: ./bin
+  MAIN_PATH: ./cmd/deps/main.go
+
+tasks:
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the deps binary
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BUILD_DIR}}/{{.BINARY_NAME}}"
+
+  build-all:
+    desc: Build for all supported platforms
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}
+      - GOOS=linux GOARCH=amd64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-linux-amd64 {{.MAIN_PATH}}
+      - GOOS=linux GOARCH=arm64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-linux-arm64 {{.MAIN_PATH}}
+      - GOOS=darwin GOARCH=amd64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-darwin-amd64 {{.MAIN_PATH}}
+      - GOOS=darwin GOARCH=arm64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-darwin-arm64 {{.MAIN_PATH}}
+      - GOOS=windows GOARCH=amd64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe {{.MAIN_PATH}}
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v ./...
+    sources:
+      - "**/*.go"
+
+  test-integration:
+    desc: Run integration tests
+    cmds:
+      - go test -v -tags=integration ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  mod-tidy:
+    desc: Tidy Go modules
+    cmds:
+      - go mod tidy
+
+  mod-download:
+    desc: Download Go module dependencies
+    cmds:
+      - go mod download
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+      - go clean
+
+  install:
+    desc: Install the binary to GOPATH/bin
+    deps: [build]
+    cmds:
+      - go install {{.MAIN_PATH}}
+
+  check:
+    desc: Run all checks (fmt, vet, lint, test)
+    deps: [fmt, vet, lint, test]
+
+  ci:
+    desc: Run all CI checks
+    deps: [mod-download, check, build]

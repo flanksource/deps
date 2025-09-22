@@ -1,0 +1,65 @@
+name: Test with Taskfile
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.25.1']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Install Task
+      uses: arduino/setup-task@v2
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Download dependencies
+      run: task mod-download
+
+    - name: Run CI checks
+      run: task ci
+
+  build-all-platforms:
+    name: Build for all platforms
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.1'
+        cache: true
+
+    - name: Install Task
+      uses: arduino/setup-task@v2
+      with:
+        version: 3.x
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Build for all platforms
+      run: task build-all
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: deps-binaries
+        path: bin/
