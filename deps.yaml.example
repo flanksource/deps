@@ -1,0 +1,28 @@
+dependencies:
+    # go-getter: 1.5.10
+    aws-iam-authenticator: v0.6.14
+    canary-checker: v1.1.2-beta.116
+    commons-lang3: latest
+    eksctl: v0.214.0
+    etcd: 1.19.2
+    expenv: v1.2.0
+    gomplate: v3.5.0
+    helm: v3.7.2
+    helmfile: v0.144.0
+    jb: v0.1.0
+    jq: 1.8.0
+    ketall: v1.3.8
+    kind: 0.30.0
+    kube-apiserver: v1.34.1
+    kubectl: v1.31.0
+    kubeseal: v0.10.0
+    packer: 1.5.5
+    postgres: 16.1.0
+    postgrest: v13.0.5
+    reg: v0.16.1
+    sops: v3.5.0
+    terraform: v1.13.3
+    trivy: 0.40.0
+    wal-g: v3.0.5
+    yaml-cli: v1.0.2
+    yq: v4.16.2

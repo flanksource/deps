@@ -1,0 +1,56 @@
+version: "1.0"
+dependencies:
+    jq:
+        version: jq-1.8.1
+        version_command: --version
+        version_pattern: jq-(\d+\.\d+)
+        platforms:
+            darwin-amd64:
+                url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-osx-amd64
+                checksum: sha256:e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f
+                size: 855272
+            linux-amd64:
+                url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux64
+                checksum: sha256:020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d
+                size: 2255816
+        github:
+            repo: jqlang/jq
+            tag: jq-1.8.1
+    kubectl:
+        version: 1.28.2
+        version_command: version --client
+        version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
+        platforms:
+            darwin-amd64:
+                url: https://storage.googleapis.com/kubernetes-release/release/v1.28.2/bin/darwin/amd64/kubectl
+                checksum: sha256:mock-checksum-kubectl-darwin-amd64
+                size: 52428800
+            linux-amd64:
+                url: https://storage.googleapis.com/kubernetes-release/release/v1.28.2/bin/linux/amd64/kubectl
+                checksum: sha256:mock-checksum-kubectl-linux-amd64
+                size: 52428800
+    helm:
+        version: 3.13.3
+        version_command: version --short
+        version_pattern: v(\d+\.\d+\.\d+)
+        platforms:
+            darwin-amd64:
+                url: https://github.com/helm/helm/releases/download/v3.13.3/helm-v3.13.3-darwin-amd64.tar.gz
+                checksum: sha256:mock-checksum-helm-darwin-amd64
+                size: 15728640
+                archive: true
+                binary_path: helm
+            linux-amd64:
+                url: https://github.com/helm/helm/releases/download/v3.13.3/helm-v3.13.3-linux-amd64.tar.gz
+                checksum: sha256:mock-checksum-helm-linux-amd64
+                size: 15728640
+                archive: true
+                binary_path: helm
+        github:
+            repo: helm/helm
+            tag: v3.13.3
+            checksum_file: helm-v3.13.3-checksums.txt
+generated: 2025-09-14T17:29:52.873684+03:00
+current_platform:
+    os: darwin
+    arch: arm64

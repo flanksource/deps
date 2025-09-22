@@ -1,0 +1,131 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-install:
+    name: Test ${{ matrix.tool }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        tool:
+          - jq
+          - kubectl
+          - helm
+          - kind
+          - terraform
+          - yq
+          - eksctl
+          - trivy
+          - sops
+          - kubeseal
+          - packer
+          - velero
+          - helmfile
+          - karina
+          - canary-checker
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build deps CLI
+      run: go build -o deps main.go
+
+    - name: Test install ${{ matrix.tool }}
+      run: |
+        ./deps install ${{ matrix.tool }}
+        ./deps version ${{ matrix.tool }}
+
+    - name: Test reinstall with force
+      run: |
+        ./deps install ${{ matrix.tool }} --force
+        ./deps version ${{ matrix.tool }}
+
+  test-multi-install:
+    name: Test multiple installations on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build deps CLI
+      run: go build -o deps main.go
+
+    - name: Test multiple installations
+      run: |
+        ./deps install jq yq kubectl helm
+        ./deps version jq yq kubectl helm
+
+    - name: Test with version specification
+      run: |
+        ./deps install kubectl@v1.28.0 helm@v3.7.2
+        ./deps version kubectl helm
+
+  test-list:
+    name: Test list command
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build deps CLI
+      run: go build -o deps main.go
+
+    - name: Test list command
+      run: ./deps list
+
+  unit-tests:
+    name: Run unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v ./...

@@ -60,6 +60,9 @@ registry:
             artifact_id: embedded-postgres-binaries-{{.os}}-{{.arch}}
             packaging: jar
             repository: https://repo1.maven.org/maven2
+        post_process: |
+            unarchive(glob("*.txz")) &&
+            chdir(glob("*:dir"))
     gomplate:
         repo: hairyhenderson/gomplate
         asset_patterns:

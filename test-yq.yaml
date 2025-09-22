@@ -1,0 +1,10 @@
+dependencies:
+  yq: v4.35.2
+
+registry:
+  yq:
+    name: yq
+    manager: github_release
+    repo: mikefarah/yq
+    extra:
+      asset_name: yq_{{.os}}_{{.arch}}

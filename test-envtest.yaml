@@ -1,0 +1,8 @@
+dependencies:
+  envtest: envtest-v1.34.1
+  kubebuilder: v4.8.0
+  etcd: v3.5.23
+  kube-apiserver: v1.34.1
+
+registry:
+  # These should inherit from defaults.yaml, but we can override if needed

@@ -1,0 +1,8 @@
+dependencies:
+  go-getter: 1.5.10
+
+registry:
+  go-getter:
+    name: go-getter
+    manager: direct
+    url_template: https://github.com/hashicorp/go-getter/releases/download/v{{.version}}/go-getter_{{.version}}_{{.os}}_{{.arch}}.zip

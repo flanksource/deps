@@ -1,0 +1,25 @@
+# Compiled binaries
+deps
+main
+*.test
+deps-test
+
+# Generated directories
+bin/
+out
+temp/
+
+# Dependencies
+vendor/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+bin/
+hack/

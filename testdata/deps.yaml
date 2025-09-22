@@ -1,0 +1,46 @@
+dependencies:
+    jq: latest
+    kubectl: v1.28.2
+    helm: ^3.13.0
+
+registry:
+    jq:
+        name: jq
+        manager: github_release
+        repo: jqlang/jq
+        asset_patterns:
+            darwin-amd64: jq-osx-amd64
+            darwin-arm64: jq-osx-arm64
+            linux-amd64: jq-linux64
+            linux-arm64: jq-linux-arm64
+            windows-amd64: jq-win64.exe
+        version_command: --version
+        version_pattern: jq-(\d+\.\d+)
+
+    kubectl:
+        name: kubectl
+        manager: direct
+        url_template: https://storage.googleapis.com/kubernetes-release/release/{{.version}}/bin/{{.os}}/{{.arch}}/kubectl
+        version_command: version --client
+        version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
+
+    helm:
+        name: helm
+        manager: github_release
+        repo: helm/helm
+        asset_patterns:
+            darwin-amd64: helm-{{.version}}-darwin-amd64.tar.gz
+            darwin-arm64: helm-{{.version}}-darwin-arm64.tar.gz
+            linux-amd64: helm-{{.version}}-linux-amd64.tar.gz
+            linux-arm64: helm-{{.version}}-linux-arm64.tar.gz
+            windows-amd64: helm-{{.version}}-windows-amd64.zip
+        checksum_file: helm-{{.version}}-checksums.txt
+        version_command: version --short
+        version_pattern: v(\d+\.\d+\.\d+)
+
+settings:
+    bin_dir: ./test-bin
+    platform:
+        os: darwin
+        arch: arm64
+    parallel: true

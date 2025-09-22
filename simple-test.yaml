@@ -1,0 +1,55 @@
+# Example demonstrating simplified configuration
+# with optional fields and intelligent defaults
+
+dependencies:
+  kubectl: v1.31.0
+  helm: v3.7.2
+  yq: v4.16.2
+  terraform: 1.1.7
+  simple-tool: v1.0.0
+
+registry:
+  # GitHub release with minimal config
+  # - name defaults to 'kubectl' (registry key)
+  # - manager auto-detected as 'github_release' (from repo)
+  # - asset_patterns optional (falls back to url_template)
+  kubectl:
+    repo: kubernetes/kubernetes
+    url_template: "https://storage.googleapis.com/kubernetes-release/release/{{.version}}/bin/{{.os}}/{{.arch}}/kubectl"
+
+  # GitHub release with default asset pattern
+  # - name defaults to 'helm'
+  # - manager auto-detected as 'github_release'
+  # - uses default pattern: {{.name}}-{{.os}}-{{.arch}}
+  helm:
+    repo: helm/helm
+    url_template: "https://get.helm.sh/{{.asset}}"
+
+  # GitHub release with explicit asset patterns (existing behavior)
+  yq:
+    repo: mikefarah/yq
+    asset_patterns:
+      darwin-amd64: yq_darwin_amd64
+      darwin-arm64: yq_darwin_arm64
+      linux-amd64: yq_linux_amd64
+      linux-arm64: yq_linux_arm64
+      windows-amd64: yq_windows_amd64.exe
+
+  # Direct URL (no GitHub repo)
+  terraform:
+    manager: direct
+    url_template: "https://releases.hashicorp.com/terraform/{{.version}}/terraform_{{.version}}_{{.os}}_{{.arch}}.zip"
+
+  # URL override in asset pattern
+  simple-tool:
+    repo: example/simple-tool
+    asset_patterns:
+      linux-amd64: "https://cdn.example.com/releases/simple-tool-{{.version}}-linux-amd64.tar.gz"
+      darwin-amd64: "simple-tool-darwin-amd64.tar.gz"  # Regular GitHub asset
+
+settings:
+  bin_dir: ./bin
+  platform:
+    os: darwin
+    arch: arm64
+  parallel: true

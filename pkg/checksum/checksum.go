@@ -16,8 +16,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/flanksource/gomplate"
 	"github.com/flanksource/deps/pkg/types"
+	"github.com/flanksource/gomplate/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -598,7 +598,7 @@ func ParseChecksumFile(content, fileURL string) (value string, hashType HashType
 
 					// Prefer SHA256, then SHA1, then others
 					if bestType == "" || checksumType == HashTypeSHA256 ||
-					   (bestType != HashTypeSHA256 && checksumType == HashTypeSHA1) {
+						(bestType != HashTypeSHA256 && checksumType == HashTypeSHA1) {
 						bestChecksum = checksum
 						bestType = checksumType
 					}

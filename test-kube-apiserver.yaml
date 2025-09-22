@@ -1,0 +1,5 @@
+dependencies:
+  kube-apiserver: v1.34.1
+
+registry:
+  # These should inherit from defaults.yaml, but we can override if needed

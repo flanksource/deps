@@ -1,0 +1,16 @@
+dependencies:
+    jq: latest
+
+registry:
+    jq:
+        name: jq
+        manager: github_release
+        repo: jqlang/jq
+        asset_patterns:
+            darwin-amd64: jq-osx-amd64
+            linux-amd64: jq-linux64
+        version_command: --version
+        version_pattern: jq-(\d+\.\d+)
+
+settings:
+    bin_dir: ./test-bin

@@ -1,0 +1,3 @@
+dependencies:
+    kubectl: v1.31.0
+    helm: v3.15.0

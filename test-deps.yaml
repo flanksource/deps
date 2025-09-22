@@ -1,0 +1,11 @@
+dependencies:
+  postgres: 16.1.0
+registry:
+  postgres:
+    name: postgres-embedded
+    manager: maven
+    extra:
+      group_id: io.zonky.test.postgres
+      artifact_id: embedded-postgres-binaries-{{.os}}-{{.arch}}
+      packaging: jar
+      repository: https://repo1.maven.org/maven2
