@@ -1,0 +1,34 @@
+# Test packages configuration for integration testing
+# Uses small, stable packages with known good versions
+
+dependencies:
+  jq: "1.7"        # Stable version, small binary
+  yq: "v4.35.2"    # Stable version, lightweight
+  postgres: "16.1.0"  # Stable PostgreSQL embedded binary from Maven
+
+registry:
+  # jq - Small JSON processor with stable releases
+  jq:
+    name: jq
+    manager: github_release
+    repo: jqlang/jq
+    asset_patterns:
+      darwin-amd64: jq-osx-amd64
+      linux-amd64: jq-linux64
+    version_command: --version
+    version_pattern: jq-(\d+\.\d+)
+
+  # yq - Lightweight YAML processor
+  yq:
+    name: yq
+    manager: github_release
+    repo: mikefarah/yq
+    asset_patterns:
+      darwin-amd64: yq_darwin_amd64
+      linux-amd64: yq_linux_amd64
+
+settings:
+  bin_dir: ./test-bin
+  platforms:
+    - darwin-amd64
+    - linux-amd64

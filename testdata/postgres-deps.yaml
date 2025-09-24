@@ -1,0 +1,12 @@
+# PostgreSQL integration test configuration
+# Uses built-in registry entry for embedded postgres binaries
+
+dependencies:
+  postgres: "16.1.0"  # Stable version from Maven Central
+
+settings:
+  bin_dir: ./test-bin
+  platforms:
+    - darwin-amd64
+    - darwin-arm64  # Now supported with arm64v8 mapping
+    - linux-amd64

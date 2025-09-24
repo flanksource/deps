@@ -57,7 +57,7 @@ registry:
         manager: maven
         extra:
             group_id: io.zonky.test.postgres
-            artifact_id: embedded-postgres-binaries-{{.os}}-{{.arch}}
+            artifact_id: embedded-postgres-binaries-{{.os}}-{{if eq .arch "arm64"}}arm64v8{{else}}{{.arch}}{{end}}
             packaging: jar
             repository: https://repo1.maven.org/maven2
         post_process: |

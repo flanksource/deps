@@ -71,7 +71,7 @@ func (m *MockPackageManager) Name() string {
 	return m.name
 }
 
-func (m *MockPackageManager) DiscoverVersions(ctx context.Context, pkg types.Package, constraint string) ([]types.Version, error) {
+func (m *MockPackageManager) DiscoverVersions(ctx context.Context, pkg types.Package, plat platform.Platform, limit int) ([]types.Version, error) {
 	return m.versions, nil
 }
 

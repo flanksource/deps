@@ -1,5 +1,3 @@
-//go:build integration
-
 package deps
 
 import (
@@ -11,12 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flanksource/deps/mock"
+	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/lock"
 	"github.com/flanksource/deps/pkg/manager"
+	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
+
+	// Import package managers to register them
+	_ "github.com/flanksource/deps/pkg/manager/direct"
+	_ "github.com/flanksource/deps/pkg/manager/github"
+	_ "github.com/flanksource/deps/pkg/manager/maven"
 )
 
 // Test helpers
@@ -92,23 +96,32 @@ func createTestDirWithLock(t *testing.T) string {
 	return dir
 }
 
-// setupMockRegistry creates a registry with mock package managers for testing
-func setupMockRegistry() *manager.Registry {
-	registry := manager.NewRegistry()
+// createTestDirWithCleanup creates a temporary directory with cleanup and test bin directory
+func createTestDirWithCleanup(t *testing.T, configName string) (string, func()) {
+	t.Helper()
 
-	// Mock GitHub release manager
-	githubMock := mock.NewMockPackageManager("github_release").
-		WithVersions("1.8.1", "1.7.0", "1.6.0").
-		WithChecksum("jq-darwin-amd64", "sha256:mock-jq-checksum")
-	registry.Register(githubMock)
+	dir := createTestDir(t, configName)
 
-	// Mock direct URL manager
-	directMock := mock.NewMockPackageManager("direct").
-		WithVersions("1.28.2", "1.28.1", "1.28.0").
-		WithChecksum("kubectl-darwin-amd64", "sha256:mock-kubectl-checksum")
-	registry.Register(directMock)
+	// Create test bin directory
+	binDir := filepath.Join(dir, "test-bin")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatalf("failed to create test bin directory: %v", err)
+	}
 
-	return registry
+	// Return cleanup function
+	cleanup := func() {
+		if err := os.RemoveAll(binDir); err != nil {
+			t.Logf("Warning: failed to cleanup test bin directory: %v", err)
+		}
+	}
+
+	return dir, cleanup
+}
+
+// setupTestRegistry creates a registry with real package managers for integration testing
+func setupTestRegistry() *manager.Registry {
+	// Use the global registry which has real package managers registered
+	return manager.GetGlobalRegistry()
 }
 
 // Integration Tests
@@ -233,8 +246,12 @@ func TestInstallAllFromConfig(t *testing.T) {
 
 func TestLockFileConstraintResolution(t *testing.T) {
 	// NOTE: Not using t.Parallel() because this test changes working directory
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	dir := createTestDir(t, "minimal-deps.yaml")
 
 	// Load the test configuration
@@ -253,14 +270,13 @@ func TestLockFileConstraintResolution(t *testing.T) {
 		t.Fatalf("failed to load deps config: %v", err)
 	}
 
-	// Set up mock registry
-	registry := setupMockRegistry()
+	// Set up test registry with real package managers
+	registry := setupTestRegistry()
 	generator := lock.NewGenerator(registry)
 
-	// Test constraint resolution (use simple constraints that our mock can handle)
-	// The mock will just return the first version in its list
+	// Test constraint resolution with real package managers
 	constraints := map[string]string{
-		"jq": "latest", // Mock returns 1.8.1 as latest
+		"jq": "latest", // Will resolve to actual latest version from GitHub
 	}
 
 	// Generate lock file
@@ -268,10 +284,14 @@ func TestLockFileConstraintResolution(t *testing.T) {
 		Platforms: []string{"darwin-amd64", "linux-amd64"},
 	}
 
-	lockFile, err := generator.Generate(ctx, constraints, depsConfig.Registry, lockOpts)
+	testTask := &task.Task{}
+	lockFile, err := generator.Generate(ctx, constraints, depsConfig.Registry, lockOpts, testTask)
 	if err != nil {
 		t.Fatalf("failed to generate lock file: %v", err)
 	}
+
+	// Wait for all async tasks to complete
+	task.WaitForAllTasks()
 
 	// Verify lock file structure
 	if lockFile.Version != "1.0" {
@@ -307,11 +327,143 @@ func TestLockFileConstraintResolution(t *testing.T) {
 		if lockEntry.VersionCommand == "" {
 			t.Errorf("dependency %s missing version command", depName)
 		}
+
+		// For real packages, verify the version looks like a valid semver
+		if depName == "jq" && !strings.Contains(lockEntry.Version, ".") {
+			t.Errorf("dependency %s version %s doesn't look like a valid version", depName, lockEntry.Version)
+		}
+
+		// Verify platform entries have URLs that look real
+		for platformStr, platformEntry := range lockEntry.Platforms {
+			if platformEntry.URL == "" {
+				t.Errorf("dependency %s platform %s missing URL", depName, platformStr)
+			} else if !strings.HasPrefix(platformEntry.URL, "https://") {
+				t.Errorf("dependency %s platform %s URL should start with https://, got %s", depName, platformStr, platformEntry.URL)
+			}
+
+			// For real URLs, verify they have expected domains
+			if depName == "jq" && !strings.Contains(platformEntry.URL, "github.com") {
+				t.Errorf("dependency %s platform %s URL should contain github.com, got %s", depName, platformStr, platformEntry.URL)
+			}
+		}
+	}
+}
+
+func TestPostgreSQLIntegration(t *testing.T) {
+	// NOTE: Not using t.Parallel() because this test changes working directory
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	dir := createTestDir(t, "postgres-deps.yaml")
+
+	// Load the test configuration
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("failed to get working directory: %v", err)
+	}
+	defer os.Chdir(oldWd)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("failed to change to test directory: %v", err)
+	}
+
+	depsConfig, err := config.LoadMergedConfig("")
+	if err != nil {
+		t.Fatalf("failed to load deps config: %v", err)
+	}
+
+	// Set up test registry with real package managers
+	registry := setupTestRegistry()
+	generator := lock.NewGenerator(registry)
+
+	// Test constraint resolution with PostgreSQL using built-in registry
+	constraints := map[string]string{
+		"postgres": "16.1.0", // Specific version for predictable testing
+	}
+
+	// Generate lock file
+	lockOpts := types.LockOptions{
+		Platforms: []string{"darwin-amd64", "darwin-arm64", "linux-amd64"}, // Include ARM64 support
+	}
+
+	testTask := &task.Task{}
+	lockFile, err := generator.Generate(ctx, constraints, depsConfig.Registry, lockOpts, testTask)
+	if err != nil {
+		t.Fatalf("failed to generate lock file: %v", err)
+	}
+
+	// Wait for all async tasks to complete
+	task.WaitForAllTasks()
+
+	// Verify lock file structure
+	if lockFile.Version != "1.0" {
+		t.Errorf("expected lock file version 1.0, got %s", lockFile.Version)
+	}
+
+	if len(lockFile.Dependencies) != len(constraints) {
+		t.Errorf("expected %d locked dependencies, got %d",
+			len(constraints), len(lockFile.Dependencies))
+	}
+
+	// Verify specific PostgreSQL constraint resolution
+	for depName, constraint := range constraints {
+		lockEntry, exists := lockFile.Dependencies[depName]
+		if !exists {
+			t.Errorf("dependency %s not found in lock file", depName)
+			continue
+		}
+
+		t.Logf("Dependency %s: constraint %s resolved to %s",
+			depName, constraint, lockEntry.Version)
+
+		if lockEntry.Version == "" {
+			t.Errorf("dependency %s has empty version", depName)
+		}
+
+		// Verify platforms
+		if len(lockEntry.Platforms) == 0 {
+			t.Errorf("dependency %s has no platforms", depName)
+		}
+
+		// For PostgreSQL, verify the version matches what we requested (specific version)
+		if depName == "postgres" && lockEntry.Version != constraint {
+			t.Errorf("dependency %s expected version %s, got %s", depName, constraint, lockEntry.Version)
+		}
+
+		// Verify platform entries have URLs that look real
+		for platformStr, platformEntry := range lockEntry.Platforms {
+			if platformEntry.URL == "" {
+				t.Errorf("dependency %s platform %s missing URL", depName, platformStr)
+			} else if !strings.HasPrefix(platformEntry.URL, "https://") {
+				t.Errorf("dependency %s platform %s URL should start with https://, got %s", depName, platformStr, platformEntry.URL)
+			}
+
+			// For PostgreSQL Maven URLs, verify they contain the Maven repository structure
+			if depName == "postgres" && !strings.Contains(platformEntry.URL, "repo1.maven.org/maven2") {
+				t.Errorf("dependency %s platform %s URL should contain Maven Central repository, got %s", depName, platformStr, platformEntry.URL)
+			}
+
+			// Verify it contains the templated artifact pattern
+			if depName == "postgres" && !strings.Contains(platformEntry.URL, "embedded-postgres-binaries") {
+				t.Errorf("dependency %s platform %s URL should contain embedded-postgres-binaries, got %s", depName, platformStr, platformEntry.URL)
+			}
+
+			// Verify checksum is present for real downloads
+			if platformEntry.Checksum == "" {
+				t.Logf("Warning: dependency %s platform %s missing checksum", depName, platformStr)
+			}
+		}
 	}
 }
 
 func TestUpdateCheckFlow(t *testing.T) {
 	// NOTE: Not using t.Parallel() because this test changes working directory
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 
 	// Create test environment with lock file (simulating installed dependencies)
 	dir := createTestDirWithLock(t)
@@ -336,11 +488,12 @@ func TestUpdateCheckFlow(t *testing.T) {
 		t.Fatalf("failed to load lock file: %v", err)
 	}
 
-	// Set up mock registry with newer versions available
-	registry := setupMockRegistry()
+	// Set up test registry with real package managers
+	registry := setupTestRegistry()
 
 	// Simulate update check logic
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
 	updates := []struct {
 		name             string
 		currentVersion   string
@@ -364,7 +517,7 @@ func TestUpdateCheckFlow(t *testing.T) {
 		}
 
 		// Get available versions
-		versions, err := mgr.DiscoverVersions(ctx, pkg, "")
+		versions, err := mgr.DiscoverVersions(ctx, pkg, platform.Platform{OS: runtime.GOOS, Arch: runtime.GOARCH}, 0)
 		if err != nil || len(versions) == 0 {
 			continue
 		}
@@ -376,12 +529,15 @@ func TestUpdateCheckFlow(t *testing.T) {
 
 		available := versions[0].Version // Latest version
 
-		// Check if update needed
+		// Check if update needed (be more lenient with real data)
 		needsUpdate := false
 		if current != "" && available != "" {
 			cmp, err := version.Compare(available, current)
 			if err == nil && cmp > 0 {
 				needsUpdate = true
+			} else if err != nil {
+				// Log version comparison errors but don't fail the test
+				t.Logf("Warning: could not compare versions for %s: %v", depName, err)
 			}
 		}
 
@@ -412,6 +568,10 @@ func TestUpdateCheckFlow(t *testing.T) {
 
 func TestCLICommands(t *testing.T) {
 	// NOTE: Not using t.Parallel() because this test changes working directory
+	// Add timeout for network operations
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 
 	// Create test environment
 	dir, err := os.MkdirTemp("", "deps-cli-test")
@@ -484,21 +644,27 @@ func TestCLICommands(t *testing.T) {
 			t.Fatalf("failed to load config: %v", err)
 		}
 
-		// Create mock lock generator
-		registry := setupMockRegistry()
+		// Create lock generator with real package managers
+		registry := setupTestRegistry()
 		generator := lock.NewGenerator(registry)
 
 		// Generate lock file with multiple platforms
-		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
 		lockOpts := types.LockOptions{
 			Platforms: []string{"linux-amd64", "darwin-amd64"},
 			Parallel:  false, // Use sequential for test predictability
 		}
 
-		lockFile, err := generator.Generate(ctx, depsConfig.Dependencies, depsConfig.Registry, lockOpts)
+		testTask := &task.Task{}
+		lockFile, err := generator.Generate(ctx, depsConfig.Dependencies, depsConfig.Registry, lockOpts, testTask)
 		if err != nil {
 			t.Fatalf("failed to generate lock file: %v", err)
 		}
+
+		// Wait for all async tasks to complete
+		task.WaitForAllTasks()
 
 		// Verify lock file properties
 		if lockFile.Version != "1.0" {
@@ -534,6 +700,13 @@ func TestCLICommands(t *testing.T) {
 			for platformStr, platformEntry := range lockEntry.Platforms {
 				if platformEntry.URL == "" {
 					t.Errorf("dependency %s platform %s missing URL", depName, platformStr)
+				} else if !strings.HasPrefix(platformEntry.URL, "https://") {
+					t.Errorf("dependency %s platform %s URL should start with https://, got %s", depName, platformStr, platformEntry.URL)
+				}
+
+				// Verify checksum is present for real downloads
+				if platformEntry.Checksum == "" {
+					t.Logf("Warning: dependency %s platform %s missing checksum", depName, platformStr)
 				}
 			}
 		}
