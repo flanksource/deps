@@ -14,6 +14,7 @@ import (
 	// Register all package managers via init functions
 	_ "github.com/flanksource/deps/pkg/manager/direct"
 	_ "github.com/flanksource/deps/pkg/manager/github"
+	_ "github.com/flanksource/deps/pkg/manager/gitlab"
 	_ "github.com/flanksource/deps/pkg/manager/maven"
 )
 

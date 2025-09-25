@@ -16,7 +16,6 @@ dependencies: {}
 registry:
     helm:
         name: helm
-
         repo: helm/helm
         url_template: https://get.helm.sh/{{.asset}}
         asset_patterns:
@@ -247,8 +246,14 @@ registry:
         version_pattern: Packer\s+v?(\d+\.\d+\.\d+)
     aws-iam-authenticator:
         name: aws-iam-authenticator
-        manager: direct
-        url_template: https://amazon-eks.s3-us-west-2.amazonaws.com/{{.version}}/bin/{{.os}}/{{.arch}}/aws-iam-authenticator
+        repo: kubernetes-sigs/aws-iam-authenticator
+        asset_patterns:
+            darwin-amd64: aws-iam-authenticator_{{.version}}_darwin_amd64
+            darwin-arm64: aws-iam-authenticator_{{.version}}_darwin_arm64
+            linux-amd64: aws-iam-authenticator_{{.version}}_linux_amd64
+            linux-arm64: aws-iam-authenticator_{{.version}}_linux_arm64
+            windows-amd64: aws-iam-authenticator_{{.version}}_windows_amd64.exe
+        checksum_file: authenticator_{{.version}}_checksums.txt
     etcd:
         name: etcd
         repo: etcd-io/etcd
@@ -298,8 +303,8 @@ registry:
         name: buildkitd
         repo: moby/buildkit
         asset_patterns:
-            linux-amd64: buildkit-{{.version}}.linux-amd64.tar.gz
-            linux-arm64: buildkit-{{.version}}.linux-arm64.tar.gz
+            linux-amd64: buildkit-{{.tag}}.linux-amd64.tar.gz
+            linux-arm64: buildkit-{{.tag}}.linux-arm64.tar.gz
     caddy:
         name: caddy
         repo: caddyserver/caddy
@@ -374,16 +379,24 @@ registry:
             linux-arm64: registry_{{.version}}_linux_arm64.tar.gz
     gitlab-runner:
         name: gitlab-runner
-        manager: direct
-        url_template: https://gitlab-runner-downloads.s3.amazonaws.com/{{.version}}/binaries/gitlab-runner-{{.os}}-{{.arch}}
+        manager: gitlab
+        repo: gitlab-org/gitlab-runner
+        asset_patterns:
+            darwin-amd64: gitlab-runner-darwin-amd64
+            darwin-arm64: gitlab-runner-darwin-arm64
+            linux-amd64: gitlab-runner-linux-amd64
+            linux-arm64: gitlab-runner-linux-arm64
+            windows-amd64: gitlab-runner-windows-amd64.zip
         version_command: --version
         version_pattern: gitlab-runner\s+(\d+\.\d+\.\d+)
+        checksum_file: release.sha256
     go:
         name: go
         manager: direct
         url_template: https://go.dev/dl/go{{.version}}.{{.os}}-{{.arch}}.tar.gz
         version_command: version
         version_pattern: go(\d+\.\d+\.?\d*)
+        # Note: Go does not use GitHub releases, versions must be specified explicitly
     node:
         name: node
         manager: direct
