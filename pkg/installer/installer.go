@@ -174,7 +174,7 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 				// Resolve version constraint if not already resolved from lock file
 				resolvedVersion := version
 				if resolvedVersion == "" {
-					task.Infof("Resolving version constraint '%s' for %s", depConstraint, depName)
+					task.Debugf("Resolving version constraint '%s' for %s", depConstraint, depName)
 					mgr, err := i.managers.GetForPackage(pkg)
 					if err != nil {
 						return nil, fmt.Errorf("failed to get package manager for %s: %w", depName, err)

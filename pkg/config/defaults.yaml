@@ -255,20 +255,21 @@ registry:
         name: etcd
         repo: etcd-io/etcd
         asset_patterns:
-            darwin-amd64: etcd-{{.version}}-darwin-amd64.zip
-            darwin-arm64: etcd-{{.version}}-darwin-arm64.zip
-            linux-amd64: etcd-{{.version}}-linux-amd64.tar.gz
-            linux-arm64: etcd-{{.version}}-linux-arm64.tar.gz
-            windows-amd64: etcd-{{.version}}-windows-amd64.zip
+            darwin-amd64: etcd-{{.tag}}-darwin-amd64.zip
+            darwin-arm64: etcd-{{.tag}}-darwin-arm64.zip
+            linux-amd64: etcd-{{.tag}}-linux-amd64.tar.gz
+            linux-arm64: etcd-{{.tag}}-linux-arm64.tar.gz
+            windows-amd64: etcd-{{.tag}}-windows-amd64.zip
         version_command: --version
         version_pattern: etcd\s+Version:\s+(\d+\.\d+\.\d+)
     envtest:
         name: envtest
         repo: kubernetes-sigs/controller-tools
-        url_template: https://github.com/kubernetes-sigs/controller-tools/releases/download/{{.version}}/{{.version}}-{{.os}}-{{.arch}}.tar.gz
-        checksum_file: https://github.com/kubernetes-sigs/controller-tools/releases/download/{{.version}}/{{.version}}-{{.os}}-{{.arch}}.tar.gz.sha256
-        version_command: kube-apiserver --version
-        version_pattern: GitVersion:"v(\d+\.\d+\.\d+)"
+        asset_patterns:
+            "*": "{{.tag}}-{{.os}}-{{.arch}}.tar.gz"
+        checksum_file: "{{.asset}}.sha512"
+        binary_path: envtest
+
     kube-apiserver:
         name: kube-apiserver
         repo: kubernetes/kubernetes
@@ -317,11 +318,11 @@ registry:
         name: cni
         repo: containernetworking/plugins
         asset_patterns:
-            darwin-amd64: cni-plugins-darwin-amd64-{{.version}}.tgz
-            darwin-arm64: cni-plugins-darwin-arm64-{{.version}}.tgz
-            linux-amd64: cni-plugins-linux-amd64-{{.version}}.tgz
-            linux-arm64: cni-plugins-linux-arm64-{{.version}}.tgz
-            windows-amd64: cni-plugins-windows-amd64-{{.version}}.tgz
+            darwin-amd64: cni-plugins-darwin-amd64-{{.tag}}.tgz
+            darwin-arm64: cni-plugins-darwin-arm64-{{.tag}}.tgz
+            linux-amd64: cni-plugins-linux-amd64-{{.tag}}.tgz
+            linux-arm64: cni-plugins-linux-arm64-{{.tag}}.tgz
+            windows-amd64: cni-plugins-windows-amd64-{{.tag}}.tgz
     containerd:
         name: containerd
         repo: containerd/containerd
@@ -336,8 +337,8 @@ registry:
         name: firecracker
         repo: firecracker-microvm/firecracker
         asset_patterns:
-            linux-amd64: firecracker-{{.version}}-x86_64.tgz
-            linux-arm64: firecracker-{{.version}}-aarch64.tgz
+            linux-amd64: firecracker-{{.tag}}-x86_64.tgz
+            linux-arm64: firecracker-{{.tag}}-aarch64.tgz
     node_exporter:
         name: node_exporter
         repo: prometheus/node_exporter
