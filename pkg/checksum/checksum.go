@@ -458,7 +458,7 @@ func EvaluateCELExpression(checksumContents map[string]string, fileURL, expr str
 
 	checksumValue, evalErr := gomplate.RunTemplate(vars, gomplate.Template{Expression: expr})
 	if evalErr != nil {
-		return "", "", fmt.Errorf("failed to evaluate CEL expression: %w", evalErr)
+		return "", "", evalErr
 	}
 
 	if checksumValue == "" {
@@ -525,6 +525,62 @@ func parseEnvtestReleasesYAML(content, filename string) (value string, hashType 
 	}
 
 	return "", "", fmt.Errorf("file %s not found in envtest-releases.yaml", filename)
+}
+
+// isValidChecksumFormat checks if a string looks like a valid checksum format
+// Supports both plain hex strings and type-prefixed format (e.g., "sha256:abc123")
+func isValidChecksumFormat(input string) bool {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return false
+	}
+
+	// Handle type-prefixed format
+	if strings.Contains(input, ":") {
+		parts := strings.SplitN(input, ":", 2)
+		if len(parts) != 2 {
+			return false
+		}
+		// Check if the prefix looks like a hash type
+		prefix := strings.ToLower(strings.TrimSpace(parts[0]))
+		validPrefixes := []string{"md5", "sha1", "sha256", "sha384", "sha512"}
+		validPrefix := false
+		for _, p := range validPrefixes {
+			if prefix == p {
+				validPrefix = true
+				break
+			}
+		}
+		if !validPrefix {
+			return false
+		}
+		input = strings.TrimSpace(parts[1])
+	}
+
+	// Check if remaining part is hex and has valid length
+	if !isHexString(input) {
+		return false
+	}
+
+	// Valid checksum lengths
+	validLengths := []int{32, 40, 64, 96, 128} // MD5, SHA1, SHA256, SHA384, SHA512
+	for _, length := range validLengths {
+		if len(input) == length {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isHexString checks if a string contains only hexadecimal characters
+func isHexString(s string) bool {
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // ParseChecksumFile parses a checksum file and extracts the checksum for the given file URL
@@ -608,6 +664,28 @@ func ParseChecksumFile(content, fileURL string) (value string, hashType HashType
 					return bestChecksum, bestType, nil
 				}
 			}
+		}
+	}
+
+	// Try single-line checksum format (entire file contains only the checksum)
+	// This is common for files that contain just a checksum value with no filename
+	nonEmptyLines := make([]string, 0)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			nonEmptyLines = append(nonEmptyLines, line)
+		}
+	}
+
+	// If there's exactly one non-empty, non-comment line, treat it as the checksum
+	if len(nonEmptyLines) == 1 {
+		checksumLine := nonEmptyLines[0]
+
+		// Verify it looks like a checksum (hex chars and optional type prefix)
+		if isValidChecksumFormat(checksumLine) {
+			// Parse the checksum value and detect type
+			value, hashType = ParseChecksum(checksumLine)
+			return value, hashType, nil
 		}
 	}
 

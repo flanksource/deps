@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"os"
 	"time"
 
 	"github.com/flanksource/deps/pkg/types"
@@ -8,17 +9,18 @@ import (
 
 // InstallOptions configures the installation behavior
 type InstallOptions struct {
-	BinDir              string
-	Force               bool
-	SkipChecksum        bool
-	StrictChecksum      bool // If true, checksum failures cause installation to fail
-	Debug               bool
-	OSOverride          string
-	ArchOverride        string
+	BinDir         string
+	TmpDir         string
+	Force          bool
+	SkipChecksum   bool
+	StrictChecksum bool // If true, checksum failures cause installation to fail
+	Debug          bool
+	OSOverride     string
+	ArchOverride   string
 	// Legacy compatibility
-	VersionCheck        types.VersionCheckMode
-	Timeout             time.Duration
-	PreferLocal         bool
+	VersionCheck types.VersionCheckMode
+	Timeout      time.Duration
+	PreferLocal  bool
 }
 
 // InstallOption is a functional option for configuring installation
@@ -28,6 +30,13 @@ type InstallOption func(*InstallOptions)
 func WithBinDir(dir string) InstallOption {
 	return func(opts *InstallOptions) {
 		opts.BinDir = dir
+	}
+}
+
+// WithTmpDir sets the temporary directory for downloads and extraction
+func WithTmpDir(dir string) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.TmpDir = dir
 	}
 }
 
@@ -94,6 +103,7 @@ func WithPreferLocal(prefer bool) InstallOption {
 func DefaultOptions() InstallOptions {
 	return InstallOptions{
 		BinDir:         "/usr/local/bin",
+		TmpDir:         os.TempDir(),
 		Force:          false,
 		SkipChecksum:   false,
 		StrictChecksum: true, // Default to strict checksum validation

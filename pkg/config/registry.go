@@ -1,26 +1,38 @@
 package config
 
 import (
-	"sync"
-
 	"github.com/flanksource/deps/pkg/types"
 )
 
-var (
-	globalRegistry     *types.DepsConfig
-	globalRegistryOnce sync.Once
-)
+var globalRegistry *types.DepsConfig
 
-// GetGlobalRegistry returns the merged global registry (defaults + user config)
-func GetGlobalRegistry() *types.DepsConfig {
-	globalRegistryOnce.Do(func() {
-		var err error
-		globalRegistry, err = LoadMergedConfig("")
-		if err != nil {
-			// Fallback to defaults only if there's an error
-			globalRegistry, _ = LoadDefaultConfig()
+func init() {
+	// Load defaults + user config during package initialization
+	defaultConfig, err := LoadDefaultConfig()
+	if err != nil {
+		// If we can't load defaults, create minimal config
+		defaultConfig = &types.DepsConfig{
+			Registry:     make(map[string]types.Package),
+			Dependencies: make(map[string]string),
 		}
-	})
+	}
+
+	// Try to load user config
+	userConfig, err := loadRawConfig("")
+	if err != nil {
+		// If user config doesn't exist, just use defaults
+		globalRegistry = defaultConfig
+	} else {
+		// Merge configs
+		globalRegistry = MergeWithDefaults(defaultConfig, userConfig)
+	}
+
+	// Apply post-processing (same logic as LoadMergedConfig)
+	applyConfigPostProcessing(globalRegistry)
+}
+
+// GetGlobalRegistry returns the pre-loaded global registry (defaults + user config)
+func GetGlobalRegistry() *types.DepsConfig {
 	return globalRegistry
 }
 
@@ -47,8 +59,9 @@ func PackageExists(name string) bool {
 	return exists
 }
 
-// ResetGlobalRegistry resets the global registry cache (useful for testing)
+// ResetGlobalRegistry resets the global registry (useful for testing)
+// Note: This will not reload the registry until the program is restarted
+// since init functions only run once per program execution
 func ResetGlobalRegistry() {
-	globalRegistryOnce = sync.Once{}
 	globalRegistry = nil
 }

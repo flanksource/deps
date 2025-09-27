@@ -94,7 +94,6 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		versions = append(versions, version)
 	}
 
-
 	// Sort versions in descending order (newest first)
 	sort.Slice(versions, func(i, j int) bool {
 		v1, err1 := semver.NewVersion(versions[i].Version)
@@ -115,7 +114,6 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 
 	return versions, nil
 }
-
 
 // Resolve gets the download URL and metadata for a specific version and platform
 func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
@@ -160,7 +158,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	// Template the asset pattern
 	templatedPattern, err := m.templateString(assetPattern, map[string]string{
 		"name":    pkg.Name,
-		"version": version,
+		"version": depstemplate.NormalizeVersion(version),
 		"tag":     *release.TagName,
 		"os":      plat.OS,
 		"arch":    plat.Arch,
@@ -188,7 +186,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		// Use the URL template instead of GitHub release assets
 		downloadURL, err = m.templateString(pkg.URLTemplate, map[string]string{
 			"name":    pkg.Name,
-			"version": version,
+			"version": depstemplate.NormalizeVersion(version), // normalized without "v" prefix
 			"tag":     *release.TagName,
 			"os":      plat.OS,
 			"arch":    plat.Arch,
@@ -213,7 +211,24 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		}
 
 		if matchedAsset == nil {
-			return nil, fmt.Errorf("asset not found: %s for %s", templatedPattern, platformKey)
+			// Extract available asset names for enhanced error
+			availableAssets := make([]string, 0, len(release.Assets))
+			for _, asset := range release.Assets {
+				if asset.Name != nil {
+					availableAssets = append(availableAssets, *asset.Name)
+				}
+			}
+
+			// Create enhanced asset not found error
+			assetErr := &manager.ErrAssetNotFound{
+				Package:         pkg.Name,
+				AssetPattern:    templatedPattern,
+				Platform:        platformKey,
+				AvailableAssets: availableAssets,
+			}
+
+			// Enhance the error with available assets and suggestions
+			return nil, manager.EnhanceAssetNotFoundError(pkg.Name, templatedPattern, platformKey, availableAssets, assetErr)
 		}
 
 		// Debug: GitHub found matching asset: %s
@@ -255,7 +270,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			"os":      plat.OS,
 			"arch":    plat.Arch,
 			"name":    pkg.Name,
-			"version": version,
+			"version": depstemplate.NormalizeVersion(version),
 			"tag":     *release.TagName,
 		}
 
@@ -436,7 +451,7 @@ func (m *GitHubReleaseManager) enhanceErrorWithVersions(ctx context.Context, pkg
 
 func (m *GitHubReleaseManager) findChecksumURL(release *github.RepositoryRelease, checksumPattern, version, tag string) string {
 	templatedName, err := m.templateString(checksumPattern, map[string]string{
-		"version": version,
+		"version": depstemplate.NormalizeVersion(version),
 		"tag":     tag,
 	})
 	if err != nil {
@@ -464,7 +479,7 @@ func (m *GitHubReleaseManager) templateChecksumURL(checksumPattern, assetName, v
 		if strings.HasPrefix(pattern, "http://") || strings.HasPrefix(pattern, "https://") {
 			// Template the full URL
 			url, err := m.templateString(pattern, map[string]string{
-				"version": version,
+				"version": depstemplate.NormalizeVersion(version),
 				"tag":     tag,
 				"os":      plat.OS,
 				"arch":    plat.Arch,
@@ -477,7 +492,7 @@ func (m *GitHubReleaseManager) templateChecksumURL(checksumPattern, assetName, v
 		} else {
 			// For checksum files (not full URLs), look for the file in GitHub release assets
 			templatedChecksumFile, err := m.templateString(pattern, map[string]string{
-				"version": version,
+				"version": depstemplate.NormalizeVersion(version),
 				"tag":     tag,
 				"os":      plat.OS,
 				"arch":    plat.Arch,

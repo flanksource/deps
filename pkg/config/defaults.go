@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -166,28 +165,19 @@ func LoadMergedConfig(userConfigPath string) (*types.DepsConfig, error) {
 	}
 
 	// Try to load user config
-	userConfig, err := LoadDepsConfig(userConfigPath)
+	userConfig, err := loadRawConfig(userConfigPath)
 	if err != nil {
 		// If user config doesn't exist, just return defaults
-		return defaultConfig, nil
+		merged := defaultConfig
+		applyConfigPostProcessing(merged)
+		return merged, nil
 	}
 
 	// Merge configs
 	merged := MergeWithDefaults(defaultConfig, userConfig)
 
-	// Apply the same post-processing as LoadDepsConfig
-	if merged.Settings.BinDir == "" {
-		merged.Settings.BinDir = DefaultBinDir
-	}
-	if merged.Settings.Platform.OS == "" || merged.Settings.Platform.Arch == "" {
-		currentPlatform := platform.Current()
-		if merged.Settings.Platform.OS == "" {
-			merged.Settings.Platform.OS = currentPlatform.OS
-		}
-		if merged.Settings.Platform.Arch == "" {
-			merged.Settings.Platform.Arch = currentPlatform.Arch
-		}
-	}
+	// Apply post-processing
+	applyConfigPostProcessing(merged)
 
 	return merged, nil
 }

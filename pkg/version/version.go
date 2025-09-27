@@ -170,7 +170,8 @@ func GetNewerVersion(v1, v2 string) (string, error) {
 
 // LooksLikeExactVersion checks if a string is an exact version vs a constraint
 // Examples: "1.2.3", "v1.2.3" -> true
-//          ">=1.2.3", "~1.2.0", "latest" -> false
+//
+//	">=1.2.3", "~1.2.0", "latest" -> false
 func LooksLikeExactVersion(s string) bool {
 	if s == "" || s == "latest" {
 		return false

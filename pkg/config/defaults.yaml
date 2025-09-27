@@ -31,8 +31,10 @@ registry:
         name: jq
         repo: jqlang/jq
         asset_patterns:
-            darwin-amd64: jq-osx-amd64
-            linux-amd64: jq-linux64
+            darwin-amd64: jq-macos-amd64
+            darwin-arm64: jq-macos-arm64
+            linux-amd64: jq-linux-amd64
+            linux-arm64: jq-linux-arm64
             windows-amd64: jq-win64.exe
         version_command: --version
         version_pattern: jq-(\d+\.\d+)
@@ -59,9 +61,10 @@ registry:
             artifact_id: embedded-postgres-binaries-{{.os}}-{{if eq .arch "arm64"}}arm64v8{{else}}{{.arch}}{{end}}
             packaging: jar
             repository: https://repo1.maven.org/maven2
-        post_process: |
-            unarchive(glob("*.txz")) &&
-            chdir(glob("*:dir"))
+        post_process:
+            - delete("META-INF")
+            - unarchive(glob("*.txz")[0])
+            # - move(glob("*:dir")[0], "postgres")
     gomplate:
         repo: hairyhenderson/gomplate
         asset_patterns:
@@ -127,20 +130,14 @@ registry:
         repo: getsops/sops
         checksum_file: sops-{{.version}}.checksums.txt
         asset_patterns:
-            darwin-amd64: sops-{{.version}}.darwin
-            darwin-arm64: sops-{{.version}}.darwin
-            linux-amd64: sops-{{.version}}.linux
-            windows-amd64: sops-{{.version}}.exe
+            "*": "sops-{{.tag}}.{{.os}}.{{.arch}}"
+
     kubeseal:
         name: kubeseal
-
         repo: bitnami-labs/sealed-secrets
         asset_patterns:
-            darwin-amd64: kubeseal-darwin-amd64
-            darwin-arm64: kubeseal-darwin-arm64
-            linux-amd64: kubeseal-linux-amd64
-            linux-arm64: kubeseal-linux-arm64
-            windows-amd64: kubeseal-windows-amd64.exe
+            "*": kubeseal-{{.version}}-{{.os}}-{{.arch}}.tar.gz
+
     reg:
         name: reg
 
@@ -201,11 +198,11 @@ registry:
 
         repo: PostgREST/postgrest
         asset_patterns:
-            darwin-amd64: postgrest-{{.version}}-macos-x86-64.tar.xz
-            darwin-arm64: postgrest-{{.version}}-macos-aarch64.tar.xz
-            linux-amd64: postgrest-{{.version}}-linux-static-x86-64.tar.xz
-            linux-arm64: postgrest-{{.version}}-ubuntu-aarch64.tar.xz
-            windows-amd64: postgrest-{{.version}}-windows-x86-64.zip
+            darwin-amd64: postgrest-{{.tag}}-macos-x86-64.tar.xz
+            darwin-arm64: postgrest-{{.tag}}-macos-aarch64.tar.xz
+            linux-amd64: postgrest-{{.tag}}-linux-static-x86-64.tar.xz
+            linux-arm64: postgrest-{{.tag}}-ubuntu-aarch64.tar.xz
+            windows-amd64: postgrest-{{.tag}}-windows-x86-64.zip
         version_command: --help
         version_pattern: .*PostgREST\s+v?(\d+\.\d+\.\d+)
     wal-g:
@@ -362,11 +359,9 @@ registry:
     prometheus:
         name: prometheus
         repo: prometheus/prometheus
+        checksum_file: sha256sums.txt
         asset_patterns:
-            darwin-amd64: prometheus-{{.version}}.darwin-amd64.tar.gz
-            darwin-arm64: prometheus-{{.version}}.darwin-arm64.tar.gz
-            linux-amd64: prometheus-{{.version}}.linux-amd64.tar.gz
-            linux-arm64: prometheus-{{.version}}.linux-arm64.tar.gz
+            "*": prometheus-{{.version}}.{{.os}}-{{.arch}}.tar.gz
         version_command: --version
         version_pattern: prometheus.*version\s+(\d+\.\d+\.\d+)
     registry:

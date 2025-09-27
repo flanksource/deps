@@ -8,6 +8,10 @@ import (
 	"github.com/flanksource/gomplate/v3"
 )
 
+func NormalizeVersion(version string) string {
+	return depsversion.Normalize(version)
+}
+
 // RenderTemplate renders a template string using flanksource/gomplate with CEL support
 func RenderTemplate(templateStr string, data map[string]interface{}) (string, error) {
 	// Use gomplate's RunTemplate which supports both go templates and CEL expressions

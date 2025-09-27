@@ -45,6 +45,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	inst := installer.NewWithConfig(
 		GetDepsConfig(),
 		installer.WithBinDir(binDir),
+		installer.WithTmpDir(tmpDir),
 		installer.WithForce(force),
 		installer.WithSkipChecksum(skipChecksum),
 		installer.WithStrictChecksum(strictChecksum),

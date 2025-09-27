@@ -2,6 +2,7 @@ package manager
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -146,4 +147,145 @@ func abs(x int) int {
 		return -x
 	}
 	return x
+}
+
+// EnhanceAssetNotFoundError enhances an asset not found error with available asset information
+func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, availableAssets []string, originalErr error) error {
+	if len(availableAssets) == 0 {
+		return fmt.Errorf("%w\n\nNo assets found for %s", originalErr, packageName)
+	}
+
+	// Build enhanced error message
+	var errorMsg strings.Builder
+	errorMsg.WriteString(fmt.Sprintf("Asset not found: %s for %s in package %s\n\n", assetPattern, platform, packageName))
+	errorMsg.WriteString(fmt.Sprintf("Available assets (%d total):\n", len(availableAssets)))
+
+	// Show up to 20 assets as requested
+	maxAssets := 20
+	displayAssets := availableAssets
+	if len(displayAssets) > maxAssets {
+		displayAssets = displayAssets[:maxAssets]
+	}
+
+	for _, asset := range displayAssets {
+		errorMsg.WriteString(fmt.Sprintf("  %s\n", asset))
+	}
+
+	if len(availableAssets) > maxAssets {
+		errorMsg.WriteString(fmt.Sprintf("  ... and %d more assets\n", len(availableAssets)-maxAssets))
+	}
+
+	// Show the pattern that was searched for
+	errorMsg.WriteString(fmt.Sprintf("\nSearched for pattern: %s", assetPattern))
+
+	// Suggest closest match
+	if suggestion := SuggestClosestAsset(assetPattern, availableAssets); suggestion != "" {
+		errorMsg.WriteString(fmt.Sprintf("\nDid you mean: %s?", suggestion))
+	}
+
+	return fmt.Errorf("%s", errorMsg.String())
+}
+
+// SuggestClosestAsset finds the closest matching asset from available assets
+func SuggestClosestAsset(targetAsset string, availableAssets []string) string {
+	if len(availableAssets) == 0 {
+		return ""
+	}
+
+	var bestMatch string
+	bestScore := 0
+
+	for _, asset := range availableAssets {
+		score := calculateAssetSimilarity(targetAsset, asset)
+		if score > bestScore {
+			bestScore = score
+			bestMatch = asset
+		}
+	}
+
+	// Only suggest if similarity is reasonably high (at least 30% match)
+	if bestScore > 30 {
+		return bestMatch
+	}
+
+	return ""
+}
+
+// calculateAssetSimilarity calculates similarity between two asset names
+// Returns a score from 0-100 based on common substrings and patterns
+func calculateAssetSimilarity(target, candidate string) int {
+	if target == candidate {
+		return 100
+	}
+
+	// Convert to lowercase for comparison
+	target = strings.ToLower(target)
+	candidate = strings.ToLower(candidate)
+
+	// Check if candidate contains target as substring
+	if strings.Contains(candidate, target) {
+		return 80
+	}
+	if strings.Contains(target, candidate) {
+		return 80
+	}
+
+	// Check for common file extensions and patterns
+	targetBase := strings.TrimSuffix(target, filepath.Ext(target))
+	candidateBase := strings.TrimSuffix(candidate, filepath.Ext(candidate))
+
+	if targetBase == candidateBase {
+		return 70
+	}
+
+	// Split by common separators and check overlap
+	targetParts := splitAssetName(target)
+	candidateParts := splitAssetName(candidate)
+
+	commonParts := 0
+	for _, tPart := range targetParts {
+		for _, cPart := range candidateParts {
+			if tPart == cPart {
+				commonParts++
+				break
+			}
+		}
+	}
+
+	totalParts := len(targetParts) + len(candidateParts)
+	if totalParts == 0 {
+		return 0
+	}
+
+	// Calculate similarity based on common parts
+	similarity := (commonParts * 2 * 100) / totalParts
+	return similarity
+}
+
+// splitAssetName splits an asset name into meaningful parts
+func splitAssetName(assetName string) []string {
+	// Remove file extensions
+	base := strings.TrimSuffix(assetName, filepath.Ext(assetName))
+
+	// Split by common separators
+	separators := []string{"-", "_", "."}
+	parts := []string{base}
+
+	for _, sep := range separators {
+		var newParts []string
+		for _, part := range parts {
+			newParts = append(newParts, strings.Split(part, sep)...)
+		}
+		parts = newParts
+	}
+
+	// Filter out empty parts
+	var result []string
+	for _, part := range parts {
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+
+	return result
 }

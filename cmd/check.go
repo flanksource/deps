@@ -53,14 +53,12 @@ func init() {
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
-	// Load configuration
-	depsConfig, err := config.LoadMergedConfig("")
-	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
+	// Load global configuration (defaults + user)
+	depsConfig := config.GetGlobalRegistry()
 
 	// Load lock file if it exists
 	var lockFile *types.LockFile
+	var err error
 	if lockFile, err = config.LoadLockFile(""); err != nil {
 		// Lock file is optional
 		if checkVerbose {

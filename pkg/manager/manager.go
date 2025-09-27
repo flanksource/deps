@@ -113,6 +113,18 @@ func (e *ErrChecksumMismatch) Error() string {
 	return "checksum mismatch for " + e.File + ": expected " + e.Expected + ", got " + e.Actual
 }
 
+// ErrAssetNotFound is returned when a specific asset is not found in a release
+type ErrAssetNotFound struct {
+	Package         string
+	AssetPattern    string
+	Platform        string
+	AvailableAssets []string
+}
+
+func (e *ErrAssetNotFound) Error() string {
+	return "asset not found: " + e.AssetPattern + " for " + e.Platform + " in package " + e.Package
+}
+
 // Global package manager registry
 var globalRegistry = NewRegistry()
 

@@ -18,6 +18,20 @@ const (
 
 // LoadDepsConfig loads and parses the deps.yaml configuration file
 func LoadDepsConfig(path string) (*types.DepsConfig, error) {
+	config, err := loadRawConfig(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply post-processing
+	applyConfigPostProcessing(config)
+
+	return config, nil
+}
+
+// loadRawConfig loads and parses a deps.yaml file without applying post-processing
+// This is used internally for loading user config to merge with defaults
+func loadRawConfig(path string) (*types.DepsConfig, error) {
 	if path == "" {
 		path = DepsFile
 	}
@@ -32,18 +46,26 @@ func LoadDepsConfig(path string) (*types.DepsConfig, error) {
 		return nil, fmt.Errorf("failed to parse deps config file %s: %w", path, err)
 	}
 
+	// Initialize nil maps
+	if config.Registry == nil {
+		config.Registry = make(map[string]types.Package)
+	}
+	if config.Dependencies == nil {
+		config.Dependencies = make(map[string]string)
+	}
+
+	return &config, nil
+}
+
+// applyConfigPostProcessing applies defaults and post-processing to a config
+// This includes setting defaults, auto-detecting managers, and expanding paths
+func applyConfigPostProcessing(config *types.DepsConfig) {
 	// Set defaults
 	if config.Settings.BinDir == "" {
 		config.Settings.BinDir = DefaultBinDir
 	}
 	if config.Settings.Platform.OS == "" || config.Settings.Platform.Arch == "" {
 		config.Settings.Platform = platform.Current()
-	}
-	if config.Registry == nil {
-		config.Registry = make(map[string]types.Package)
-	}
-	if config.Dependencies == nil {
-		config.Dependencies = make(map[string]string)
 	}
 
 	// Apply package defaults
@@ -90,8 +112,6 @@ func LoadDepsConfig(path string) (*types.DepsConfig, error) {
 			}
 		}
 	}
-
-	return &config, nil
 }
 
 // SaveDepsConfig saves the deps configuration to a YAML file

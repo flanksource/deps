@@ -34,11 +34,138 @@ tasks:
       - GOOS=windows GOARCH=amd64 go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe {{.MAIN_PATH}}
 
   test:
-    desc: Run all tests
+    desc: Run all tests using Ginkgo
     cmds:
-      - go test -v ./...
+      - ginkgo -v ./...
     sources:
       - "**/*.go"
+
+  test:report:
+    desc: Run all tests with Ginkgo JSON and JUnit report generation
+    cmds:
+      - mkdir -p test-results
+      - ginkgo -v --json-report test-results/test-results.json --junit-report test-results/test-junit.xml ./... || true
+      - echo "Test results saved to test-results/"
+    sources:
+      - "**/*.go"
+    generates:
+      - "test-results/test-results.json"
+      - "test-results/test-junit.xml"
+
+  test:e2e-report:
+    desc: Run e2e tests with Ginkgo JSON and JUnit report generation
+    cmds:
+      - mkdir -p test-results
+      - ginkgo -v --json-report test-results/e2e-results.json --junit-report test-results/e2e-junit.xml -timeout=30m ./e2e || true
+      - echo "E2E test results saved to test-results/"
+    sources:
+      - "e2e/**/*.go"
+      - "**/*.go"
+    generates:
+      - "test-results/e2e-results.json"
+      - "test-results/e2e-junit.xml"
+
+  test:failed:
+    desc: Rerun only failed tests from last test run
+    deps: ["test:parse-failed"]
+    cmds:
+      - |
+        if [ ! -f test-results/failed-focus.txt ]; then
+          echo "No failed tests found. Run 'task test:report' or 'task test:e2e-report' first."
+          exit 0
+        fi
+        if [ ! -s test-results/failed-focus.txt ]; then
+          echo "No failed tests to rerun. All tests passed in last run!"
+          exit 0
+        fi
+        echo "Rerunning failed tests..."
+        FOCUS_PATTERN=$(cat test-results/failed-focus.txt)
+        echo "Focus pattern: $FOCUS_PATTERN"
+        if grep -q "e2e" test-results/test-type.txt 2>/dev/null; then
+          echo "Running failed e2e tests..."
+          ginkgo -v --focus="$FOCUS_PATTERN" -timeout=30m ./e2e
+        else
+          echo "Running failed unit tests..."
+          go test -v -run="$FOCUS_PATTERN" -timeout=10m ./...
+        fi
+
+  test:parse-failed:
+    desc: Parse failed tests from Ginkgo JSON reports and generate focus patterns
+    cmds:
+      - mkdir -p test-results
+      - |
+        # Parse failed tests from Ginkgo JSON reports
+        echo "Parsing failed tests from Ginkgo JSON reports..."
+
+        # Check for both e2e and regular test results
+        FAILED_TESTS=""
+        FOCUS_PATTERNS=""
+
+        # Parse regular test results from Ginkgo JSON report (Ginkgo format)
+        if [ -f test-results/test-results.json ]; then
+          # Check if this contains E2E tests by looking for "E2E Suite" description
+          IS_E2E=$(/usr/local/bin/jq -r '.[] | select(.SuiteDescription == "E2E Suite")' test-results/test-results.json 2>/dev/null)
+          # Ginkgo JSON format: look for State=failed and extract platform/test info
+          UNIT_FAILED=$(/usr/local/bin/jq -r '.[] | select(.SpecReports != null) | .SpecReports[] | select(.State == "failed") | if (.ContainerHierarchyTexts | length) > 1 then "\(.ContainerHierarchyTexts[1])/\(.LeafNodeText)" else .LeafNodeText end' test-results/test-results.json 2>/dev/null | sort -u)
+          if [ ! -z "$UNIT_FAILED" ]; then
+            FAILED_TESTS="$UNIT_FAILED"
+            if [ ! -z "$IS_E2E" ]; then
+              echo "e2e" > test-results/test-type.txt
+            else
+              echo "unit" > test-results/test-type.txt
+            fi
+          fi
+        fi
+
+        # Parse e2e test results from Ginkgo JSON report (Ginkgo format)
+        if [ -f test-results/e2e-results.json ]; then
+          # Ginkgo JSON format: look for State=failed and extract platform/test info
+          E2E_FAILED=$(/usr/local/bin/jq -r '.[] | select(.SpecReports != null) | .SpecReports[] | select(.State == "failed") | if (.ContainerHierarchyTexts | length) > 1 then "\(.ContainerHierarchyTexts[1])/\(.LeafNodeText)" else .LeafNodeText end' test-results/e2e-results.json 2>/dev/null | sort -u)
+          if [ ! -z "$E2E_FAILED" ]; then
+            if [ ! -z "$FAILED_TESTS" ]; then
+              FAILED_TESTS="$FAILED_TESTS"$'\n'"$E2E_FAILED"
+            else
+              FAILED_TESTS="$E2E_FAILED"
+            fi
+            echo "e2e" > test-results/test-type.txt
+          fi
+        fi
+
+        # Clean up failed tests list
+        FAILED_TESTS=$(echo "$FAILED_TESTS" | grep -v '^$' | sort -u)
+
+        # Convert test names to focus patterns
+        if [ ! -z "$FAILED_TESTS" ]; then
+          while IFS= read -r test; do
+            if [ ! -z "$test" ]; then
+              # For Ginkgo tests with platform/test format, convert to space-separated format
+              FOCUS_TEST=$(echo "$test" | sed 's/\// /')
+              if [ -z "$FOCUS_PATTERNS" ]; then
+                FOCUS_PATTERNS="$FOCUS_TEST"
+              else
+                FOCUS_PATTERNS="$FOCUS_PATTERNS|$FOCUS_TEST"
+              fi
+            fi
+          done <<< "$FAILED_TESTS"
+        fi
+
+        # Save results
+        echo "$FAILED_TESTS" > test-results/failed-tests.txt
+        echo "$FOCUS_PATTERNS" > test-results/failed-focus.txt
+
+        if [ -z "$FOCUS_PATTERNS" ]; then
+          echo "No failed tests found"
+        else
+          echo "Found failed tests:"
+          echo "$FAILED_TESTS"
+          echo "Generated focus pattern: $FOCUS_PATTERNS"
+        fi
+    sources:
+      - "test-results/test-results.json"
+      - "test-results/e2e-results.json"
+    generates:
+      - "test-results/failed-tests.txt"
+      - "test-results/failed-focus.txt"
 
   lint:
     desc: Run golangci-lint

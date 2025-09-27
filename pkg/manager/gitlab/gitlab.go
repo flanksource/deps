@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -40,6 +41,99 @@ type GitLabReleaseAsset struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
 }
+
+// GraphQL API types
+type GraphQLRequest struct {
+	OperationName string                 `json:"operationName"`
+	Variables     GraphQLVariables       `json:"variables"`
+	Query         string                 `json:"query"`
+}
+
+type GraphQLVariables struct {
+	FullPath string `json:"fullPath"`
+	First    int    `json:"first"`
+	Sort     string `json:"sort"`
+}
+
+type GraphQLResponse struct {
+	Data   GraphQLData        `json:"data"`
+	Errors []GraphQLError     `json:"errors,omitempty"`
+}
+
+type GraphQLError struct {
+	Message string `json:"message"`
+	Path    []string `json:"path,omitempty"`
+}
+
+type GraphQLData struct {
+	Project GraphQLProject `json:"project"`
+}
+
+type GraphQLProject struct {
+	ID       string             `json:"id"`
+	Releases GraphQLReleases    `json:"releases"`
+}
+
+type GraphQLReleases struct {
+	Nodes []GraphQLRelease `json:"nodes"`
+}
+
+type GraphQLRelease struct {
+	ID              string                `json:"id"`
+	Name            string                `json:"name"`
+	TagName         string                `json:"tagName"`
+	DescriptionHtml string                `json:"descriptionHtml"`
+	ReleasedAt      string                `json:"releasedAt"`
+	CreatedAt       string                `json:"createdAt"`
+	Assets          GraphQLReleaseAssets  `json:"assets"`
+}
+
+type GraphQLReleaseAssets struct {
+	Count   int                     `json:"count"`
+	Links   GraphQLReleaseLinks     `json:"links"`
+}
+
+type GraphQLReleaseLinks struct {
+	Nodes []GraphQLReleaseLink   `json:"nodes"`
+}
+
+type GraphQLReleaseLink struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	URL            string `json:"url"`
+	DirectAssetURL string `json:"directAssetUrl"`
+	LinkType       string `json:"linkType"`
+}
+
+// GraphQL query constant
+const graphQLReleasesQuery = `query allReleases($fullPath: ID!, $first: Int, $last: Int, $before: String, $after: String, $sort: ReleaseSort) {
+  project(fullPath: $fullPath) {
+    id
+    releases(first: $first, last: $last, before: $before, after: $after, sort: $sort) {
+      nodes {
+        id
+        name
+        tagName
+        tagPath
+        descriptionHtml
+        releasedAt
+        createdAt
+        assets {
+          count
+          links {
+            nodes {
+              id
+              name
+              url
+              directAssetUrl
+              linkType
+            }
+          }
+        }
+      }
+    }
+  }
+}`
 
 // NewGitLabReleaseManager creates a new GitLab release manager
 func NewGitLabReleaseManager(token, tokenSource string) *GitLabReleaseManager {
@@ -143,12 +237,29 @@ func (m *GitLabReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	}
 
 	if !exists {
+		// Extract available asset names for better error message
+		availableAssets := make([]string, 0, len(targetRelease.Assets.Links))
+		for _, asset := range targetRelease.Assets.Links {
+			availableAssets = append(availableAssets, asset.Name)
+		}
+
+		// If we have available assets, provide enhanced error message
+		if len(availableAssets) > 0 {
+			assetErr := &manager.ErrAssetNotFound{
+				Package:         pkg.Name,
+				AssetPattern:    fmt.Sprintf("(no pattern found for %s)", plat.String()),
+				Platform:        plat.String(),
+				AvailableAssets: availableAssets,
+			}
+			return nil, manager.EnhanceAssetNotFoundError(pkg.Name, fmt.Sprintf("(no pattern found for %s)", plat.String()), plat.String(), availableAssets, assetErr)
+		}
+
 		return nil, &manager.ErrPlatformNotSupported{Package: pkg.Name, Platform: plat.String()}
 	}
 
 	// Template the asset name
 	assetName, err := depstemplate.TemplateString(pattern, map[string]string{
-		"version": strings.TrimPrefix(targetRelease.TagName, "v"),
+		"version": depstemplate.NormalizeVersion(targetRelease.TagName),
 		"tag":     targetRelease.TagName,
 		"os":      plat.OS,
 		"arch":    plat.Arch,
@@ -157,9 +268,41 @@ func (m *GitLabReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
 
-	// Construct download URL - GitLab uses different URL structure
-	repoPath := url.PathEscape(pkg.Repo)
-	downloadURL := fmt.Sprintf("https://gitlab.com/%s/-/releases/%s/downloads/%s", repoPath, targetRelease.TagName, assetName)
+	// Validate that the templated asset actually exists in the release
+	var matchedAsset *GitLabReleaseAsset
+	for _, asset := range targetRelease.Assets.Links {
+		if asset.Name == assetName {
+			matchedAsset = &asset
+			break
+		}
+	}
+
+	if matchedAsset == nil {
+		// Extract available asset names for enhanced error
+		availableAssets := make([]string, 0, len(targetRelease.Assets.Links))
+		for _, asset := range targetRelease.Assets.Links {
+			availableAssets = append(availableAssets, asset.Name)
+		}
+
+		// Create enhanced asset not found error
+		assetErr := &manager.ErrAssetNotFound{
+			Package:         pkg.Name,
+			AssetPattern:    assetName,
+			Platform:        plat.String(),
+			AvailableAssets: availableAssets,
+		}
+
+		// Enhance the error with available assets and suggestions
+		return nil, manager.EnhanceAssetNotFoundError(pkg.Name, assetName, plat.String(), availableAssets, assetErr)
+	}
+
+	// Use the matched asset's URL if available, otherwise construct download URL
+	downloadURL := matchedAsset.URL
+	if downloadURL == "" {
+		// Fallback to constructed URL - GitLab uses different URL structure
+		repoPath := url.PathEscape(pkg.Repo)
+		downloadURL = fmt.Sprintf("https://gitlab.com/%s/-/releases/%s/downloads/%s", repoPath, targetRelease.TagName, assetName)
+	}
 
 	resolution := &types.Resolution{
 		Package:     pkg,
@@ -234,16 +377,33 @@ func (m *GitLabReleaseManager) Verify(ctx context.Context, binaryPath string, pk
 	return nil, fmt.Errorf("verify not implemented for GitLab manager")
 }
 
-// fetchReleases retrieves releases from GitLab API
+// fetchReleases retrieves releases from GitLab GraphQL API
 func (m *GitLabReleaseManager) fetchReleases(ctx context.Context, repo string) ([]GitLabRelease, error) {
-	repoPath := url.PathEscape(repo)
-	apiURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/releases", repoPath)
+	// Prepare GraphQL request
+	graphQLReq := GraphQLRequest{
+		OperationName: "allReleases",
+		Variables: GraphQLVariables{
+			FullPath: repo,
+			First:    50, // Default limit, can be made configurable
+			Sort:     "RELEASED_AT_DESC",
+		},
+		Query: graphQLReleasesQuery,
+	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	// Marshal GraphQL request to JSON
+	reqBody, err := json.Marshal(graphQLReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
+	}
+
+	// Create HTTP POST request
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://gitlab.com/api/graphql", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, err
 	}
 
+	// Set required headers
+	req.Header.Set("Content-Type", "application/json")
 	if m.token != "" {
 		req.Header.Set("Authorization", "Bearer "+m.token)
 	}
@@ -255,12 +415,44 @@ func (m *GitLabReleaseManager) fetchReleases(ctx context.Context, repo string) (
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitLab API returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitLab GraphQL API returned status %d", resp.StatusCode)
 	}
 
-	var releases []GitLabRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
-		return nil, fmt.Errorf("failed to decode GitLab releases: %w", err)
+	var graphQLResp GraphQLResponse
+	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {
+		return nil, fmt.Errorf("failed to decode GitLab GraphQL response: %w", err)
+	}
+
+	// Handle GraphQL errors
+	if len(graphQLResp.Errors) > 0 {
+		return nil, fmt.Errorf("GitLab GraphQL API error: %s", graphQLResp.Errors[0].Message)
+	}
+
+	// Convert GraphQL releases to REST API format for backward compatibility
+	releases := make([]GitLabRelease, 0, len(graphQLResp.Data.Project.Releases.Nodes))
+	for _, gqlRelease := range graphQLResp.Data.Project.Releases.Nodes {
+		// Convert GraphQL asset links to REST format
+		assetLinks := make([]GitLabReleaseAsset, 0, len(gqlRelease.Assets.Links.Nodes))
+		for _, link := range gqlRelease.Assets.Links.Nodes {
+			assetLinks = append(assetLinks, GitLabReleaseAsset{
+				Name: link.Name,
+				URL:  link.URL,
+			})
+		}
+
+		// Map GraphQL release to REST format
+		release := GitLabRelease{
+			TagName:     gqlRelease.TagName,
+			Name:        gqlRelease.Name,
+			Description: gqlRelease.DescriptionHtml, // Note: this is HTML, may need stripping
+			CreatedAt:   gqlRelease.CreatedAt,
+			Assets: struct {
+				Links []GitLabReleaseAsset `json:"links"`
+			}{
+				Links: assetLinks,
+			},
+		}
+		releases = append(releases, release)
 	}
 
 	return releases, nil

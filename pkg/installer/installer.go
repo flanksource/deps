@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -73,6 +74,12 @@ func NewWithConfig(depsConfig *types.DepsConfig, opts ...InstallOption) *Install
 	}
 }
 
+// shouldSkipCleanup returns true if temporary files should be preserved
+// This happens when the user specified a custom tmp-dir (different from os.TempDir())
+func (i *Installer) shouldSkipCleanup() bool {
+	return i.options.TmpDir != os.TempDir()
+}
+
 // ParseTools parses tool specifications from string arguments
 func ParseTools(args []string) []ToolSpec {
 	var tools []ToolSpec
@@ -116,11 +123,8 @@ func (i *Installer) InstallMultiple(tools []ToolSpec) error {
 // InstallFromConfig installs all dependencies from deps.yaml
 func (i *Installer) InstallFromConfig(t *task.Task) error {
 
-	// Load deps.yaml
-	depsConfig, err := config.LoadDepsConfig("")
-	if err != nil {
-		return fmt.Errorf("failed to load deps.yaml: %w", err)
-	}
+	// Load global config (defaults + user)
+	depsConfig := config.GetGlobalRegistry()
 
 	if err := config.ValidateConfig(depsConfig); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
@@ -289,7 +293,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 	if resolution.IsArchive {
 		// Download to temp file with extension preserved
 		ext := getArchiveExtension(resolution.DownloadURL)
-		downloadPath = filepath.Join(os.TempDir(), fmt.Sprintf("deps-%s-%s%s", name, resolvedVersion, ext))
+		downloadPath = filepath.Join(i.options.TmpDir, fmt.Sprintf("deps-%s-%s%s", name, resolvedVersion, ext))
 		absDownloadPath, _ := filepath.Abs(downloadPath)
 
 		t.Debugf("Install: downloading archive %s to %s", name, absDownloadPath)
@@ -299,76 +303,92 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 			return fmt.Errorf("failed to download %s: %w", name, err)
 		}
 
-		// Check if package has post-processing pipeline
-		if pkg.PostProcess != "" {
-			t.Infof("Running post-process pipeline for %s", name)
-			t.Debugf("Install: post-process pipeline: %s", pkg.PostProcess)
+		// Auto-extract archive to working directory immediately after download
+		// This ensures pipeline operations can work on extracted files
+		workDir := filepath.Join(i.options.TmpDir, fmt.Sprintf("deps-extract-%s-%s", name, resolvedVersion))
+		absWorkDir, _ := filepath.Abs(workDir)
 
-			// Parse the pipeline
-			pipelineObj, err := pipeline.ParsePipeline(pkg.PostProcess)
-			if err != nil {
-				return fmt.Errorf("failed to parse post-process pipeline: %w", err)
+		t.Infof("Auto-extracting %s archive", name)
+		t.Debugf("Install: auto-extracting archive from %s to %s", absDownloadPath, absWorkDir)
+
+		t.Debugf("DEBUG: Starting extraction for %s", name)
+		extractResult, err := extract.Extract(downloadPath, workDir, t, extract.WithFullExtract())
+		if err != nil {
+			t.Errorf("DEBUG: Extraction failed for %s: %v", name, err)
+			return fmt.Errorf("failed to extract archive: %w", err)
+		}
+		t.Debugf("DEBUG: Extraction completed for %s, result: %v", name, extractResult)
+
+		// List contents after archive extraction for debugging
+		if entries, err := os.ReadDir(workDir); err == nil {
+			var fileNames []string
+			for _, entry := range entries {
+				fileNames = append(fileNames, entry.Name())
+			}
+			t.Debugf("Install: extracted contents: %v", fileNames)
+			t.Infof("DEBUG: Successfully extracted %d entries from %s", len(fileNames), name)
+		} else {
+			t.Errorf("DEBUG: Failed to read workDir %s after extraction: %v", workDir, err)
+		}
+
+		t.Infof("Archive auto-extraction completed for %s", name)
+
+		// Check if package has post-processing pipeline
+		if len(pkg.PostProcess) > 0 {
+			t.Infof("Install: post-process pipeline: %v", pkg.PostProcess)
+
+			// Create CEL pipeline from expressions
+			celPipeline := pipeline.NewCELPipeline(pkg.PostProcess)
+			if celPipeline == nil {
+				return fmt.Errorf("failed to create CEL pipeline from expressions: %v", pkg.PostProcess)
 			}
 
-			// Create a working directory for the pipeline
-			workDir := filepath.Join(os.TempDir(), fmt.Sprintf("deps-pipeline-%s-%s", name, resolvedVersion))
+			// Set up cleanup for working directory
 			defer func() {
-				if !i.options.Debug {
+				if !i.options.Debug && !i.shouldSkipCleanup() {
 					os.RemoveAll(workDir)
+					os.Remove(downloadPath)
+				} else if i.shouldSkipCleanup() {
+					t.Infof("Install: keeping temporary files (--tmp-dir specified): %s, %s", workDir, downloadPath)
+				} else {
+					t.Infof("Install: keeping temporary files for debugging: %s, %s", workDir, downloadPath)
 				}
 			}()
 
-			// For JAR files, auto-extract first
-			if strings.HasSuffix(strings.ToLower(downloadPath), ".jar") {
-				t.Debugf("Install: auto-extracting JAR file for pipeline processing")
-				if err := extract.ExtractFullArchive(downloadPath, workDir, t); err != nil {
-					return fmt.Errorf("failed to extract JAR for pipeline: %w", err)
-				}
-			} else {
-				// Move the downloaded file to working directory
-				workFile := filepath.Join(workDir, filepath.Base(downloadPath))
-				if err := os.MkdirAll(workDir, 0755); err != nil {
-					return fmt.Errorf("failed to create work directory: %w", err)
-				}
-				if err := os.Rename(downloadPath, workFile); err != nil {
-					// If rename fails, copy and delete
-					if err := copyFile(downloadPath, workFile); err != nil {
-						return fmt.Errorf("failed to move download to work directory: %w", err)
-					}
-					os.Remove(downloadPath)
-				}
+			// Execute the CEL pipeline on the extracted contents
+			evaluator := pipeline.NewCELPipelineEvaluator(workDir, path.Join(i.options.BinDir, name), i.options.TmpDir, t, i.options.Debug)
+			if err := evaluator.Execute(celPipeline); err != nil {
+				return err
 			}
 
-			// Execute the pipeline
-			processor := pipeline.NewProcessor(workDir, finalPath, t, i.options.Debug)
-			if err := processor.Execute(pipelineObj); err != nil {
-				return fmt.Errorf("pipeline execution failed: %w", err)
-			}
+			t.Infof("Install: post-process pipeline completed successfully")
 
-			t.Debugf("Install: post-process pipeline completed successfully")
-
-			// Clean up the original download if not in debug mode
-			if !i.options.Debug {
-				os.Remove(downloadPath)
+			// Make executable after post-processing completes
+			if fileInfo, err := os.Stat(finalPath); err == nil && !fileInfo.IsDir() {
+				if err := os.Chmod(finalPath, 0755); err != nil {
+					return fmt.Errorf("failed to make binary executable: %w", err)
+				}
+				t.Debugf("Install: made %s executable", absFinalPath)
+			} else if fileInfo != nil && fileInfo.IsDir() {
+				t.Debugf("Install: skipping chmod for directory %s", absFinalPath)
 			}
 
 		} else {
-			// Regular archive extraction with binary search
-			tempDir := filepath.Join(os.TempDir(), fmt.Sprintf("deps-extract-%s-%s", name, resolvedVersion))
-			absTempDir, _ := filepath.Abs(tempDir)
+			// Regular binary search in already extracted archive
 			defer func() {
-				if !i.options.Debug {
-					os.RemoveAll(tempDir)
+				if !i.options.Debug && !i.shouldSkipCleanup() {
+					os.RemoveAll(workDir)
 					os.Remove(downloadPath)
+				} else if i.shouldSkipCleanup() {
+					t.Infof("Install: keeping temporary files (--tmp-dir specified): %s, %s", workDir, downloadPath)
 				}
 			}()
 
-			t.Infof("Extracting %s archive", name)
-			t.Debugf("Install: extracting %s from %s to %s", name, absDownloadPath, absTempDir)
+			t.Debugf("Install: searching for binary in %s (binaryPath=%s)", absWorkDir, resolution.BinaryPath)
 
-			binaryPath, err := extract.ExtractArchive(downloadPath, tempDir, resolution.BinaryPath, t)
+			binaryPath, err := extract.FindBinaryInDir(workDir, resolution.BinaryPath, t)
 			if err != nil {
-				return fmt.Errorf("failed to extract %s: %w", name, err)
+				return fmt.Errorf("failed to find binary %s: %w", name, err)
 			}
 
 			absBinaryPath, _ := filepath.Abs(binaryPath)
@@ -392,7 +412,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 	}
 
 	// Make executable (skip for directories and when post-process was used)
-	if pkg.PostProcess == "" {
+	if len(pkg.PostProcess) == 0 {
 		fileInfo, err := os.Stat(finalPath)
 		if err == nil && !fileInfo.IsDir() {
 			if err := os.Chmod(finalPath, 0755); err != nil {
@@ -402,8 +422,10 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		} else if fileInfo != nil && fileInfo.IsDir() {
 			t.Debugf("Install: skipping chmod for directory %s", absFinalPath)
 		}
+
 	}
 
+	// Mark task successful only after all operations (including post-processing) complete
 	t.Infof("Successfully installed %s@%s to %s", name, resolvedVersion, absFinalPath)
 	t.Success()
 
@@ -431,6 +453,12 @@ func getArchiveExtension(url string) string {
 		return ".tar.xz"
 	case strings.HasSuffix(lower, ".tar.bz2"):
 		return ".tar.bz2"
+	case strings.HasSuffix(lower, ".tar"):
+		return ".tar"
+	case strings.HasSuffix(lower, ".jar"):
+		return ".jar"
+	case strings.HasSuffix(lower, ".txz"):
+		return ".txz"
 	default:
 		return ""
 	}
@@ -460,7 +488,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	// Skip checksum verification if requested
 	if i.options.SkipChecksum {
 		t.Debugf("Skipping checksum verification (--skip-checksum)")
-		return download.DownloadWithProgress(url, dest, t)
+		return download.Download(url, dest, t)
 	}
 
 	// Try the provided checksum URL if configured
@@ -478,11 +506,11 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 
 		var err error
 		if len(checksumURLs) > 1 || checksumExpr != "" {
-			// Use new multi-file checksum function with CEL support
-			err = download.DownloadAndVerifyWithChecksumFiles(url, dest, checksumURLs, checksumExpr, t)
+			// Use multi-file checksum with CEL support
+			err = download.Download(url, dest, t, download.WithChecksumURLs(checksumURLs, checksumExpr))
 		} else {
-			// Use single checksum file function for backward compatibility
-			err = download.DownloadAndVerifyWithChecksumURL(url, dest, checksumURL, t)
+			// Use single checksum file
+			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL))
 		}
 
 		if err == nil {
@@ -500,7 +528,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	}
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
-	return download.DownloadWithProgress(url, dest, t)
+	return download.Download(url, dest, t)
 }
 
 // checkExistingVersion checks if a binary exists and matches the requested version
@@ -546,4 +574,16 @@ func (i *Installer) checkExistingVersion(name string, pkg types.Package, request
 
 	t.Infof("Existing version %s doesn't match requested %s, updating...", installedVersion, requestedVersion)
 	return ""
+}
+
+// isArchive returns true if the file appears to be an archive based on its extension
+func isArchive(path string) bool {
+	lower := strings.ToLower(path)
+	extensions := []string{".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".zip", ".jar"}
+	for _, ext := range extensions {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
 }

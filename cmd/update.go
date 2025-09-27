@@ -61,11 +61,8 @@ type UpdateInfo struct {
 func runUpdate(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	// Load deps.yaml
-	depsConfig, err := config.LoadDepsConfig("")
-	if err != nil {
-		return fmt.Errorf("failed to load deps.yaml: %w", err)
-	}
+	// Load global config (defaults + user)
+	depsConfig := config.GetGlobalRegistry()
 
 	if err := config.ValidateConfig(depsConfig); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
@@ -154,6 +151,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	// Ask user which dependencies to update (unless --all or --yes)
 	toUpdate := needsUpdates
 	if !updateAll && !updateYes {
+		var err error
 		toUpdate, err = promptForUpdates(needsUpdates)
 		if err != nil {
 			return err

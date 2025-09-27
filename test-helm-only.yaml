@@ -1,0 +1,5 @@
+dependencies:
+  helm: v3.7.2
+
+settings:
+  bin_dir: ./test-bin
