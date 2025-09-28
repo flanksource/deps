@@ -32,7 +32,7 @@ func NewCELPipelineEnvironment(ctx *PipelineContext) (*CELPipelineEnvironment, e
 			cel.Overload("glob_string", []*cel.Type{cel.StringType}, cel.ListType(cel.StringType),
 				cel.UnaryBinding(f.globCEL))),
 		cel.Function("unarchive",
-			cel.Overload("unarchive_list", []*cel.Type{cel.StringType}, cel.ListType(cel.StringType),
+			cel.Overload("unarchive_list", []*cel.Type{cel.StringType}, cel.IntType,
 				cel.UnaryBinding(f.unarchiveCEL))),
 		cel.Function("move",
 			cel.Overload("move_strings", []*cel.Type{cel.StringType, cel.StringType}, cel.StringType,
@@ -129,7 +129,8 @@ func convertCELToGo(val ref.Val) interface{} {
 
 // functions implements CEL function definitions
 type functions struct {
-	ctx *PipelineContext
+	ctx  *PipelineContext
+	args []interface{}
 }
 
 // Logging helper methods for standardized function entry/exit patterns
@@ -137,17 +138,16 @@ type functions struct {
 // logFunctionEntry logs the start of a CEL function execution
 func (f *functions) logFunctionEntry(funcName string, args ...interface{}) time.Time {
 	start := time.Now()
-	f.ctx.LogDebug(fmt.Sprintf("CEL %s: starting with args %v", funcName, args))
+	f.args = args
+	f.ctx.Task.V(3).Infof(fmt.Sprintf("%s(%v)", funcName, args))
 	return start
 }
 
 // logFunctionSuccess logs successful completion of a CEL function
 func (f *functions) logFunctionSuccess(funcName string, start time.Time, result interface{}) {
 	duration := time.Since(start)
-	f.ctx.LogDebug(fmt.Sprintf("CEL %s: completed successfully in %v", funcName, duration))
-	if result != nil {
-		f.ctx.LogDebug(fmt.Sprintf("CEL %s: result %T with length/value: %v", funcName, result, f.formatResult(result)))
-	}
+	f.ctx.Task.V(2).Infof(fmt.Sprintf("%s(%v) => %v (%s) ", funcName, f.args, f.formatResult(result), duration))
+
 }
 
 // logFunctionError logs failed execution of a CEL function
@@ -158,16 +158,10 @@ func (f *functions) logFunctionError(funcName string, start time.Time, err error
 
 // formatResult formats result for logging based on type
 func (f *functions) formatResult(result interface{}) string {
-	switch v := result.(type) {
-	case []string:
-		return fmt.Sprintf("len=%d, items=%v", len(v), v)
-	case string:
-		return fmt.Sprintf("'%s'", v)
-	case bool:
-		return fmt.Sprintf("%v", v)
-	default:
-		return fmt.Sprintf("%v", v)
+	if result == nil {
+		return ""
 	}
+	return fmt.Sprintf("%v", result)
 }
 
 // glob finds files matching a pattern with optional type filtering
@@ -184,11 +178,6 @@ func (f *functions) glob(pattern string, typeFilter ...string) ([]string, error)
 	}
 
 	absSandboxDir, _ := filepath.Abs(f.ctx.SandboxDir)
-	f.ctx.LogInfo(fmt.Sprintf("Searching for files matching pattern: %s in destination %s", actualPattern, absSandboxDir))
-	if filter != "" {
-		f.ctx.LogInfo(fmt.Sprintf("Applying type filter: %s", filter))
-	}
-
 	// Find files matching the pattern
 	searchPath := filepath.Join(f.ctx.SandboxDir, actualPattern)
 	absSearchPath, _ := filepath.Abs(searchPath)
@@ -272,22 +261,20 @@ func (f *functions) glob(pattern string, typeFilter ...string) ([]string, error)
 }
 
 // unarchive extracts archives
-func (f *functions) unarchive(filename string) ([]string, error) {
-	start := f.logFunctionEntry("unarchive", filename)
+func (f *functions) unarchive(filename string) (int, error) {
+	_ = f.logFunctionEntry("unarchive", filename)
 
 	absSandboxDir, _ := filepath.Abs(f.ctx.SandboxDir)
 	fullPath := filepath.Join(f.ctx.SandboxDir, filename)
 	absFullPath, _ := filepath.Abs(fullPath)
 
-	f.ctx.LogInfo(fmt.Sprintf("Extracting archive %s", filename))
-
 	// Check if file exists and get size for logging
 	if fileInfo, err := os.Stat(fullPath); err != nil {
 		archiveErr := fmt.Errorf("archive file not found: %s", filename)
 		handleFunctionError(f.ctx, "unarchive", archiveErr)
-		return nil, archiveErr
+		return 0, archiveErr
 	} else {
-		f.ctx.LogDebug(fmt.Sprintf("Archive size: %s (%d bytes)", filename, fileInfo.Size()))
+		f.ctx.LogInfo(fmt.Sprintf("Extracting %s (%s)", filepath.Base(filename), text.HumanizeBytes(fileInfo.Size())))
 	}
 
 	// Track extraction timing
@@ -297,9 +284,8 @@ func (f *functions) unarchive(filename string) ([]string, error) {
 	extractedFiles, err := files.Unarchive(fullPath, f.ctx.SandboxDir)
 	if err != nil {
 		extractErr := fmt.Errorf("failed to extract %s from %s to destination %s: %v", filename, absFullPath, absSandboxDir, err)
-		f.logFunctionError("unarchive", start, extractErr)
 		f.ctx.FailPipeline(extractErr.Error())
-		return nil, extractErr
+		return 0, extractErr
 	}
 
 	extracted := []string{}
@@ -310,26 +296,24 @@ func (f *functions) unarchive(filename string) ([]string, error) {
 	extractDuration := time.Since(extractStart)
 	f.ctx.LogInfo(fmt.Sprintf("Extracted %s to destination %s in %v (%d files extracted)",
 		filename, absSandboxDir, extractDuration, len(extractedFiles.Files)))
-	f.ctx.LogDebug(fmt.Sprintf("Extracted files from %s to destination %s: %v", filename, absSandboxDir, extractedFiles.Files))
+	f.ctx.Task.V(4).Infof(fmt.Sprintf("Extracted files from %s to destination %s: %v", filename, absSandboxDir, extractedFiles.Files))
 
 	// Remove the archive after extraction
 	if err := os.Remove(fullPath); err != nil {
 		f.ctx.LogDebug(fmt.Sprintf("Failed to remove archive %s after extraction: %v", filename, err))
 	} else {
-		f.ctx.LogDebug(fmt.Sprintf("Removed archive %s after extraction", filename))
+		f.ctx.Task.V(3).Infof(fmt.Sprintf("Removed archive %s after extraction", filename))
 	}
 
 	// Calculate directory stats for enhanced success message
 	fileCount, totalSize, err := calculateDirectoryStats(f.ctx.SandboxDir)
 	if err != nil {
-		f.ctx.LogDebug(fmt.Sprintf("Failed to calculate directory stats: %v", err))
-		f.ctx.LogInfo(fmt.Sprintf("Successfully extracted %d archives to destination %s", len(extracted), absSandboxDir))
+		return 0, err
 	} else {
-		f.ctx.LogInfo(fmt.Sprintf("Successfully extracted %d archives to destination %s (%d files, %s total)",
-			len(extracted), absSandboxDir, fileCount, text.HumanizeBytes(totalSize)))
+		f.ctx.LogInfo(fmt.Sprintf("Extracted %s (%d files, %s total)",
+			filepath.Base(filename), fileCount, text.HumanizeBytes(totalSize)))
 	}
-	f.logFunctionSuccess("unarchive", start, extracted)
-	return extracted, nil
+	return len(extracted), nil
 }
 
 // calculateDirectoryStats calculates the total number of files and their combined size in a directory
@@ -665,12 +649,10 @@ func (f *functions) chmod(pattern, modeStr string) ([]string, error) {
 func (f *functions) delete(pattern string) ([]string, error) {
 	start := f.logFunctionEntry("delete", pattern)
 
-	absSandboxDir, _ := filepath.Abs(f.ctx.SandboxDir)
-	f.ctx.LogInfo(fmt.Sprintf("Deleting files matching pattern: %s in destination %s", pattern, absSandboxDir))
-
 	searchPath := filepath.Join(f.ctx.SandboxDir, pattern)
 	absSearchPath, _ := filepath.Abs(searchPath)
-	f.ctx.LogDebug(fmt.Sprintf("Searching for files to delete at absolute path: %s", absSearchPath))
+	f.ctx.LogDebug(fmt.Sprintf("Deleting %s/%s ", pattern, absSearchPath))
+
 	matches, err := filepath.Glob(searchPath)
 	if err != nil {
 		deleteErr := fmt.Errorf("failed to glob pattern %s: %v", pattern, err)
@@ -679,10 +661,10 @@ func (f *functions) delete(pattern string) ([]string, error) {
 		return nil, deleteErr
 	}
 
-	f.ctx.LogDebug(fmt.Sprintf("Found %d items matching pattern %s in destination %s", len(matches), pattern, absSandboxDir))
+	f.ctx.LogInfo(fmt.Sprintf("Deleting %d items matching %s", len(matches), pattern))
 
 	if len(matches) == 0 {
-		f.ctx.LogInfo(fmt.Sprintf("No files found matching pattern %s in destination %s, nothing to delete", pattern, absSandboxDir))
+		f.ctx.LogDebug(fmt.Sprintf("No files found matching pattern %s, nothing to delete", pattern))
 		f.logFunctionSuccess("delete", start, []string{})
 		return []string{}, nil
 	}
@@ -693,17 +675,17 @@ func (f *functions) delete(pattern string) ([]string, error) {
 
 	for i, match := range matches {
 		itemName := filepath.Base(match)
-		f.ctx.LogDebug(fmt.Sprintf("Deleting item %d/%d: %s", i+1, len(matches), itemName))
+		f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting item %d/%d: %s", i+1, len(matches), itemName))
 
 		// Get size info before deletion for logging
 		if info, err := os.Stat(match); err == nil {
 			if info.IsDir() {
 				if entries, err := os.ReadDir(match); err == nil {
-					f.ctx.LogDebug(fmt.Sprintf("Deleting directory %s with %d entries", itemName, len(entries)))
+					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting directory %s with %d entries", itemName, len(entries)))
 				}
 			} else {
 				totalSize += info.Size()
-				f.ctx.LogDebug(fmt.Sprintf("Deleting file %s (%d bytes)", itemName, info.Size()))
+				f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting file %s (%d bytes)", itemName, info.Size()))
 			}
 		}
 
@@ -718,7 +700,7 @@ func (f *functions) delete(pattern string) ([]string, error) {
 				rel = itemName // fallback
 			}
 			deleted = append(deleted, rel)
-			f.ctx.LogDebug(fmt.Sprintf("Deleted %s in %v", rel, deleteDuration))
+			f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleted %s in %v", rel, deleteDuration))
 		}
 	}
 
@@ -727,10 +709,10 @@ func (f *functions) delete(pattern string) ([]string, error) {
 	}
 
 	if totalSize > 0 {
-		f.ctx.LogInfo(fmt.Sprintf("Successfully deleted %d/%d items (freed %d bytes)",
+		f.ctx.LogDebug(fmt.Sprintf("Successfully deleted %d/%d items (freed %d bytes)",
 			len(deleted), len(matches), totalSize))
 	} else {
-		f.ctx.LogInfo(fmt.Sprintf("Successfully deleted %d/%d items", len(deleted), len(matches)))
+		f.ctx.LogDebug(fmt.Sprintf("Successfully deleted %d/%d items", len(deleted), len(matches)))
 	}
 
 	f.logFunctionSuccess("delete", start, deleted)
@@ -1088,12 +1070,7 @@ func (f *functions) unarchiveCEL(arg ref.Val) ref.Val {
 		return newCELError("unarchive", err)
 	}
 
-	// Convert []string to CEL list
-	celItems := make([]ref.Val, len(result))
-	for i, item := range result {
-		celItems[i] = types.String(item)
-	}
-	return types.NewDynamicList(types.DefaultTypeAdapter, celItems)
+	return types.Int(result)
 }
 
 // moveCEL wraps move function for CEL

@@ -264,6 +264,13 @@ func ValidateConfig(config *types.DepsConfig) error {
 			if pkg.Repo == "" {
 				return fmt.Errorf("package %s uses github_release manager but has no repo specified", name)
 			}
+		case "github_tags":
+			if pkg.Repo == "" {
+				return fmt.Errorf("package %s uses github_tags manager but has no repo specified", name)
+			}
+			if pkg.URLTemplate == "" {
+				return fmt.Errorf("package %s uses github_tags manager but has no url_template specified", name)
+			}
 		case "direct":
 			if pkg.URLTemplate == "" {
 				return fmt.Errorf("package %s uses direct manager but has no url_template specified", name)

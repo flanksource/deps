@@ -3,9 +3,7 @@ package installer
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -19,8 +17,10 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/plugin"
 	_ "github.com/flanksource/deps/pkg/plugin/builtin" // Register built-in plugins
+	"github.com/flanksource/deps/pkg/system"
 	"github.com/flanksource/deps/pkg/types"
-	"github.com/flanksource/deps/pkg/version"
+	"github.com/flanksource/deps/pkg/utils"
+	versionpkg "github.com/flanksource/deps/pkg/version"
 )
 
 // ToolSpec represents a tool with optional version
@@ -174,7 +174,7 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 				// Resolve version constraint if not already resolved from lock file
 				resolvedVersion := version
 				if resolvedVersion == "" {
-					task.Debugf("Resolving version constraint '%s' for %s", depConstraint, depName)
+					task.V(3).Infof("Resolving version constraint '%s' for %s", depConstraint, depName)
 					mgr, err := i.managers.GetForPackage(pkg)
 					if err != nil {
 						return nil, fmt.Errorf("failed to get package manager for %s: %w", depName, err)
@@ -237,249 +237,386 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 
 	t.Debugf("Install: selected package manager %s for package %s", mgr.Name(), name)
 
+	// Step 1: Resolve and validate version
+	resolvedVersion, alreadyInstalled, err := i.resolveAndValidateVersion(ctx, mgr, name, version, pkg, t)
+	if err != nil {
+		return err
+	}
+	if alreadyInstalled {
+		return nil
+	}
+
+	// Step 2: Download package
+	resolution, downloadPath, err := i.downloadPackage(ctx, mgr, name, resolvedVersion, pkg, t)
+	if err != nil {
+		return err
+	}
+
+	// Step 3: Handle installation based on file type (installer, archive, or direct binary)
+	var finalPath string
+
+	// Check if this is a system installer first
+	if extract.IsSystemInstaller(downloadPath) {
+		finalPath, err = i.handleSystemInstaller(downloadPath, name, t)
+		if err != nil {
+			return err
+		}
+	} else if resolution.IsArchive {
+		finalPath, err = i.handleArchiveInstallation(downloadPath, name, resolvedVersion, resolution, pkg, t)
+		if err != nil {
+			return err
+		}
+	} else {
+		finalPath, err = i.handleDirectBinaryInstallation(downloadPath, name)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Step 4: Finalize installation
+	return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+}
+
+// moveExtractedDirectory moves an extracted archive directory to the target location
+// It finds the first directory in workDir and moves it to targetDir, renaming as needed
+func (i *Installer) moveExtractedDirectory(workDir, targetDir string, t *task.Task) error {
+	entries, err := os.ReadDir(workDir)
+	if err != nil {
+		return fmt.Errorf("failed to read extracted directory: %w", err)
+	}
+
+	// Filter out hidden files (starting with '.')
+	var visibleEntries []os.DirEntry
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), ".") {
+			visibleEntries = append(visibleEntries, entry)
+		}
+	}
+
+	if len(visibleEntries) == 0 {
+		return fmt.Errorf("no visible files or directories found in extracted archive")
+	}
+
+	if len(visibleEntries) == 1 && visibleEntries[0].IsDir() {
+		// Single directory: move it (existing behavior for compatibility)
+		extractedDir := filepath.Join(workDir, visibleEntries[0].Name())
+		return i.moveSingleDirectory(extractedDir, targetDir, t)
+	} else {
+		// Multiple items: move all contents to target directory
+		return i.moveAllContents(workDir, targetDir, visibleEntries, t)
+	}
+}
+
+// moveSingleDirectory moves a single extracted directory to the target location (existing behavior)
+func (i *Installer) moveSingleDirectory(extractedDir, targetDir string, t *task.Task) error {
+	t.V(3).Infof("Moving single extracted directory from %s to %s", extractedDir, targetDir)
+
+	// Remove target if it exists (for updates)
+	if _, err := os.Stat(targetDir); err == nil {
+		t.V(3).Infof("Removing existing directory: %s", targetDir)
+		if err := os.RemoveAll(targetDir); err != nil {
+			return fmt.Errorf("failed to remove existing directory: %w", err)
+		}
+	}
+
+	// Ensure parent directory exists
+	parentDir := filepath.Dir(targetDir)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
+	// Move (rename) extracted directory to final location
+	if err := os.Rename(extractedDir, targetDir); err != nil {
+		return fmt.Errorf("failed to move directory: %w", err)
+	}
+
+	return nil
+}
+
+// moveAllContents moves the entire extraction directory to become the target directory
+func (i *Installer) moveAllContents(workDir, targetDir string, entries []os.DirEntry, t *task.Task) error {
+	t.V(3).Infof("Moving entire directory (%d items) from %s to %s", len(entries), workDir, targetDir)
+
+	// Remove target if it exists (for updates)
+	if _, err := os.Stat(targetDir); err == nil {
+		t.V(3).Infof("Removing existing directory: %s", targetDir)
+		if err := os.RemoveAll(targetDir); err != nil {
+			return fmt.Errorf("failed to remove existing directory: %w", err)
+		}
+	}
+
+	// Ensure parent directory exists
+	parentDir := filepath.Dir(targetDir)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
+
+	// Move entire directory as single atomic operation
+	if err := os.Rename(workDir, targetDir); err != nil {
+		return fmt.Errorf("failed to move directory %s to %s: %w", workDir, targetDir, err)
+	}
+
+	t.V(3).Infof("Successfully moved entire directory to %s", targetDir)
+	return nil
+}
+
+// resolveAndValidateVersion handles version resolution and existing installation check
+func (i *Installer) resolveAndValidateVersion(ctx context.Context, mgr manager.PackageManager, name string, version string, pkg types.Package, t *task.Task) (string, bool, error) {
 	// If no version specified, resolve it
 	if version == "" {
 		version = "latest"
 	}
 
-	t.Infof("Resolving version constraint '%s' for %s", version, name)
+	t.SetDescription(fmt.Sprintf("Resolving version %s", version))
 
 	// Resolve version constraint to specific version
 	resolvedVersion, err := i.resolveVersionConstraint(ctx, mgr, pkg, version, t)
 	if err != nil {
-		return fmt.Errorf("failed to resolve version constraint for %s: %w", name, err)
+		return "", false, fmt.Errorf("failed to resolve version constraint for %s: %w", name, err)
 	}
 
-	t.Infof("Resolved %s version: %s -> %s", name, version, resolvedVersion)
+	t.Debugf("Resolved %s version: %s -> %s", name, version, resolvedVersion)
 
 	// Update task name to include the resolved version
 	t.SetName(fmt.Sprintf("%s@%s", name, resolvedVersion))
 
 	// Check if binary already exists with correct version (unless force flag is set)
 	if !i.options.Force {
-		if existingVersion := i.checkExistingVersion(name, pkg, resolvedVersion, t); existingVersion != "" {
-			t.Infof("✅ %s@%s is already installed", name, resolvedVersion)
+		if existingVersion := versionpkg.CheckExistingInstallation(t, name, pkg, resolvedVersion, i.options.BinDir, i.options.OSOverride); existingVersion != "" {
+			t.Infof("✓ %s@%s is already installed", name, resolvedVersion)
 			t.Success()
-			return nil
+			return resolvedVersion, true, nil // true indicates already installed
 		}
 	}
 
+	return resolvedVersion, false, nil // false indicates needs installation
+}
+
+// downloadPackage handles package resolution and download
+func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageManager, name, resolvedVersion string, pkg types.Package, t *task.Task) (*types.Resolution, string, error) {
 	// Create platform info (now using global overrides set from CLI)
 	plat := platform.Current()
 
-	t.Debugf("Install: using platform OS=%s, Arch=%s for %s", plat.OS, plat.Arch, name)
-
 	// Resolve the package
-	t.Infof("Fetching download URL for %s@%s using %s", name, resolvedVersion, mgr.Name())
+	t.Debugf("Fetching download URL for %s@%s using %s", name, resolvedVersion, mgr.Name())
+	t.V(3).Infof("Package details: Name=%s, Repo=%s, Manager=%s", pkg.Name, pkg.Repo, mgr.Name())
+	t.V(3).Infof("Asset patterns: %+v", pkg.AssetPatterns)
+	t.V(3).Infof("Version expr: %s", pkg.VersionExpr)
+	t.V(3).Infof("Platform: %s/%s", plat.OS, plat.Arch)
+
+	t.Debugf("Calling mgr.Resolve with version=%s, platform=%s/%s", resolvedVersion, plat.OS, plat.Arch)
 	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
 	if err != nil {
-		return fmt.Errorf("failed to resolve package %s: %w", name, err)
+		t.Debugf("mgr.Resolve failed: %v", err)
+		return nil, "", fmt.Errorf("failed to resolve package %s: %w", name, err)
 	}
+	t.Debugf("mgr.Resolve succeeded")
 
-	t.Debugf("Install: resolved package %s download URL: %s", name, resolution.DownloadURL)
-	t.Infof("Downloading %s@%s from %s", name, resolvedVersion, resolution.DownloadURL)
+	// Add detailed logging for debugging URL construction
+	t.Debugf("Resolution details: URL=%s, IsArchive=%t, BinaryPath=%s",
+		resolution.DownloadURL, resolution.IsArchive, resolution.BinaryPath)
+	t.V(3).Infof("Package resolution: version=%s, platform=%s/%s",
+		resolvedVersion, plat.OS, plat.Arch)
+
+	t.Infof("Downloading %s@%s (%s/%s) from %s", name, resolvedVersion, plat.OS, plat.Arch, resolution.DownloadURL)
 
 	// Create bin directory if it doesn't exist
-	absBinDir, _ := filepath.Abs(i.options.BinDir)
 	if err := os.MkdirAll(i.options.BinDir, 0755); err != nil {
-		return fmt.Errorf("failed to create bin directory: %w", err)
+		return nil, "", fmt.Errorf("failed to create bin directory: %w", err)
 	}
-	t.Debugf("Install: created/using bin directory %s", absBinDir)
 
 	var downloadPath string
-	finalPath := filepath.Join(i.options.BinDir, name)
-	absFinalPath, _ := filepath.Abs(finalPath)
 
-	if resolution.IsArchive {
-		// Download to temp file with extension preserved
-		ext := getArchiveExtension(resolution.DownloadURL)
+	// Get file extension to determine download strategy
+	ext := extract.GetExtension(resolution.DownloadURL)
+	isSystemInstaller := strings.ToLower(ext) == ".pkg" || strings.ToLower(ext) == ".msi"
+
+	if resolution.IsArchive || isSystemInstaller {
+		// Download to temp file with extension preserved (for archives and installers)
 		downloadPath = filepath.Join(i.options.TmpDir, fmt.Sprintf("deps-%s-%s%s", name, resolvedVersion, ext))
-		absDownloadPath, _ := filepath.Abs(downloadPath)
 
-		t.Debugf("Install: downloading archive %s to %s", name, absDownloadPath)
-
-		// Download the archive with checksum verification if available
+		// Download with checksum verification if available
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
-			return fmt.Errorf("failed to download %s: %w", name, err)
-		}
-
-		// Auto-extract archive to working directory immediately after download
-		// This ensures pipeline operations can work on extracted files
-		workDir := filepath.Join(i.options.TmpDir, fmt.Sprintf("deps-extract-%s-%s", name, resolvedVersion))
-		absWorkDir, _ := filepath.Abs(workDir)
-
-		t.Infof("Auto-extracting %s archive", name)
-		t.Debugf("Install: auto-extracting archive from %s to %s", absDownloadPath, absWorkDir)
-
-		t.Debugf("DEBUG: Starting extraction for %s", name)
-		extractResult, err := extract.Extract(downloadPath, workDir, t, extract.WithFullExtract())
-		if err != nil {
-			t.Errorf("DEBUG: Extraction failed for %s: %v", name, err)
-			return fmt.Errorf("failed to extract archive: %w", err)
-		}
-		t.Debugf("DEBUG: Extraction completed for %s, result: %v", name, extractResult)
-
-		// List contents after archive extraction for debugging
-		if entries, err := os.ReadDir(workDir); err == nil {
-			var fileNames []string
-			for _, entry := range entries {
-				fileNames = append(fileNames, entry.Name())
-			}
-			t.Debugf("Install: extracted contents: %v", fileNames)
-			t.Infof("DEBUG: Successfully extracted %d entries from %s", len(fileNames), name)
-		} else {
-			t.Errorf("DEBUG: Failed to read workDir %s after extraction: %v", workDir, err)
-		}
-
-		t.Infof("Archive auto-extraction completed for %s", name)
-
-		// Check if package has post-processing pipeline
-		if len(pkg.PostProcess) > 0 {
-			t.Infof("Install: post-process pipeline: %v", pkg.PostProcess)
-
-			// Create CEL pipeline from expressions
-			celPipeline := pipeline.NewCELPipeline(pkg.PostProcess)
-			if celPipeline == nil {
-				return fmt.Errorf("failed to create CEL pipeline from expressions: %v", pkg.PostProcess)
-			}
-
-			// Set up cleanup for working directory
-			defer func() {
-				if !i.options.Debug && !i.shouldSkipCleanup() {
-					os.RemoveAll(workDir)
-					os.Remove(downloadPath)
-				} else if i.shouldSkipCleanup() {
-					t.Infof("Install: keeping temporary files (--tmp-dir specified): %s, %s", workDir, downloadPath)
-				} else {
-					t.Infof("Install: keeping temporary files for debugging: %s, %s", workDir, downloadPath)
-				}
-			}()
-
-			// Execute the CEL pipeline on the extracted contents
-			evaluator := pipeline.NewCELPipelineEvaluator(workDir, path.Join(i.options.BinDir, name), i.options.TmpDir, t, i.options.Debug)
-			if err := evaluator.Execute(celPipeline); err != nil {
-				return err
-			}
-
-			t.Infof("Install: post-process pipeline completed successfully")
-
-			// Make executable after post-processing completes
-			if fileInfo, err := os.Stat(finalPath); err == nil && !fileInfo.IsDir() {
-				if err := os.Chmod(finalPath, 0755); err != nil {
-					return fmt.Errorf("failed to make binary executable: %w", err)
-				}
-				t.Debugf("Install: made %s executable", absFinalPath)
-			} else if fileInfo != nil && fileInfo.IsDir() {
-				t.Debugf("Install: skipping chmod for directory %s", absFinalPath)
-			}
-
-		} else {
-			// Regular binary search in already extracted archive
-			defer func() {
-				if !i.options.Debug && !i.shouldSkipCleanup() {
-					os.RemoveAll(workDir)
-					os.Remove(downloadPath)
-				} else if i.shouldSkipCleanup() {
-					t.Infof("Install: keeping temporary files (--tmp-dir specified): %s, %s", workDir, downloadPath)
-				}
-			}()
-
-			t.Debugf("Install: searching for binary in %s (binaryPath=%s)", absWorkDir, resolution.BinaryPath)
-
-			binaryPath, err := extract.FindBinaryInDir(workDir, resolution.BinaryPath, t)
-			if err != nil {
-				return fmt.Errorf("failed to find binary %s: %w", name, err)
-			}
-
-			absBinaryPath, _ := filepath.Abs(binaryPath)
-			t.Debugf("Install: found binary at %s", absBinaryPath)
-
-			// Copy binary to final destination
-			t.Infof("Installing %s binary", name)
-			t.Debugf("Install: copying binary from %s to %s", absBinaryPath, absFinalPath)
-
-			if err := copyFile(binaryPath, finalPath); err != nil {
-				return fmt.Errorf("failed to install binary: %w", err)
-			}
+			return nil, "", err
 		}
 	} else {
-		// Direct binary download
-		t.Debugf("Install: downloading direct binary %s to %s", name, absFinalPath)
+		// Direct binary download - download directly to final location
+		downloadPath = filepath.Join(i.options.BinDir, name)
+		t.SetDescription("Downloading")
 
-		if err := i.downloadWithChecksum(resolution.DownloadURL, finalPath, resolution.ChecksumURL, resolution, t); err != nil {
-			return fmt.Errorf("failed to download %s: %w", name, err)
+		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
+			return nil, "", fmt.Errorf("failed to download %s: %w", name, err)
 		}
 	}
 
-	// Make executable (skip for directories and when post-process was used)
+	return resolution, downloadPath, nil
+}
+
+// executePostProcessing runs the post-processing pipeline if configured
+func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath string, t *task.Task) error {
 	if len(pkg.PostProcess) == 0 {
+		return nil // No post-processing needed
+	}
+
+	t.V(3).Infof("Applying post-process pipeline: %v", pkg.PostProcess)
+
+	// Create CEL pipeline from expressions
+	celPipeline := pipeline.NewCELPipeline(pkg.PostProcess)
+	if celPipeline == nil {
+		return fmt.Errorf("failed to create CEL pipeline from expressions: %v", pkg.PostProcess)
+	}
+
+	// Execute the CEL pipeline on the extracted contents
+	evaluator := pipeline.NewCELPipelineEvaluator(workDir, targetPath, i.options.TmpDir, t, i.options.Debug)
+	if err := evaluator.Execute(celPipeline); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// finalizeInstallation makes the binary executable and reports success
+func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string, pkg types.Package, t *task.Task) error {
+	// Make executable (skip for directories and when post-process was used)
+	if len(pkg.PostProcess) == 0 && pkg.Mode != "directory" {
 		fileInfo, err := os.Stat(finalPath)
 		if err == nil && !fileInfo.IsDir() {
 			if err := os.Chmod(finalPath, 0755); err != nil {
 				return fmt.Errorf("failed to make binary executable: %w", err)
 			}
-			t.Debugf("Install: made %s executable", absFinalPath)
-		} else if fileInfo != nil && fileInfo.IsDir() {
-			t.Debugf("Install: skipping chmod for directory %s", absFinalPath)
 		}
-
 	}
 
 	// Mark task successful only after all operations (including post-processing) complete
-	t.Infof("Successfully installed %s@%s to %s", name, resolvedVersion, absFinalPath)
+	t.Infof("✓ Successfully installed %s@%s to %s", name, resolvedVersion, finalPath)
 	t.Success()
 
 	return nil
 }
 
+// handleArchiveInstallation processes an archive download (extraction, binary finding, post-processing)
+func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersion string, resolution *types.Resolution, pkg types.Package, t *task.Task) (string, error) {
+	// Auto-extract archive to working directory immediately after download
+	workDir := filepath.Join(i.options.TmpDir, fmt.Sprintf("deps-extract-%s-%s", name, resolvedVersion))
+
+	if _, extractErr := extract.Extract(downloadPath, workDir, t, extract.WithFullExtract()); extractErr != nil {
+		return "", extractErr
+	}
+
+	// Set up cleanup
+	cleanup := NewCleanupManager(i.options.Debug, i.shouldSkipCleanup(), t)
+	cleanup.AddDirectory(workDir)
+	cleanup.AddFile(downloadPath)
+	defer cleanup.GetCleanupFunc()()
+
+	var finalPath string
+
+	// Handle directory mode installation
+	if pkg.Mode == "directory" {
+		t.SetDescription("Installing directory")
+
+		// Move entire directory to bin/{package-name}/
+		targetDir := filepath.Join(i.options.BinDir, pkg.Name)
+		if err := i.moveExtractedDirectory(workDir, targetDir, t); err != nil {
+			return "", fmt.Errorf("failed to move directory: %w", err)
+		}
+
+		finalPath = targetDir
+
+		// Run post-process operations inside the moved directory (sandboxed)
+		if err := i.executePostProcessing(pkg, targetDir, targetDir, t); err != nil {
+			return "", fmt.Errorf("failed to execute post-process pipeline: %w", err)
+		}
+
+	} else {
+		finalPath = filepath.Join(i.options.BinDir, name)
+
+		// Check if package has post-processing pipeline
+		if len(pkg.PostProcess) > 0 {
+			// Execute the CEL pipeline on the extracted contents
+			if err := i.executePostProcessing(pkg, workDir, finalPath, t); err != nil {
+				return "", err
+			}
+
+			// Make executable after post-processing completes
+			if fileInfo, err := os.Stat(finalPath); err == nil && !fileInfo.IsDir() {
+				if err := os.Chmod(finalPath, 0755); err != nil {
+					return "", fmt.Errorf("failed to make binary executable: %w", err)
+				}
+			}
+
+		} else {
+			// Regular binary search in already extracted archive
+			t.SetDescription("Searching for binary")
+
+			binaryPath, err := extract.FindBinaryInDir(workDir, resolution.BinaryPath, t)
+			if err != nil {
+				return "", fmt.Errorf("failed to find binary %s: %w", name, err)
+			}
+
+			utils.LogFileFound(t, binaryPath, "binary")
+
+			// Copy binary to final destination
+			t.SetDescription("Installing binary")
+
+			if err := utils.CopyFile(binaryPath, finalPath); err != nil {
+				return "", fmt.Errorf("failed to install binary: %w", err)
+			}
+		}
+	}
+
+	return finalPath, nil
+}
+
+// handleSystemInstaller handles system installer files (.pkg/.msi)
+func (i *Installer) handleSystemInstaller(installerPath, name string, t *task.Task) (string, error) {
+	opts := &system.SystemInstallOptions{
+		ToolName: name,
+		Silent:   false, // Always show warnings for system installations
+		Task:     t,
+	}
+
+	result, err := system.InstallSystemPackage(installerPath, "", opts)
+	if err != nil {
+		return "", fmt.Errorf("failed to install system package %s: %w", name, err)
+	}
+
+	// If we found the binary path, return it
+	if result.BinaryPath != "" {
+		return result.BinaryPath, nil
+	}
+
+	// If installation succeeded but we couldn't find the binary,
+	// create a marker file in bin dir to indicate successful installation
+	markerPath := filepath.Join(i.options.BinDir, name+".installed")
+	if err := os.MkdirAll(i.options.BinDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	installerInfo := fmt.Sprintf("System installer: %s\nInstall path: %s", installerPath, result.InstallPath)
+	if err := os.WriteFile(markerPath, []byte(installerInfo), 0644); err != nil {
+		return "", fmt.Errorf("failed to create installation marker: %w", err)
+	}
+
+	t.Infof("✓ System installation completed. Binary may be available in PATH as '%s'", name)
+	return markerPath, nil
+}
+
+// handleDirectBinaryInstallation handles direct binary downloads (no extraction needed)
+func (i *Installer) handleDirectBinaryInstallation(downloadPath, name string) (string, error) {
+	// For direct binary downloads, downloadPath is already the final path
+	finalPath := filepath.Join(i.options.BinDir, name)
+
+	// The download method already downloaded to the correct location
+	// Just return the path where it was downloaded
+	return finalPath, nil
+}
+
 // resolveVersionConstraint resolves a version constraint to a specific version
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
 	// Use the centralized version resolver
-	resolver := version.NewResolver(mgr)
+	resolver := versionpkg.NewResolver(mgr)
 	return resolver.ResolveConstraint(ctx, pkg, constraint, platform.Current())
-}
-
-// getArchiveExtension returns the archive extension from a URL
-func getArchiveExtension(url string) string {
-	lower := strings.ToLower(url)
-	switch {
-	case strings.HasSuffix(lower, ".tar.gz"):
-		return ".tar.gz"
-	case strings.HasSuffix(lower, ".tgz"):
-		return ".tgz"
-	case strings.HasSuffix(lower, ".zip"):
-		return ".zip"
-	case strings.HasSuffix(lower, ".tar.xz"):
-		return ".tar.xz"
-	case strings.HasSuffix(lower, ".tar.bz2"):
-		return ".tar.bz2"
-	case strings.HasSuffix(lower, ".tar"):
-		return ".tar"
-	case strings.HasSuffix(lower, ".jar"):
-		return ".jar"
-	case strings.HasSuffix(lower, ".txz"):
-		return ".txz"
-	default:
-		return ""
-	}
-}
-
-// copyFile copies a file from src to dst
-func copyFile(src, dst string) error {
-	srcFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer dstFile.Close()
-
-	_, err = io.Copy(dstFile, srcFile)
-	return err
 }
 
 // downloadWithChecksum attempts to download with checksum verification
@@ -493,7 +630,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 
 	// Try the provided checksum URL if configured
 	if checksumURL != "" {
-		t.Debugf("Using configured checksum URL: %s", checksumURL)
+		t.V(3).Infof("Using configured checksum URL: %s", checksumURL)
 
 		// Split comma-separated checksum URLs
 		checksumURLs := strings.Split(checksumURL, ",")
@@ -506,8 +643,15 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 
 		var err error
 		if len(checksumURLs) > 1 || checksumExpr != "" {
+			// Parse the logical names from checksum file configuration
+			// The checksumURL contains the original config like "checksums,checksums_hashes_order"
+			checksumNames := strings.Split(resolution.Package.ChecksumFile, ",")
+			for i, name := range checksumNames {
+				checksumNames[i] = strings.TrimSpace(name)
+			}
+
 			// Use multi-file checksum with CEL support
-			err = download.Download(url, dest, t, download.WithChecksumURLs(checksumURLs, checksumExpr))
+			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr))
 		} else {
 			// Use single checksum file
 			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL))
@@ -529,61 +673,4 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
 	return download.Download(url, dest, t)
-}
-
-// checkExistingVersion checks if a binary exists and matches the requested version
-// Returns the existing version if it matches, empty string otherwise
-func (i *Installer) checkExistingVersion(name string, pkg types.Package, requestedVersion string, t *task.Task) string {
-	// Determine binary name - handle special cases
-	binaryName := name
-	if pkg.BinaryName != "" {
-		binaryName = pkg.BinaryName
-	}
-
-	// For Windows, add .exe extension if not present
-	if filepath.Ext(binaryName) == "" && (i.options.OSOverride == "windows" ||
-		(i.options.OSOverride == "" && platform.Current().OS == "windows")) {
-		binaryName += ".exe"
-	}
-
-	binaryPath := filepath.Join(i.options.BinDir, binaryName)
-
-	// Check if binary exists
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		t.Debugf("Binary not found at %s", binaryPath)
-		return ""
-	}
-
-	t.Infof("Found existing %s, checking version...", name)
-
-	// Try to get the installed version
-	installedVersion, err := version.GetInstalledVersion(binaryPath, pkg.VersionCommand, pkg.VersionPattern)
-	if err != nil {
-		t.Debugf("Could not verify existing version: %v", err)
-		return ""
-	}
-
-	// Normalize both versions for comparison
-	normalizedInstalled := version.Normalize(installedVersion)
-	normalizedRequested := version.Normalize(requestedVersion)
-
-	if normalizedInstalled == normalizedRequested {
-		t.Debugf("Existing version %s matches requested %s", installedVersion, requestedVersion)
-		return installedVersion
-	}
-
-	t.Infof("Existing version %s doesn't match requested %s, updating...", installedVersion, requestedVersion)
-	return ""
-}
-
-// isArchive returns true if the file appears to be an archive based on its extension
-func isArchive(path string) bool {
-	lower := strings.ToLower(path)
-	extensions := []string{".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".zip", ".jar"}
-	for _, ext := range extensions {
-		if strings.HasSuffix(lower, ext) {
-			return true
-		}
-	}
-	return false
 }

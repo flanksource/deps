@@ -258,7 +258,7 @@ func GetAllDependenciesInstallData() []InstallTestData {
 				Platform:    platform,
 				OS:          parts[0],
 				Arch:        parts[1],
-				Version:     "latest", // Use latest for testing
+				Version:     "stable", // Use latest for testing
 				Manager:     pkg.Manager,
 				IsSupported: isSupported,
 			})

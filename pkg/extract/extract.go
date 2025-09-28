@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/commons/files"
+	"github.com/flanksource/deps/pkg/system"
+	"github.com/flanksource/deps/pkg/utils"
 )
 
 // ExtractOption is a functional option for configuring extraction
@@ -32,6 +35,50 @@ func WithFullExtract() ExtractOption {
 	}
 }
 
+// detectFileType determines if a file is an archive or system installer
+func detectFileType(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".pkg":
+		return "macos_installer"
+	case ".msi":
+		return "windows_installer"
+	case ".zip", ".jar":
+		return "zip_archive"
+	case ".tar", ".tgz", ".tar.gz", ".tar.xz", ".txz":
+		return "tar_archive"
+	default:
+		return "unknown"
+	}
+}
+
+// IsSystemInstaller returns true if the file is a system installer
+func IsSystemInstaller(filePath string) bool {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	return ext == ".pkg" || ext == ".msi"
+}
+
+// HandleInstaller processes system installers (.pkg/.msi) and returns the installed binary path
+func HandleInstaller(installerPath, toolName string, t *task.Task) (string, error) {
+	if !IsSystemInstaller(installerPath) {
+		return "", fmt.Errorf("file is not a system installer: %s", installerPath)
+	}
+
+	opts := &system.SystemInstallOptions{
+		ToolName: toolName,
+		Silent:   false, // Always show warnings for system installations
+		Task:     t,
+	}
+
+	result, err := system.InstallSystemPackage(installerPath, "", opts)
+	if err != nil {
+		return "", fmt.Errorf("failed to install %s: %w", toolName, err)
+	}
+
+	// Return the path to the installed binary
+	return result.BinaryPath, nil
+}
+
 // Extract extracts an archive with optional configuration
 // Returns the path to the binary if searching for one, or empty string if full extract
 func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption) (string, error) {
@@ -41,15 +88,11 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 		opt(config)
 	}
 
-	// Convert to absolute paths for logging
-	absArchivePath, _ := filepath.Abs(archivePath)
-	absExtractDir, _ := filepath.Abs(extractDir)
-
 	if t != nil {
 		if config.fullExtract {
-			t.Debugf("Extract: starting full extraction of %s to %s", absArchivePath, absExtractDir)
+			t.SetDescription(fmt.Sprintf("Extracting %s", filepath.Base(archivePath)))
 		} else {
-			t.Debugf("Extract: starting extraction of %s to %s (binaryPath=%s)", absArchivePath, absExtractDir, config.binaryPath)
+			t.SetDescription(fmt.Sprintf("Extracting %s for %s", filepath.Base(archivePath), config.binaryPath))
 		}
 	}
 
@@ -59,15 +102,12 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 	}
 
 	// Extract archive using files.Unarchive which supports all formats
-	if t != nil {
-		t.Debugf("Extract: extracting archive %s to destination %s", absArchivePath, absExtractDir)
-	}
 	extractResult, err := files.Unarchive(archivePath, extractDir, files.WithOverwrite(true))
 	if err != nil {
 		return "", fmt.Errorf("failed to extract archive: %w", err)
 	}
 	if t != nil {
-		t.Debugf("Extract: extraction completed for %s to %s (%d files extracted)", absArchivePath, absExtractDir, len(extractResult.Files))
+		t.Debugf("Extracted %d files from %s", len(extractResult.Files), filepath.Base(archivePath))
 	}
 
 	// Verify extraction destination
@@ -77,16 +117,10 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 
 	// For full extraction, we're done
 	if config.fullExtract {
-		if t != nil {
-			t.Debugf("Extract: full extraction completed successfully from %s to destination %s", absArchivePath, absExtractDir)
-		}
 		return "", nil
 	}
 
 	// Find the binary
-	if t != nil {
-		t.Debugf("Extract: searching for binary in destination %s (binaryPath=%s)", absExtractDir, config.binaryPath)
-	}
 	binaryPath, err := FindBinaryInDir(extractDir, config.binaryPath, t)
 	if err != nil {
 		return "", err
@@ -102,61 +136,27 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 	return binaryPath, nil
 }
 
-
 // FindBinaryInDir searches for the binary in the extracted directory
 func FindBinaryInDir(extractDir, binaryPath string, t *task.Task) (string, error) {
-	absExtractDir, _ := filepath.Abs(extractDir)
-	if t != nil {
-		t.Debugf("Extract: findBinary starting search in destination %s for binaryPath=%s", absExtractDir, binaryPath)
-	}
 
 	// If binary path is specified, try it first
 	if binaryPath != "" {
 		fullPath := filepath.Join(extractDir, binaryPath)
-		absFullPath, _ := filepath.Abs(fullPath)
-		if t != nil {
-			t.Debugf("Extract: checking specified binary path %s", absFullPath)
-		}
 		if fileExists(fullPath) {
-			if info, err := os.Stat(fullPath); err == nil {
-				if t != nil {
-					t.Debugf("Extract: found binary at specified destination %s (size: %d bytes, mode: %o)", absFullPath, info.Size(), info.Mode())
-				}
-			} else if t != nil {
-				t.Debugf("Extract: found binary at specified destination %s", absFullPath)
-			}
+			utils.LogBinarySearch(t, extractDir, binaryPath, true, fullPath)
 			return fullPath, nil
-		}
-		if t != nil {
-			t.Debugf("Extract: specified binary path not found %s", absFullPath)
 		}
 
 		// Try without directory structure (flat extraction)
 		baseName := filepath.Base(binaryPath)
 		flatPath := filepath.Join(extractDir, baseName)
-		absFlatPath, _ := filepath.Abs(flatPath)
-		if t != nil {
-			t.Debugf("Extract: checking flat binary path %s", absFlatPath)
-		}
 		if fileExists(flatPath) {
-			if info, err := os.Stat(flatPath); err == nil {
-				if t != nil {
-					t.Debugf("Extract: found binary at flat destination %s (size: %d bytes, mode: %o)", absFlatPath, info.Size(), info.Mode())
-				}
-			} else if t != nil {
-				t.Debugf("Extract: found binary at flat destination %s", absFlatPath)
-			}
+			utils.LogBinarySearch(t, extractDir, binaryPath, true, flatPath)
 			return flatPath, nil
-		}
-		if t != nil {
-			t.Debugf("Extract: flat binary path not found %s", absFlatPath)
 		}
 	}
 
 	// Search for executables in the directory
-	if t != nil {
-		t.Debugf("Extract: searching for executable files in destination %s", absExtractDir)
-	}
 	var executables []string
 	err := filepath.Walk(extractDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -169,11 +169,7 @@ func FindBinaryInDir(extractDir, binaryPath string, t *task.Task) (string, error
 		}
 
 		// Found an executable file
-		absPath, _ := filepath.Abs(path)
 		executables = append(executables, path)
-		if t != nil {
-			t.Debugf("Extract: found executable at destination %s (size: %d bytes, mode: %o)", absPath, info.Size(), info.Mode())
-		}
 
 		return nil
 	})
@@ -182,63 +178,35 @@ func FindBinaryInDir(extractDir, binaryPath string, t *task.Task) (string, error
 		return "", fmt.Errorf("failed to search for executables: %w", err)
 	}
 
-	if t != nil {
-		t.Debugf("Extract: found %d executable files in destination %s", len(executables), absExtractDir)
-	}
-
 	if len(executables) == 0 {
-		if t != nil {
-			t.Debugf("Extract: no executable files found in destination %s", absExtractDir)
-		}
+		utils.LogBinarySearch(t, extractDir, binaryPath, false, "")
 		return "", fmt.Errorf("no executable files found in archive")
 	}
 
 	// If only one executable, use it
 	if len(executables) == 1 {
-		absExecPath, _ := filepath.Abs(executables[0])
-		if info, err := os.Stat(executables[0]); err == nil {
-			if t != nil {
-				t.Debugf("Extract: single executable found at destination %s (size: %d bytes, mode: %o)", absExecPath, info.Size(), info.Mode())
-			}
-		} else if t != nil {
-			t.Debugf("Extract: single executable found at destination %s", absExecPath)
-		}
+		utils.LogBinarySearch(t, extractDir, "executable", true, executables[0])
 		return executables[0], nil
 	}
 
 	// Multiple executables - try to find the best match
 	if t != nil {
-		t.Debugf("Extract: multiple executables found (%d), searching for best match", len(executables))
+		t.Debugf("Found %d executables, searching for best match", len(executables))
 	}
 	if binaryPath != "" {
 		baseName := filepath.Base(binaryPath)
 		for _, exec := range executables {
 			if filepath.Base(exec) == baseName {
-				absExecPath, _ := filepath.Abs(exec)
-				if info, err := os.Stat(exec); err == nil {
-					if t != nil {
-						t.Debugf("Extract: found matching executable by name at destination %s (size: %d bytes, mode: %o)", absExecPath, info.Size(), info.Mode())
-					}
-				} else if t != nil {
-					t.Debugf("Extract: found matching executable by name at destination %s", absExecPath)
-				}
+				utils.LogBinarySearch(t, extractDir, binaryPath, true, exec)
 				return exec, nil
 			}
 		}
 	}
 
 	// Return the first executable found
-	absExecPath, _ := filepath.Abs(executables[0])
-	if info, err := os.Stat(executables[0]); err == nil {
-		if t != nil {
-			t.Debugf("Extract: using first executable found at destination %s (size: %d bytes, mode: %o)", absExecPath, info.Size(), info.Mode())
-		}
-	} else if t != nil {
-		t.Debugf("Extract: using first executable found at destination %s", absExecPath)
-	}
+	utils.LogBinarySearch(t, extractDir, "first executable", true, executables[0])
 	return executables[0], nil
 }
-
 
 // fileExists checks if a file exists
 func fileExists(path string) bool {
@@ -248,11 +216,6 @@ func fileExists(path string) bool {
 
 // verifyExtraction verifies that extraction destination exists and is not empty
 func verifyExtraction(extractDir string, t *task.Task) error {
-	absExtractDir, _ := filepath.Abs(extractDir)
-
-	if t != nil {
-		t.Debugf("Extract: verifying extraction destination %s", absExtractDir)
-	}
 
 	// Check if extraction directory exists
 	info, err := os.Stat(extractDir)
@@ -289,8 +252,8 @@ func verifyExtraction(extractDir string, t *task.Task) error {
 	}
 
 	if t != nil {
-		t.Debugf("Extract: destination verified %s (%d files, %d directories, %d bytes total)",
-			absExtractDir, fileCount, dirCount, totalSize)
+		t.Debugf("Verified extraction: %d files, %d directories (%s total)",
+			fileCount, dirCount, utils.FormatBytes(totalSize))
 	}
 
 	return nil
@@ -298,11 +261,6 @@ func verifyExtraction(extractDir string, t *task.Task) error {
 
 // verifyBinary verifies that a binary file exists, is not empty, and is executable
 func verifyBinary(binaryPath string, t *task.Task) error {
-	absBinaryPath, _ := filepath.Abs(binaryPath)
-
-	if t != nil {
-		t.Debugf("Extract: verifying binary %s", absBinaryPath)
-	}
 
 	// Check if binary file exists
 	info, err := os.Stat(binaryPath)
@@ -326,8 +284,7 @@ func verifyBinary(binaryPath string, t *task.Task) error {
 	}
 
 	if t != nil {
-		t.Debugf("Extract: binary verified %s (size: %d bytes, mode: %o, executable: true)",
-			absBinaryPath, info.Size(), info.Mode())
+		t.Debugf("Binary verified: %s", utils.FormatFileInfo(binaryPath))
 	}
 
 	return nil

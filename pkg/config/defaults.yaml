@@ -2,15 +2,12 @@
 # This file contains built-in dependency definitions that can be overridden
 # by user's local deps.yaml
 # envsubst
-# gcloud
 # powershell
-# aws-cli
 #firebase-cli
 # supabase
 # vercel CLI
 # netlify CLI
 # gh
-# taskfile
 
 dependencies: {}
 registry:
@@ -24,7 +21,7 @@ registry:
             linux-amd64: helm-{{.tag}}-linux-amd64.tar.gz
             linux-arm64: helm-{{.tag}}-linux-arm64.tar.gz
             windows-amd64: helm-{{.tag}}-windows-amd64.zip
-        checksum_file: https://get.helm.sh/{{.asset}}.sha256sum
+        checksum_file: https://get.helm.sh/helm-{{.tag}}-{{.os}}-{{.arch}}.tar.gz.sha256sum
         version_command: version --short
         version_pattern: v(\d+\.\d+\.\d+)
     jq:
@@ -162,7 +159,7 @@ registry:
         version_pattern: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
         checksum_file: checksums,checksums_hashes_order
         checksum_expr: |
-            'sha256:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
+            'md5:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
                 checksums_hashes_order.split('\n').indexOf('SHA-256') + 1
             ]
     canary-checker:
@@ -297,12 +294,7 @@ registry:
             darwin-arm64: actions-runner-osx-arm64-{{.version}}.tar.gz
             linux-amd64: actions-runner-linux-x64-{{.version}}.tar.gz
             linux-arm64: actions-runner-linux-arm64-{{.version}}.tar.gz
-    buildkitd:
-        name: buildkitd
-        repo: moby/buildkit
-        asset_patterns:
-            linux-amd64: buildkit-{{.tag}}.linux-amd64.tar.gz
-            linux-arm64: buildkit-{{.tag}}.linux-arm64.tar.gz
+
     caddy:
         name: caddy
         repo: caddyserver/caddy
@@ -349,14 +341,7 @@ registry:
             linux-arm64: node_exporter-{{.version}}.linux-arm64.tar.gz
         version_command: --version
         version_pattern: node_exporter.*version\s+(\d+\.\d+\.\d+)
-    powershell:
-        name: powershell
-        repo: PowerShell/PowerShell
-        asset_patterns:
-            darwin-amd64: powershell-{{.version}}-osx-x64.tar.gz
-            darwin-arm64: powershell-{{.version}}-osx-arm64.tar.gz
-            linux-amd64: powershell-{{.version}}-linux-x64.tar.gz
-            linux-arm64: powershell-{{.version}}-linux-arm64.tar.gz
+
     prometheus:
         name: prometheus
         repo: prometheus/prometheus
@@ -378,27 +363,14 @@ registry:
         manager: gitlab
         repo: gitlab-org/gitlab-runner
         asset_patterns:
-            darwin-amd64: gitlab-runner-darwin-amd64
-            darwin-arm64: gitlab-runner-darwin-arm64
-            linux-amd64: gitlab-runner-linux-amd64
-            linux-arm64: gitlab-runner-linux-arm64
-            windows-amd64: gitlab-runner-windows-amd64.zip
+            darwin-amd64: "binary: macOS amd64"
+            darwin-arm64: "binary: macOS arm64"
+            linux-amd64: "binary: Linux amd64"
+            linux-arm64: "binary: Linux arm"
+            windows-amd64: "binary: Windows amd64"
         version_command: --version
         version_pattern: gitlab-runner\s+(\d+\.\d+\.\d+)
         checksum_file: release.sha256
-    go:
-        name: go
-        manager: direct
-        url_template: https://go.dev/dl/go{{.version}}.{{.os}}-{{.arch}}.tar.gz
-        version_command: version
-        version_pattern: go(\d+\.\d+\.?\d*)
-        # Note: Go does not use GitHub releases, versions must be specified explicitly
-    node:
-        name: node
-        manager: direct
-        url_template: https://nodejs.org/download/release/{{.version}}/node-{{.version}}-{{.os}}-{{.arch}}.tar.gz
-        version_command: --version
-        version_pattern: v(\d+\.\d+\.\d+)
     kubebuilder:
         name: kubebuilder
         repo: kubernetes-sigs/kubebuilder
@@ -412,6 +384,109 @@ registry:
             linux-s390x: kubebuilder_linux_s390x
         version_command: version
         version_pattern: Version:\s*v?(\d+\.\d+\.\d+)
+
+    # System-level development tools
+    node:
+        name: node
+        repo: nodejs/node
+        mode: directory
+        url_template: https://nodejs.org/download/release/{{.tag}}/{{.asset}}
+        asset_patterns:
+            darwin-amd64: node-{{.tag}}-darwin-x64.tar.gz
+            darwin-arm64: node-{{.tag}}-darwin-arm64.tar.gz
+            linux-amd64: node-{{.tag}}-linux-x64.tar.gz
+            linux-arm64: node-{{.tag}}-linux-arm64.tar.gz
+        version_command: bin/node --version
+        version_pattern: v(\d+\.\d+\.\d+)
+
+    go:
+        name: go
+        repo: golang/go
+        manager: github_tags
+        mode: directory
+        url_template: https://go.dev/dl/go{{.version}}.{{.os}}-{{.arch}}.tar.gz
+        asset_patterns:
+            darwin-amd64: go{{.version}}.darwin-amd64.tar.gz
+            darwin-arm64: go{{.version}}.darwin-arm64.tar.gz
+            linux-amd64: go{{.version}}.linux-amd64.tar.gz
+            linux-arm64: go{{.version}}.linux-arm64.tar.gz
+        version_command: bin/go version
+        version_pattern: go version go(\d+\.\d+\.\d+)
+        version_expr: 'tag.startsWith("go") ? tag.substring(2) : tag'
+    powershell:
+        name: pwsh
+        repo: PowerShell/PowerShell
+        mode: directory
+        asset_patterns:
+            darwin-amd64: powershell-{{.version}}-osx-x64.tar.gz
+            darwin-arm64: powershell-{{.version}}-osx-arm64.tar.gz
+            linux-amd64: powershell-{{.version}}-linux-x64.tar.gz
+            linux-arm64: powershell-{{.version}}-linux-arm64.tar.gz
+        version_command: ./pwsh --version
+        version_pattern: PowerShell (\S+)
+        post_process:
+            - chmod("pwsh", "0755")
+
+    task:
+        name: task
+        repo: go-task/task
+        asset_patterns:
+            darwin-amd64: task_darwin_amd64.tar.gz
+            darwin-arm64: task_darwin_arm64.tar.gz
+            linux-amd64: task_linux_amd64.tar.gz
+            linux-arm64: task_linux_arm64.tar.gz
+            windows-amd64: task_windows_amd64.zip
+        checksum_file: task_checksums.txt
+        version_command: --version
+        version_pattern: 'Task version:\s+v?(\d+\.\d+\.\d+)'
+
+    azure-cli:
+        repo: Azure/azure-cli
+        asset_patterns:
+            "*": azure-cli-{{.version}}-x64.zip
+        version_command: --version
+        version_pattern: 'azure-cli\s+(\d+\.\d+\.\d+)'
+        version_expr: 'tag.startsWith("azure-cli-") ? tag.substring(10) : tag'
+
+    aws-cli:
+        name: aws
+        repo: aws/aws-cli
+        manager: github_tags
+        url_template: https://awscli.amazonaws.com/{{.asset}}
+        asset_patterns:
+            darwin-*: AWSCLIV2-{{.tag}}.pkg
+            linux-amd64: awscli-exe-linux-x86_64-{{.tag}}.zip
+            linux-arm64: awscli-exe-linux-aarch64-{{.tag}}.zip
+            windows-amd64: AWSCLIV2-{{.tag}}.msi
+        version_command: --version
+        version_pattern: 'aws-cli/(\d+\.\d+\.\d+)'
+
+    gcloud-cli:
+        name: gcloud
+        manager: direct
+        mode: directory
+        url_template: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-{{.version}}-{{.os}}-{{.arch}}.tar.gz
+        asset_patterns:
+            darwin-amd64: google-cloud-cli-{{.version}}-darwin-x86_64.tar.gz
+            darwin-arm64: google-cloud-cli-{{.version}}-darwin-arm.tar.gz
+            linux-amd64: google-cloud-cli-{{.version}}-linux-x86_64.tar.gz
+            linux-arm64: google-cloud-cli-{{.version}}-linux-arm.tar.gz
+            windows-amd64: google-cloud-cli-{{.version}}-windows-x86_64.zip
+        version_command: bin/gcloud version --format="value(Google Cloud SDK)"
+        version_pattern: '(\d+\.\d+\.\d+)'
+
+    python:
+        name: python
+        repo: python/cpython
+        mode: directory
+        asset_patterns:
+            darwin-amd64: Python-{{.version}}-macOS-universal2.tar.gz
+            darwin-arm64: Python-{{.version}}-macOS-universal2.tar.gz
+            linux-amd64: Python-{{.version}}.tar.xz
+            linux-arm64: Python-{{.version}}.tar.xz
+            windows-amd64: python-{{.version}}-amd64.exe
+        version_command: python --version
+        version_pattern: 'Python (\d+\.\d+\.\d+)'
 
 settings:
     bin_dir: ./bin

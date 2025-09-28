@@ -86,9 +86,9 @@ settings:
 
 // LockGenerationResult holds the results of lock file generation
 type LockGenerationResult struct {
-	LockFile  *types.LockFile
-	Duration  time.Duration
-	Error     error
+	LockFile *types.LockFile
+	Duration time.Duration
+	Error    error
 }
 
 // GenerateLockFile runs the lock generation for specific OS and architecture

@@ -2,16 +2,16 @@ module github.com/flanksource/deps
 
 go 1.25.1
 
-replace github.com/flanksource/clicky => /Users/moshe/work/omi/clicky
-
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/flanksource/clicky v1.2.0
 	github.com/flanksource/commons v1.42.0
 	github.com/flanksource/gomplate/v3 v3.24.60
+	github.com/google/cel-go v0.26.1
 	github.com/google/go-github/v57 v57.0.0
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
+	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.2-0.20250831231508-51d675196729
 	github.com/stretchr/testify v1.10.0
@@ -51,7 +51,6 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/cel-go v0.26.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
@@ -106,6 +105,7 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/samber/lo v1.51.0 // indirect
 	github.com/samber/oops v1.17.0 // indirect
+	github.com/shurcooL/graphql v0.0.0-20230722043721-ed46e5a46466 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/tidwall/gjson v1.17.0 // indirect
@@ -155,6 +155,6 @@ require (
 )
 
 replace (
-	github.com/flanksource/commons => ../commons
 	github.com/flanksource/clicky => /Users/moshe/work/omi/clicky
+	github.com/flanksource/commons => ../commons
 )

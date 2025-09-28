@@ -80,8 +80,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	// Perform post-install check if requested
 	if installCheck {
 		fmt.Println("\n🔍 Verifying installations...")
-		if err := runPostInstallCheck(args); err != nil {
-			fmt.Printf("⚠️  Installation verification failed: %v\n", err)
+		var verifyErr error
+		task.StartTask("verify-installations", func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
+			verifyErr = runPostInstallCheck(args, task)
+			return nil, verifyErr
+		})
+		if verifyErr != nil {
+			fmt.Printf("⚠️  Installation verification failed: %v\n", verifyErr)
 			// Don't return error as installation succeeded, just verification failed
 		}
 	}
@@ -90,7 +95,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 }
 
 // runPostInstallCheck performs version checks on installed tools
-func runPostInstallCheck(args []string) error {
+func runPostInstallCheck(args []string, t *task.Task) error {
 	// Use global depsConfig
 	depsConfig := GetDepsConfig()
 	if depsConfig == nil {
@@ -142,7 +147,7 @@ func runPostInstallCheck(args []string) error {
 			requestedVersion = constraint
 		}
 
-		result := version.CheckBinaryVersion(tool, pkg, binDir, "", requestedVersion)
+		result := version.CheckBinaryVersion(t, tool, pkg, binDir, "", requestedVersion)
 
 		// Perform checksum verification
 		if result.Status != types.CheckStatusMissing && result.Status != types.CheckStatusError {

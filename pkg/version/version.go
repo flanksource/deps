@@ -185,7 +185,52 @@ func LooksLikeExactVersion(s string) bool {
 	// Remove 'v' prefix for checking
 	normalized := Normalize(s)
 
-	// Try parsing as exact semver
-	_, err := semver.NewVersion(normalized)
-	return err == nil
+	// Try parsing as exact semver - must have all three components
+	if !IsPartialVersion(s) {
+		_, err := semver.NewVersion(normalized)
+		return err == nil
+	}
+
+	return false
+}
+
+// IsPartialVersion checks if a string is a partial version (major or major.minor)
+// Examples: "1", "2", "1.5", "v2.1" -> true
+//
+//	"1.2.3", ">=1.2.3", "latest" -> false
+func IsPartialVersion(s string) bool {
+	if s == "" || s == "latest" {
+		return false
+	}
+
+	// Check for constraint operators
+	if strings.ContainsAny(s, ">=<~^*") {
+		return false
+	}
+
+	// Remove 'v' prefix for checking
+	normalized := Normalize(s)
+
+	// Count dots to determine if it's partial
+	dotCount := strings.Count(normalized, ".")
+
+	// Must be major (0 dots) or major.minor (1 dot)
+	if dotCount > 1 {
+		return false
+	}
+
+	// Check if it's a valid version prefix
+	// For major only: "2" should be valid
+	// For major.minor: "1.5" should be valid
+	if dotCount == 0 {
+		// Major only - try parsing as "major.0.0"
+		_, err := semver.NewVersion(normalized + ".0.0")
+		return err == nil
+	} else if dotCount == 1 {
+		// Major.minor - try parsing as "major.minor.0"
+		_, err := semver.NewVersion(normalized + ".0")
+		return err == nil
+	}
+
+	return false
 }

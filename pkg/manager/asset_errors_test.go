@@ -7,11 +7,11 @@ import (
 
 func TestEnhanceAssetNotFoundError(t *testing.T) {
 	tests := []struct {
-		name           string
-		packageName    string
-		assetPattern   string
-		platform       string
-		availableAssets []string
+		name             string
+		packageName      string
+		assetPattern     string
+		platform         string
+		availableAssets  []string
 		expectedContains []string
 		expectedCount    int // Expected number of assets shown
 	}{
@@ -123,9 +123,9 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 
 func TestSuggestClosestAsset(t *testing.T) {
 	tests := []struct {
-		name            string
-		target          string
-		availableAssets []string
+		name               string
+		target             string
+		availableAssets    []string
 		expectedSuggestion string
 	}{
 		{
@@ -164,9 +164,9 @@ func TestSuggestClosestAsset(t *testing.T) {
 			expectedSuggestion: "tool-linux-amd64.zip",
 		},
 		{
-			name:            "Empty assets",
-			target:          "anything",
-			availableAssets: []string{},
+			name:               "Empty assets",
+			target:             "anything",
+			availableAssets:    []string{},
 			expectedSuggestion: "",
 		},
 	}
@@ -183,11 +183,11 @@ func TestSuggestClosestAsset(t *testing.T) {
 
 func TestCalculateAssetSimilarity(t *testing.T) {
 	tests := []struct {
-		name     string
-		target   string
+		name      string
+		target    string
 		candidate string
-		minScore int // Minimum expected score
-		maxScore int // Maximum expected score
+		minScore  int // Minimum expected score
+		maxScore  int // Maximum expected score
 	}{
 		{
 			name:      "Exact match",
@@ -239,9 +239,9 @@ func TestCalculateAssetSimilarity(t *testing.T) {
 
 func TestSplitAssetName(t *testing.T) {
 	tests := []struct {
-		name     string
+		name      string
 		assetName string
-		expected []string
+		expected  []string
 	}{
 		{
 			name:      "Hyphen separated",

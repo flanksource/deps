@@ -2,9 +2,11 @@ package version
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/flanksource/deps/pkg/types"
 )
 
 // Constraint represents a version constraint
@@ -23,6 +25,11 @@ func ParseConstraint(constraint string) (Constraint, error) {
 	case "latest", "stable":
 		return &StableConstraint{}, nil
 	default:
+		// Check for partial version first
+		if IsPartialVersion(constraint) {
+			return &PartialVersionConstraint{pattern: Normalize(constraint)}, nil
+		}
+
 		// Try to parse as semver constraint
 		c, err := semver.NewConstraint(constraint)
 		if err != nil {
@@ -74,6 +81,63 @@ func (c *SemverConstraint) Check(version string) bool {
 
 func (c *SemverConstraint) String() string {
 	return c.original
+}
+
+// PartialVersionConstraint matches versions that start with a given prefix
+// Examples: "1" matches "1.0.0", "1.5.2", etc. "1.5" matches "1.5.0", "1.5.3", etc.
+type PartialVersionConstraint struct {
+	pattern string
+}
+
+func (c *PartialVersionConstraint) Check(version string) bool {
+	normalized := Normalize(version)
+
+	// Parse both the pattern and version as semver
+	patternSemver, err := c.parsePatternAsSemver()
+	if err != nil {
+		return false
+	}
+
+	versionSemver, err := semver.NewVersion(normalized)
+	if err != nil {
+		return false
+	}
+
+	// Check if version matches the pattern
+	dotCount := strings.Count(c.pattern, ".")
+
+	if dotCount == 0 {
+		// Major only: "2" should match "2.x.x"
+		return versionSemver.Major() == patternSemver.Major()
+	} else if dotCount == 1 {
+		// Major.minor: "1.5" should match "1.5.x"
+		return versionSemver.Major() == patternSemver.Major() &&
+			versionSemver.Minor() == patternSemver.Minor()
+	}
+
+	return false
+}
+
+func (c *PartialVersionConstraint) String() string {
+	return c.pattern
+}
+
+// parsePatternAsSemver converts the partial pattern to a full semver for comparison
+func (c *PartialVersionConstraint) parsePatternAsSemver() (*semver.Version, error) {
+	dotCount := strings.Count(c.pattern, ".")
+
+	var fullVersion string
+	if dotCount == 0 {
+		// Major only: "2" -> "2.0.0"
+		fullVersion = c.pattern + ".0.0"
+	} else if dotCount == 1 {
+		// Major.minor: "1.5" -> "1.5.0"
+		fullVersion = c.pattern + ".0"
+	} else {
+		return nil, fmt.Errorf("invalid partial version pattern: %s", c.pattern)
+	}
+
+	return semver.NewVersion(fullVersion)
 }
 
 // FilterVersions filters a list of versions by the given constraint
@@ -178,4 +242,98 @@ func SortVersionsDescending(versions []string) ([]string, error) {
 	}
 
 	return result, nil
+}
+
+// IsValidSemanticVersion checks if a tag can be parsed as a valid semantic version
+func IsValidSemanticVersion(tag string) bool {
+	if tag == "" {
+		return false
+	}
+
+	normalized := Normalize(tag)
+	_, err := semver.NewVersion(normalized)
+	return err == nil
+}
+
+// FilterValidVersions returns only tags that are valid semantic versions
+func FilterValidVersions(tags []string) []string {
+	var valid []string
+	for _, tag := range tags {
+		if IsValidSemanticVersion(tag) {
+			valid = append(valid, tag)
+		}
+	}
+	return valid
+}
+
+// ProcessTags converts raw tag names to Version structs with proper metadata
+// Only includes tags that are valid semantic versions and sets prerelease status
+func ProcessTags(tagNames []string) []types.Version {
+	var versions []types.Version
+
+	for _, tag := range tagNames {
+		if !IsValidSemanticVersion(tag) {
+			continue // Skip non-semantic versions
+		}
+
+		normalized := Normalize(tag)
+		v, err := semver.NewVersion(normalized)
+		if err != nil {
+			continue // Should not happen since we validated above, but be safe
+		}
+
+		version := types.Version{
+			Tag:        tag,
+			Version:    normalized,
+			Prerelease: len(v.Prerelease()) > 0,
+		}
+
+		versions = append(versions, version)
+	}
+
+	return versions
+}
+
+// SortVersionStructs sorts []types.Version in descending order (newest first)
+func SortVersionStructs(versions []types.Version) []types.Version {
+	if len(versions) <= 1 {
+		return versions
+	}
+
+	// Create a copy to avoid modifying the original slice
+	sorted := make([]types.Version, len(versions))
+	copy(sorted, versions)
+
+	// Sort versions in descending order (newest first)
+	sort.Slice(sorted, func(i, j int) bool {
+		v1, err1 := semver.NewVersion(sorted[i].Version)
+		v2, err2 := semver.NewVersion(sorted[j].Version)
+
+		if err1 != nil || err2 != nil {
+			// Fallback to string comparison
+			return sorted[i].Version > sorted[j].Version
+		}
+
+		return v1.GreaterThan(v2)
+	})
+
+	return sorted
+}
+
+// FilterAndSortVersions combines filtering and sorting in one operation
+// Returns only valid semantic versions, optionally filtering out prereleases
+func FilterAndSortVersions(tagNames []string, stableOnly bool) []types.Version {
+	versions := ProcessTags(tagNames)
+
+	if stableOnly {
+		var stable []types.Version
+		for _, v := range versions {
+			if !v.Prerelease {
+				stable = append(stable, v)
+			}
+		}
+		versions = stable
+	}
+
+	return SortVersionStructs(versions)
 }

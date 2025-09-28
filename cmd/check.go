@@ -6,6 +6,8 @@ import (
 	"sort"
 	"text/tabwriter"
 
+	"github.com/flanksource/clicky/task"
+	flanksourceContext "github.com/flanksource/commons/context"
 	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/verify"
@@ -53,6 +55,15 @@ func init() {
 }
 
 func runCheck(cmd *cobra.Command, args []string) error {
+	var checkErr error
+	task.StartTask("check-dependencies", func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
+		checkErr = runCheckWithTask(args, task)
+		return nil, checkErr
+	})
+	return checkErr
+}
+
+func runCheckWithTask(args []string, t *task.Task) error {
 	// Load global configuration (defaults + user)
 	depsConfig := config.GetGlobalRegistry()
 
@@ -149,7 +160,7 @@ func runCheck(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		result := version.CheckBinaryVersion(tool, pkg, binDir, expectedVersion, requestedVersion)
+		result := version.CheckBinaryVersion(t, tool, pkg, binDir, expectedVersion, requestedVersion)
 
 		// Perform checksum verification if requested and binary is available
 		if checkVerify && result.Status != types.CheckStatusMissing && result.Status != types.CheckStatusError {
@@ -315,4 +326,3 @@ func formatStatus(status types.CheckStatus) string {
 		return string(status)
 	}
 }
-

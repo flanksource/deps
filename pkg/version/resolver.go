@@ -126,6 +126,11 @@ func (r *VersionResolver) selectBestVersion(pkg types.Package, versions []types.
 		return r.findExactVersion(pkg, versions, constraint)
 	}
 
+	// Handle partial versions
+	if IsPartialVersion(constraint) {
+		return r.findLatestInRange(pkg, versions, constraint)
+	}
+
 	// Handle semver constraints
 	constraintFilter, err := ParseConstraint(constraint)
 	if err != nil {
@@ -195,6 +200,53 @@ func (r *VersionResolver) findExactVersion(pkg types.Package, versions []types.V
 	return "", r.enhanceVersionError(pkg.Name, target, versions, originalErr)
 }
 
+// findLatestInRange finds the latest version that matches a partial version pattern
+func (r *VersionResolver) findLatestInRange(pkg types.Package, versions []types.Version, pattern string) (string, error) {
+
+	// Create a constraint for the partial version
+	constraint, err := ParseConstraint(pattern)
+	if err != nil {
+		return "", fmt.Errorf("invalid partial version pattern %s: %w", pattern, err)
+	}
+
+	// Find all versions that match the pattern
+	var candidates []types.Version
+	for _, v := range versions {
+		// Skip prereleases unless specifically requested
+		if v.Prerelease {
+			continue
+		}
+
+		if constraint.Check(v.Version) {
+			candidates = append(candidates, v)
+		}
+	}
+
+	if len(candidates) == 0 {
+		// Try including prereleases if no stable versions found
+		for _, v := range versions {
+			if constraint.Check(v.Version) {
+				candidates = append(candidates, v)
+			}
+		}
+
+		if len(candidates) == 0 {
+			return "", fmt.Errorf("no versions found matching pattern %s", pattern)
+		}
+	}
+
+	// Sort candidates by version (newest first) and return the best
+	sort.Slice(candidates, func(i, j int) bool {
+		cmp, err := Compare(candidates[i].Version, candidates[j].Version)
+		if err != nil {
+			return false
+		}
+		return cmp > 0 // Higher version comes first
+	})
+
+	return candidates[0].Tag, nil // Return original tag, not normalized version
+}
+
 // needsMoreVersions determines if we should fetch more versions based on the error
 func needsMoreVersions(err error, constraint string) bool {
 	if err == nil {
@@ -206,22 +258,22 @@ func needsMoreVersions(err error, constraint string) bool {
 	// If we couldn't find an exact version or satisfy a constraint,
 	// it might be in older versions
 	return contains(errStr, "not found") ||
-		   contains(errStr, "no versions satisfy") ||
-		   contains(errStr, "no stable versions")
+		contains(errStr, "no versions satisfy") ||
+		contains(errStr, "no stable versions")
 }
 
 // isNarrowConstraint checks if a constraint is narrow (likely to match recent versions)
 func isNarrowConstraint(constraint string) bool {
 	// Narrow constraints that likely match recent versions
 	return contains(constraint, "~") || // ~1.2.0 (patch-level changes)
-		   (contains(constraint, "=") && !contains(constraint, ">=") && !contains(constraint, "<=")) || // =1.2.3 (exact)
-		   (contains(constraint, ">=") && contains(constraint, "<")) // range with upper bound
+		(contains(constraint, "=") && !contains(constraint, ">=") && !contains(constraint, "<=")) || // =1.2.3 (exact)
+		(contains(constraint, ">=") && contains(constraint, "<")) // range with upper bound
 }
 
 // contains is a simple string contains check
 func contains(s, substr string) bool {
 	return len(substr) > 0 && len(s) >= len(substr) &&
-		   findSubstring(s, substr) != -1
+		findSubstring(s, substr) != -1
 }
 
 // findSubstring finds the index of substr in s, returns -1 if not found

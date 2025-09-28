@@ -29,7 +29,6 @@ func (m *DirectURLManager) DiscoverVersions(ctx context.Context, pkg types.Packa
 	return nil, fmt.Errorf("version discovery not supported for direct URLs - specify exact version")
 }
 
-
 // Resolve gets the download URL for a specific version and platform
 func (m *DirectURLManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
 	if pkg.URLTemplate == "" {

@@ -44,9 +44,9 @@ type GitLabReleaseAsset struct {
 
 // GraphQL API types
 type GraphQLRequest struct {
-	OperationName string                 `json:"operationName"`
-	Variables     GraphQLVariables       `json:"variables"`
-	Query         string                 `json:"query"`
+	OperationName string           `json:"operationName"`
+	Variables     GraphQLVariables `json:"variables"`
+	Query         string           `json:"query"`
 }
 
 type GraphQLVariables struct {
@@ -56,12 +56,12 @@ type GraphQLVariables struct {
 }
 
 type GraphQLResponse struct {
-	Data   GraphQLData        `json:"data"`
-	Errors []GraphQLError     `json:"errors,omitempty"`
+	Data   GraphQLData    `json:"data"`
+	Errors []GraphQLError `json:"errors,omitempty"`
 }
 
 type GraphQLError struct {
-	Message string `json:"message"`
+	Message string   `json:"message"`
 	Path    []string `json:"path,omitempty"`
 }
 
@@ -70,8 +70,8 @@ type GraphQLData struct {
 }
 
 type GraphQLProject struct {
-	ID       string             `json:"id"`
-	Releases GraphQLReleases    `json:"releases"`
+	ID       string          `json:"id"`
+	Releases GraphQLReleases `json:"releases"`
 }
 
 type GraphQLReleases struct {
@@ -79,22 +79,22 @@ type GraphQLReleases struct {
 }
 
 type GraphQLRelease struct {
-	ID              string                `json:"id"`
-	Name            string                `json:"name"`
-	TagName         string                `json:"tagName"`
-	DescriptionHtml string                `json:"descriptionHtml"`
-	ReleasedAt      string                `json:"releasedAt"`
-	CreatedAt       string                `json:"createdAt"`
-	Assets          GraphQLReleaseAssets  `json:"assets"`
+	ID              string               `json:"id"`
+	Name            string               `json:"name"`
+	TagName         string               `json:"tagName"`
+	DescriptionHtml string               `json:"descriptionHtml"`
+	ReleasedAt      string               `json:"releasedAt"`
+	CreatedAt       string               `json:"createdAt"`
+	Assets          GraphQLReleaseAssets `json:"assets"`
 }
 
 type GraphQLReleaseAssets struct {
-	Count   int                     `json:"count"`
-	Links   GraphQLReleaseLinks     `json:"links"`
+	Count int                 `json:"count"`
+	Links GraphQLReleaseLinks `json:"links"`
 }
 
 type GraphQLReleaseLinks struct {
-	Nodes []GraphQLReleaseLink   `json:"nodes"`
+	Nodes []GraphQLReleaseLink `json:"nodes"`
 }
 
 type GraphQLReleaseLink struct {
@@ -176,6 +176,15 @@ func (m *GitLabReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 			Version: v.String(),
 			Tag:     release.TagName,
 		})
+	}
+
+	// Apply version expression filtering if specified
+	if pkg.VersionExpr != "" {
+		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
+		}
+		versions = filteredVersions
 	}
 
 	// Sort versions in descending order (newest first)
@@ -384,7 +393,7 @@ func (m *GitLabReleaseManager) fetchReleases(ctx context.Context, repo string) (
 		OperationName: "allReleases",
 		Variables: GraphQLVariables{
 			FullPath: repo,
-			First:    50, // Default limit, can be made configurable
+			First:    10, // Default limit, can be made configurable
 			Sort:     "RELEASED_AT_DESC",
 		},
 		Query: graphQLReleasesQuery,
@@ -404,9 +413,6 @@ func (m *GitLabReleaseManager) fetchReleases(ctx context.Context, repo string) (
 
 	// Set required headers
 	req.Header.Set("Content-Type", "application/json")
-	if m.token != "" {
-		req.Header.Set("Authorization", "Bearer "+m.token)
-	}
 
 	resp, err := m.client.Do(req)
 	if err != nil {

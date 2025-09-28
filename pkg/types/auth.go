@@ -6,13 +6,13 @@ import (
 
 // AuthStatus represents the authentication status for a service
 type AuthStatus struct {
-	Service         string     `json:"service"`
-	TokenSource     string     `json:"token_source,omitempty"`
-	Authenticated   bool       `json:"authenticated"`
-	User            *UserInfo  `json:"user,omitempty"`
-	RateLimit       *RateLimit `json:"rate_limit,omitempty"`
-	Error           string     `json:"error,omitempty"`
-	HasPermissions  bool       `json:"has_permissions"`
+	Service        string     `json:"service"`
+	TokenSource    string     `json:"token_source,omitempty"`
+	Authenticated  bool       `json:"authenticated"`
+	User           *UserInfo  `json:"user,omitempty"`
+	RateLimit      *RateLimit `json:"rate_limit,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	HasPermissions bool       `json:"has_permissions"`
 }
 
 // UserInfo represents authenticated user information

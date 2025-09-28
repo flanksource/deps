@@ -24,3 +24,7 @@ Thumbs.db
 bin/
 hack/
 .task/
+deps
+bin/
+test-bin/
+tmp/

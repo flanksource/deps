@@ -113,7 +113,6 @@ func lockRun(cmd *cobra.Command, args []string) error {
 		Force:      lockForce,
 	}
 
-
 	var lockFile *types.LockFile
 	var cleanedLockFile *types.LockFile
 	var lockErr error

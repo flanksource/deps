@@ -1,6 +1,9 @@
 package version
 
 import (
+	"time"
+
+	"github.com/flanksource/deps/pkg/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -114,6 +117,547 @@ var _ = Describe("Version", func() {
 			Entry("tilde constraint not satisfied", "1.3.0", "~1.2.0", false),
 			Entry("caret constraint not satisfied", "2.0.0", "^1.2.0", false),
 			Entry("greater than constraint", "1.2.3", ">=1.2.0", true),
+		)
+	})
+})
+
+var _ = Describe("Version Expression Filtering", func() {
+	Describe("ApplyVersionExpr", func() {
+		var testVersions []types.Version
+
+		BeforeEach(func() {
+			testVersions = []types.Version{
+				{
+					Tag:        "v1.0.0",
+					Version:    "1.0.0",
+					SHA:        "abc123",
+					Published:  time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: false,
+				},
+				{
+					Tag:        "v1.1.0-beta.1",
+					Version:    "1.1.0-beta.1",
+					SHA:        "def456",
+					Published:  time.Date(2023, 2, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: true,
+				},
+				{
+					Tag:        "v1.1.0",
+					Version:    "1.1.0",
+					SHA:        "ghi789",
+					Published:  time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: false,
+				},
+				{
+					Tag:        "v2.0.0-rc.1",
+					Version:    "2.0.0-rc.1",
+					SHA:        "jkl012",
+					Published:  time.Date(2023, 4, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: true,
+				},
+				{
+					Tag:        "2.0.0", // No v prefix
+					Version:    "2.0.0",
+					SHA:        "mno345",
+					Published:  time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: false,
+				},
+			}
+		})
+
+		Context("with empty expression", func() {
+			It("should return all versions unchanged", func() {
+				result, err := ApplyVersionExpr(testVersions, "")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal(testVersions))
+			})
+		})
+
+		Context("with filtering expressions", func() {
+			It("should filter out prerelease versions", func() {
+				result, err := ApplyVersionExpr(testVersions, "!prerelease")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				tags := make([]string, len(result))
+				for i, v := range result {
+					tags[i] = v.Tag
+				}
+				Expect(tags).To(ConsistOf("v1.0.0", "v1.1.0", "2.0.0"))
+			})
+
+			It("should filter only prerelease versions", func() {
+				result, err := ApplyVersionExpr(testVersions, "prerelease")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(2))
+
+				tags := make([]string, len(result))
+				for i, v := range result {
+					tags[i] = v.Tag
+				}
+				Expect(tags).To(ConsistOf("v1.1.0-beta.1", "v2.0.0-rc.1"))
+			})
+
+			It("should filter versions with v prefix", func() {
+				result, err := ApplyVersionExpr(testVersions, "tag.startsWith('v')")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(4))
+
+				for _, v := range result {
+					Expect(v.Tag).To(HavePrefix("v"))
+				}
+			})
+
+			It("should filter versions without v prefix", func() {
+				result, err := ApplyVersionExpr(testVersions, "!tag.startsWith('v')")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].Tag).To(Equal("2.0.0"))
+			})
+
+			It("should filter versions by date", func() {
+				// Filter versions published after Feb 15, 2023
+				result, err := ApplyVersionExpr(testVersions, "published > timestamp('2023-02-15T00:00:00Z')")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				tags := make([]string, len(result))
+				for i, v := range result {
+					tags[i] = v.Tag
+				}
+				Expect(tags).To(ConsistOf("v1.1.0", "v2.0.0-rc.1", "2.0.0"))
+			})
+
+			It("should combine multiple conditions", func() {
+				// Non-prerelease versions with v prefix
+				result, err := ApplyVersionExpr(testVersions, "!prerelease && tag.startsWith('v')")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(2))
+
+				tags := make([]string, len(result))
+				for i, v := range result {
+					tags[i] = v.Tag
+				}
+				Expect(tags).To(ConsistOf("v1.0.0", "v1.1.0"))
+			})
+		})
+
+		Context("with invalid expressions", func() {
+			It("should return error for syntax errors", func() {
+				_, err := ApplyVersionExpr(testVersions, "invalid syntax &&& xyz")
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to evaluate version_expr"))
+			})
+
+			It("should return error for undefined variables", func() {
+				_, err := ApplyVersionExpr(testVersions, "unknownField == 'test'")
+				Expect(err).To(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("ApplyCommonFilter", func() {
+		var testVersions []types.Version
+
+		BeforeEach(func() {
+			testVersions = []types.Version{
+				{
+					Tag:        "v1.0.0",
+					Version:    "1.0.0",
+					Prerelease: false,
+				},
+				{
+					Tag:        "v1.1.0-beta.1",
+					Version:    "1.1.0-beta.1",
+					Prerelease: true,
+				},
+				{
+					Tag:        "2.0.0",
+					Version:    "2.0.0",
+					Prerelease: false,
+				},
+			}
+		})
+
+		It("should apply no-prerelease filter", func() {
+			result, err := ApplyCommonFilter(testVersions, "no-prerelease")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveLen(2))
+
+			for _, v := range result {
+				Expect(v.Prerelease).To(BeFalse())
+			}
+		})
+
+		It("should apply only-prerelease filter", func() {
+			result, err := ApplyCommonFilter(testVersions, "only-prerelease")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Prerelease).To(BeTrue())
+		})
+
+		It("should apply v-prefix filter", func() {
+			result, err := ApplyCommonFilter(testVersions, "v-prefix")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveLen(2))
+
+			for _, v := range result {
+				Expect(v.Tag).To(HavePrefix("v"))
+			}
+		})
+
+		It("should apply no-v-prefix filter", func() {
+			result, err := ApplyCommonFilter(testVersions, "no-v-prefix")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Tag).To(Equal("2.0.0"))
+		})
+
+		It("should return error for unknown filter", func() {
+			_, err := ApplyCommonFilter(testVersions, "unknown-filter")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unknown common filter"))
+		})
+	})
+
+	Describe("ValidateVersionExpr", func() {
+		It("should validate empty expression", func() {
+			err := ValidateVersionExpr("")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should validate simple boolean expression", func() {
+			err := ValidateVersionExpr("!prerelease")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should validate string operations", func() {
+			err := ValidateVersionExpr("tag.startsWith('v')")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should validate comparison operations", func() {
+			err := ValidateVersionExpr("version >= '1.0.0'")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should return error for invalid expressions", func() {
+			err := ValidateVersionExpr("invalid && syntax &&& error")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid version_expr"))
+		})
+	})
+
+	Describe("Tag Transformation", func() {
+		var testVersions []types.Version
+
+		BeforeEach(func() {
+			testVersions = []types.Version{
+				{
+					Tag:        "go1.21.5",
+					Version:    "go1.21.5",
+					SHA:        "abc123",
+					Published:  time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: false,
+				},
+				{
+					Tag:        "v1.2.3",
+					Version:    "1.2.3",
+					SHA:        "def456",
+					Published:  time.Date(2023, 2, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: false,
+				},
+				{
+					Tag:        "release-2023.1",
+					Version:    "2023.1",
+					SHA:        "ghi789",
+					Published:  time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC),
+					Prerelease: false,
+				},
+			}
+		})
+
+		Context("with simple string transformation", func() {
+			It("should remove go prefix from tags", func() {
+				result, err := ApplyVersionExpr(testVersions, `tag.startsWith("go") ? tag.substring(2) : tag`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				// First version should have go prefix removed
+				Expect(result[0].Tag).To(Equal("1.21.5"))
+				Expect(result[0].Version).To(Equal("1.21.5"))
+
+				// Other versions should be unchanged
+				Expect(result[1].Tag).To(Equal("v1.2.3"))
+				Expect(result[2].Tag).To(Equal("release-2023.1"))
+			})
+
+			It("should remove v prefix from tags", func() {
+				result, err := ApplyVersionExpr(testVersions, `tag.startsWith("v") ? tag.substring(1) : tag`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				// All versions should have v prefix removed (if present)
+				Expect(result[0].Tag).To(Equal("go1.21.5"))       // unchanged, no v prefix
+				Expect(result[1].Tag).To(Equal("1.2.3"))          // v prefix removed
+				Expect(result[2].Tag).To(Equal("release-2023.1")) // unchanged, no v prefix
+			})
+
+			It("should add v prefix to tags without it", func() {
+				result, err := ApplyVersionExpr(testVersions, `tag.startsWith("v") ? tag : "v" + tag`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				// First and third should get v prefix, second should remain unchanged
+				Expect(result[0].Tag).To(Equal("vgo1.21.5"))
+				Expect(result[1].Tag).To(Equal("v1.2.3"))
+				Expect(result[2].Tag).To(Equal("vrelease-2023.1"))
+			})
+
+			It("should replace strings in tags using regex", func() {
+				result, err := ApplyVersionExpr(testVersions, `tag.contains("release-") ? "v" + tag.substring(8) : tag`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				// Only the third version should be changed
+				Expect(result[0].Tag).To(Equal("go1.21.5"))
+				Expect(result[1].Tag).To(Equal("v1.2.3"))
+				Expect(result[2].Tag).To(Equal("v2023.1"))
+			})
+		})
+
+		Context("with advanced transformation patterns", func() {
+			It("should handle complex tag transformation logic", func() {
+				// Complex transformation: remove go prefix if present, add v prefix if missing
+				result, err := ApplyVersionExpr(testVersions, `
+					tag.startsWith("go") ?
+						"v" + tag.substring(2) :
+						(tag.startsWith("v") ? tag : "v" + tag)
+				`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				// go1.21.5 -> v1.21.5
+				Expect(result[0].Tag).To(Equal("v1.21.5"))
+				// v1.2.3 -> v1.2.3 (unchanged)
+				Expect(result[1].Tag).To(Equal("v1.2.3"))
+				// release-2023.1 -> vrelease-2023.1
+				Expect(result[2].Tag).To(Equal("vrelease-2023.1"))
+			})
+
+			It("should support nested conditional transformation", func() {
+				// Only include and transform Go versions
+				result, err := ApplyVersionExpr(testVersions, `
+					tag.startsWith("go") && tag.size() > 2 ? tag.substring(2) : ""
+				`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(1)) // Only go version should be included
+
+				Expect(result[0].Tag).To(Equal("1.21.5"))
+				Expect(result[0].Version).To(Equal("1.21.5"))
+			})
+		})
+
+		Context("with common transformation filters", func() {
+			It("should apply remove-go-prefix filter", func() {
+				result, err := ApplyCommonFilter(testVersions, "remove-go-prefix")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				Expect(result[0].Tag).To(Equal("1.21.5"))
+				Expect(result[1].Tag).To(Equal("v1.2.3"))
+				Expect(result[2].Tag).To(Equal("release-2023.1"))
+			})
+
+			It("should apply remove-v-prefix filter", func() {
+				result, err := ApplyCommonFilter(testVersions, "remove-v-prefix")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				Expect(result[0].Tag).To(Equal("go1.21.5"))
+				Expect(result[1].Tag).To(Equal("1.2.3"))
+				Expect(result[2].Tag).To(Equal("release-2023.1"))
+			})
+
+			It("should apply add-v-prefix filter", func() {
+				result, err := ApplyCommonFilter(testVersions, "add-v-prefix")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(3))
+
+				Expect(result[0].Tag).To(Equal("vgo1.21.5"))
+				Expect(result[1].Tag).To(Equal("v1.2.3"))
+				Expect(result[2].Tag).To(Equal("vrelease-2023.1"))
+			})
+		})
+
+		Context("with combined filtering and transformation", func() {
+			It("should filter and transform in one expression", func() {
+				// Remove go prefix only from versions that start with "go", otherwise exclude
+				result, err := ApplyVersionExpr(testVersions, `tag.startsWith("go") ? tag.substring(2) : ""`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(HaveLen(1)) // Only the go version should be included
+
+				Expect(result[0].Tag).To(Equal("1.21.5"))
+				Expect(result[0].Version).To(Equal("1.21.5"))
+			})
+		})
+	})
+
+	Describe("Helper Functions", func() {
+		Describe("isJSONObject", func() {
+			It("should detect JSON objects", func() {
+				Expect(isJSONObject(`{"key": "value"}`)).To(BeTrue())
+				Expect(isJSONObject(`  {"key": "value"}  `)).To(BeTrue())
+				Expect(isJSONObject(`{"tag": "v1.0.0", "include": true}`)).To(BeTrue())
+			})
+
+			It("should reject non-JSON strings", func() {
+				Expect(isJSONObject("true")).To(BeFalse())
+				Expect(isJSONObject("false")).To(BeFalse())
+				Expect(isJSONObject("v1.0.0")).To(BeFalse())
+				Expect(isJSONObject(`["array"]`)).To(BeFalse())
+			})
+		})
+
+		Describe("isSimpleString", func() {
+			It("should detect simple strings", func() {
+				Expect(isSimpleString("v1.0.0")).To(BeTrue())
+				Expect(isSimpleString("go1.21.5")).To(BeTrue())
+				Expect(isSimpleString("release-2023.1")).To(BeTrue())
+			})
+
+			It("should reject boolean strings", func() {
+				Expect(isSimpleString("true")).To(BeFalse())
+				Expect(isSimpleString("false")).To(BeFalse())
+			})
+
+			It("should reject JSON objects", func() {
+				Expect(isSimpleString(`{"key": "value"}`)).To(BeFalse())
+			})
+
+			It("should reject empty strings", func() {
+				Expect(isSimpleString("")).To(BeFalse())
+				Expect(isSimpleString("   ")).To(BeFalse())
+			})
+		})
+
+		Describe("transformTag", func() {
+			It("should create new version with transformed tag", func() {
+				original := types.Version{
+					Tag:        "go1.21.5",
+					Version:    "go1.21.5",
+					SHA:        "abc123",
+					Prerelease: false,
+				}
+
+				result := transformTag(original, "1.21.5")
+
+				Expect(result.Tag).To(Equal("1.21.5"))
+				Expect(result.Version).To(Equal("1.21.5"))
+				Expect(result.SHA).To(Equal("abc123"))
+				Expect(result.Prerelease).To(BeFalse())
+			})
+		})
+
+		Describe("Built-in CEL string functions", func() {
+			It("should work with substring operations", func() {
+				// These are tested implicitly through the transformation tests above
+				// Just verify the basic functionality understanding
+				testString := "go1.21.5"
+				Expect(testString[2:]).To(Equal("1.21.5")) // This is what substring(2) does in CEL
+			})
+		})
+	})
+
+	Describe("createVersionContext", func() {
+		It("should create correct context data", func() {
+			version := types.Version{
+				Tag:        "v1.0.0",
+				Version:    "1.0.0",
+				SHA:        "abc123",
+				Published:  time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
+				Prerelease: true,
+			}
+
+			context := createVersionContext(version)
+
+			Expect(context).To(HaveKey("tag"))
+			Expect(context["tag"]).To(Equal("v1.0.0"))
+			Expect(context).To(HaveKey("version"))
+			Expect(context["version"]).To(Equal("1.0.0"))
+			Expect(context).To(HaveKey("sha"))
+			Expect(context["sha"]).To(Equal("abc123"))
+			Expect(context).To(HaveKey("published"))
+			Expect(context["published"]).To(Equal(time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)))
+			Expect(context).To(HaveKey("prerelease"))
+			Expect(context["prerelease"]).To(BeTrue())
+
+			// Helper functions are no longer in context since we use built-in CEL functions
+		})
+	})
+
+	Describe("LooksLikeExactVersion", func() {
+		DescribeTable("should identify exact versions correctly",
+			func(version string, expected bool) {
+				result := LooksLikeExactVersion(version)
+				Expect(result).To(Equal(expected))
+			},
+			// Exact versions
+			Entry("exact version without prefix", "1.2.3", true),
+			Entry("exact version with v prefix", "v1.2.3", true),
+			Entry("exact version with V prefix", "V1.2.3", true),
+			Entry("exact version with patch", "1.2.3-alpha", true),
+			Entry("exact version with build metadata", "1.2.3+build.1", true),
+
+			// Not exact versions
+			Entry("major only", "1", false),
+			Entry("major.minor only", "1.2", false),
+			Entry("major only with v prefix", "v1", false),
+			Entry("major.minor with v prefix", "v1.2", false),
+			Entry("constraint with caret", "^1.2.3", false),
+			Entry("constraint with tilde", "~1.2.3", false),
+			Entry("constraint with >=", ">=1.2.3", false),
+			Entry("constraint with <=", "<=1.2.3", false),
+			Entry("constraint with >", ">1.2.3", false),
+			Entry("constraint with <", "<1.2.3", false),
+			Entry("latest keyword", "latest", false),
+			Entry("empty string", "", false),
+			Entry("wildcard", "*", false),
+		)
+	})
+
+	Describe("IsPartialVersion", func() {
+		DescribeTable("should identify partial versions correctly",
+			func(version string, expected bool) {
+				result := IsPartialVersion(version)
+				Expect(result).To(Equal(expected))
+			},
+			// Partial versions
+			Entry("major only", "1", true),
+			Entry("major only with v prefix", "v1", true),
+			Entry("major only with V prefix", "V1", true),
+			Entry("major.minor only", "1.2", true),
+			Entry("major.minor with v prefix", "v1.2", true),
+			Entry("major.minor with V prefix", "V1.2", true),
+			Entry("major.minor with zero", "1.0", true),
+			Entry("higher major version", "10", true),
+			Entry("double digit minor", "1.15", true),
+
+			// Not partial versions
+			Entry("exact version", "1.2.3", false),
+			Entry("exact version with v prefix", "v1.2.3", false),
+			Entry("exact version with patch", "1.2.3-alpha", false),
+			Entry("constraint with caret", "^1.2", false),
+			Entry("constraint with tilde", "~1.2", false),
+			Entry("constraint with >=", ">=1.2", false),
+			Entry("constraint with <=", "<=1.2", false),
+			Entry("constraint with >", ">1", false),
+			Entry("constraint with <", "<1", false),
+			Entry("latest keyword", "latest", false),
+			Entry("empty string", "", false),
+			Entry("wildcard", "*", false),
+			Entry("invalid version", "abc", false),
+			Entry("invalid major.minor", "1.abc", false),
 		)
 	})
 })

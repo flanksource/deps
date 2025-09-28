@@ -1,0 +1,19 @@
+dependencies:
+  test-node: "v20.0.0"
+
+registry:
+  test-node:
+    name: test-node
+    repo: nodejs/node
+    mode: directory
+    url_template: https://nodejs.org/download/release/{{.tag}}/node-{{.tag}}-{{.os}}-{{.arch}}.tar.gz
+    asset_patterns:
+      darwin-amd64: node-{{.tag}}-darwin-x64.tar.gz
+      darwin-arm64: node-{{.tag}}-darwin-arm64.tar.gz
+      linux-amd64: node-{{.tag}}-linux-x64.tar.gz
+      linux-arm64: node-{{.tag}}-linux-arm64.tar.gz
+    version_command: bin/node --version
+    version_pattern: v(\d+\.\d+\.\d+)
+
+settings:
+  bin_dir: ./test-bin

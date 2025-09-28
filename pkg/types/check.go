@@ -25,21 +25,21 @@ const (
 
 // CheckResult represents the result of checking a tool's version
 type CheckResult struct {
-	Tool             string         `json:"tool"`
-	InstalledVersion string         `json:"installed_version,omitempty"`
-	ExpectedVersion  string         `json:"expected_version,omitempty"`
-	RequestedVersion string         `json:"requested_version,omitempty"`
-	Status           CheckStatus    `json:"status"`
-	Error            string         `json:"error,omitempty"`
-	BinaryPath       string         `json:"binary_path,omitempty"`
+	Tool             string      `json:"tool"`
+	InstalledVersion string      `json:"installed_version,omitempty"`
+	ExpectedVersion  string      `json:"expected_version,omitempty"`
+	RequestedVersion string      `json:"requested_version,omitempty"`
+	Status           CheckStatus `json:"status"`
+	Error            string      `json:"error,omitempty"`
+	BinaryPath       string      `json:"binary_path,omitempty"`
 
 	// Checksum verification fields
-	ChecksumStatus     ChecksumStatus `json:"checksum_status,omitempty"`
-	ExpectedChecksum   string         `json:"expected_checksum,omitempty"`
-	ActualChecksum     string         `json:"actual_checksum,omitempty"`
-	ChecksumType       string         `json:"checksum_type,omitempty"`
-	ChecksumError      string         `json:"checksum_error,omitempty"`
-	ChecksumSource     string         `json:"checksum_source,omitempty"`
+	ChecksumStatus   ChecksumStatus `json:"checksum_status,omitempty"`
+	ExpectedChecksum string         `json:"expected_checksum,omitempty"`
+	ActualChecksum   string         `json:"actual_checksum,omitempty"`
+	ChecksumType     string         `json:"checksum_type,omitempty"`
+	ChecksumError    string         `json:"checksum_error,omitempty"`
+	ChecksumSource   string         `json:"checksum_source,omitempty"`
 }
 
 // CheckSummary represents a summary of all check results

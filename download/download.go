@@ -12,6 +12,7 @@ import (
 
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/checksum"
+	"github.com/flanksource/deps/pkg/utils"
 )
 
 // DownloadResult holds information about a completed download
@@ -32,9 +33,9 @@ func createHTTPClient(t *task.Task) *http.Client {
 
 			// Log redirect chain
 			if t != nil && len(via) > 0 {
-				from := via[len(via)-1].URL.String()
-				to := req.URL.String()
-				t.Debugf("Following redirect: %s → %s", from, to)
+				from := utils.ShortenURL(via[len(via)-1].URL.String())
+				to := utils.ShortenURL(req.URL.String())
+				t.V(4).Infof("Redirect: %s → %s", from, to)
 			}
 
 			return nil
@@ -53,6 +54,7 @@ type downloadConfig struct {
 	skipProgress     bool
 	checksumURL      string   // Single checksum URL to fetch
 	checksumURLs     []string // Multiple checksum URLs to fetch
+	checksumNames    []string // Logical variable names for multiple checksum files
 	checksumExpr     string   // CEL expression for extracting checksum from files
 	simpleMode       bool     // No task/progress support
 }
@@ -100,6 +102,15 @@ func WithChecksumURLs(urls []string, expr string) DownloadOption {
 	}
 }
 
+// WithChecksumURLsAndNames sets multiple checksum URLs with their logical variable names and optional CEL expression
+func WithChecksumURLsAndNames(urls []string, names []string, expr string) DownloadOption {
+	return func(c *downloadConfig) {
+		c.checksumURLs = urls
+		c.checksumNames = names
+		c.checksumExpr = strings.TrimSpace(expr)
+	}
+}
+
 // WithSimpleMode disables task/progress support for simple downloads
 func WithSimpleMode() DownloadOption {
 	return func(c *downloadConfig) {
@@ -136,13 +147,13 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 				eta := time.Duration(float64(remaining) / speed * float64(time.Second))
 
 				pr.task.SetDescription(fmt.Sprintf("%s/%s (%.1f MB/s, ETA: %s)",
-					formatBytes(pr.current),
-					formatBytes(pr.total),
+					utils.FormatBytes(pr.current),
+					utils.FormatBytes(pr.total),
 					speed/1024/1024,
 					formatDuration(eta)))
 			}
 		} else {
-			pr.task.SetDescription(fmt.Sprintf("Downloaded %s", formatBytes(pr.current)))
+			pr.task.SetDescription(fmt.Sprintf("Downloaded %s", utils.FormatBytes(pr.current)))
 		}
 		pr.lastUpdate = now
 	}
@@ -152,9 +163,7 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 
 // fetchChecksumFromURL fetches checksum from a single URL
 func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task) (checksumValue, checksumType string, sources []string, err error) {
-	if t != nil {
-		t.Infof("Fetching checksum from %s", checksumURL)
-	}
+	utils.LogChecksumFetch(t, []string{checksumURL})
 
 	client := createHTTPClient(t)
 	resp, err := client.Get(checksumURL)
@@ -180,15 +189,14 @@ func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task) (checks
 }
 
 // fetchChecksumFromMultipleURLs fetches checksums from multiple URLs with optional CEL expression
-func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumExpr, downloadURL string, t *task.Task) (checksumValue, checksumType string, sources []string, err error) {
+func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string, checksumExpr, downloadURL string, t *task.Task) (checksumValue, checksumType string, sources []string, err error) {
 	checksumContents := make(map[string]string)
 	allSources := []string{}
 
+	utils.LogChecksumFetch(t, checksumURLs)
+
 	// Download all checksum files
 	for _, checksumURL := range checksumURLs {
-		if t != nil {
-			t.Infof("Fetching checksum from %s", checksumURL)
-		}
 
 		client := createHTTPClient(t)
 		resp, err := client.Get(checksumURL)
@@ -212,7 +220,23 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumExpr, download
 
 	// Parse checksum using CEL expression or fallback to simple parsing
 	if checksumExpr != "" {
-		checksumValue, checksumHashType, err := checksum.EvaluateCELExpression(checksumContents, downloadURL, checksumExpr)
+		// Create a map using logical names for CEL evaluation
+		namedContents := make(map[string]string)
+		for i, url := range checksumURLs {
+			content := checksumContents[url]
+			// Use logical name if provided, otherwise use index-based fallback
+			var varName string
+			if checksumNames != nil && i < len(checksumNames) {
+				varName = checksumNames[i]
+			} else {
+				// Fallback to positional names if logical names not provided
+				varName = fmt.Sprintf("checksum_%d", i)
+			}
+			namedContents[varName] = content
+		}
+
+		checksumValue, checksumHashType, err := checksum.EvaluateCELExpression(namedContents, downloadURL, checksumExpr)
+		t.V(3).Infof("Evaluated checksum using expression: %s -> %s, %s", checksumExpr, checksumValue, checksumHashType)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -263,9 +287,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		}
 	}()
 
-	if t != nil {
-		t.Debugf("Downloading from %s to %s", url, dest)
-	}
+	// Download logging is handled by utils.LogDownloadStart if needed
 
 	// Create HTTP client with redirect logging
 	client := createHTTPClient(t)
@@ -277,8 +299,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 	defer resp.Body.Close()
 
-	if t != nil {
-		t.Debugf("Download: HTTP %d for %s (Content-Length: %d)", resp.StatusCode, url, resp.ContentLength)
+	if t != nil && resp.ContentLength > 0 {
+		t.SetDescription(fmt.Sprintf("Downloading (%s)", utils.FormatBytes(resp.ContentLength)))
 	}
 
 	// Check server response
@@ -303,8 +325,14 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	var writer io.Writer = out
 	var hasher hash.Hash
 
-	// Only create hasher if we have a checksum to verify
-	if config.expectedChecksum != "" || checksumType != "" {
+	// Only create hasher if we have a checksum to verify OR if we will fetch checksum from URLs
+	willVerifyChecksum := config.expectedChecksum != "" || checksumType != "" || config.checksumURL != "" || len(config.checksumURLs) > 0
+	if willVerifyChecksum {
+		// If we don't have a checksum type yet but we have checksum URLs, default to SHA256
+		if checksumType == "" && (config.checksumURL != "" || len(config.checksumURLs) > 0) {
+			checksumType = checksum.HashType("sha256")
+		}
+
 		var err error
 		hasher, err = checksum.CreateHasher(checksumType)
 		if err != nil {
@@ -350,7 +378,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			config.checksumSource = strings.Join(checksumSources, ",")
 		}
 	} else if len(config.checksumURLs) > 0 {
-		checksumValue, checksumType, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumExpr, url, t)
+		checksumValue, checksumType, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, url, t)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
@@ -365,12 +393,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 
 	// Verify checksum if provided and hasher was created
 	if config.expectedChecksum != "" && hasher != nil {
-		filename := filepath.Base(dest)
-
-		// Log verification start
-		if t != nil {
-			t.Debugf("Verifying %s integrity...", filename)
-		}
+		// Verify checksum
 
 		actualChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
 		if actualChecksum != config.expectedChecksum {
@@ -385,10 +408,10 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			}
 
 			if config.checksumSource != "" {
-				t.Infof("✅ Checksum verified: %s:%s (from %s)",
-					checksumType, checksumDisplay, config.checksumSource)
+				t.Infof("✓ Checksum verified: %s:%s (from %s)",
+					checksumType, checksumDisplay, utils.ShortenURL(config.checksumSource))
 			} else {
-				t.Infof("✅ Checksum verified: %s:%s",
+				t.Infof("✓ Checksum verified: %s:%s",
 					checksumType, checksumDisplay)
 			}
 		}
@@ -400,12 +423,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 
 	if t != nil {
-		filename := filepath.Base(dest)
-		name := fmt.Sprintf("%s (%s)",
-			filename,
-			formatBytes(written))
-
-		t.SetDescription(name)
+		t.SetDescription(fmt.Sprintf("Downloaded %s (%s)",
+			filepath.Base(dest), utils.FormatBytes(written)))
 		// Don't call t.Success() here - let the caller control when to mark success
 		// This allows post-processing operations to complete before marking task successful
 	}
@@ -420,20 +439,6 @@ func getChecksumFileNames(checksumContents map[string]string) []string {
 		names = append(names, name)
 	}
 	return names
-}
-
-// formatBytes formats bytes into human-readable format
-func formatBytes(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // formatDuration formats duration into human-readable format

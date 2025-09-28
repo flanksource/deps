@@ -12,9 +12,9 @@ import (
 
 // mockPackageManager implements PackageManager for testing
 type mockPackageManager struct {
-	name           string
-	versions       []types.Version
-	discoverError  error
+	name          string
+	versions      []types.Version
+	discoverError error
 }
 
 func (m *mockPackageManager) Name() string {
@@ -136,6 +136,143 @@ var _ = Describe("Version Resolver", func() {
 				result, err := resolver.ResolveConstraint(context.Background(), pkg, "~1.4.0", plat)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.4.0"))
+			})
+		})
+
+		Context("with partial version constraints", func() {
+			var extendedVersions []types.Version
+
+			BeforeEach(func() {
+				extendedVersions = []types.Version{
+					{Tag: "v3.1.2", Version: "3.1.2", Prerelease: false},
+					{Tag: "v3.1.1", Version: "3.1.1", Prerelease: false},
+					{Tag: "v3.1.0", Version: "3.1.0", Prerelease: false},
+					{Tag: "v3.0.5", Version: "3.0.5", Prerelease: false},
+					{Tag: "v3.0.0", Version: "3.0.0", Prerelease: false},
+					{Tag: "v2.1.0", Version: "2.1.0", Prerelease: false},
+					{Tag: "v2.0.0", Version: "2.0.0", Prerelease: false},
+					{Tag: "v1.5.3", Version: "1.5.3", Prerelease: false},
+					{Tag: "v1.5.0", Version: "1.5.0", Prerelease: false},
+					{Tag: "v1.4.0", Version: "1.4.0", Prerelease: false},
+					{Tag: "v1.3.0-beta", Version: "1.3.0-beta", Prerelease: true},
+				}
+			})
+
+			It("should resolve major version constraint (3)", func() {
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: extendedVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "3", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v3.1.2")) // Latest 3.x.x
+			})
+
+			It("should resolve major version constraint with v prefix (v2)", func() {
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: extendedVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "v2", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v2.1.0")) // Latest 2.x.x
+			})
+
+			It("should resolve major.minor version constraint (1.5)", func() {
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: extendedVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v1.5.3")) // Latest 1.5.x
+			})
+
+			It("should resolve major.minor version constraint with v prefix (v3.0)", func() {
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: extendedVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "v3.0", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v3.0.5")) // Latest 3.0.x
+			})
+
+			It("should skip prereleases in partial version resolution", func() {
+				versionsWithPrerelease := []types.Version{
+					{Tag: "v1.5.4-beta", Version: "1.5.4-beta", Prerelease: true},
+					{Tag: "v1.5.3", Version: "1.5.3", Prerelease: false},
+					{Tag: "v1.5.0", Version: "1.5.0", Prerelease: false},
+				}
+
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: versionsWithPrerelease,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v1.5.3")) // Skip prerelease, use latest stable
+			})
+
+			It("should use prerelease if no stable versions match", func() {
+				onlyPrereleaseVersions := []types.Version{
+					{Tag: "v2.0.0-beta", Version: "2.0.0-beta", Prerelease: true},
+					{Tag: "v1.5.0", Version: "1.5.0", Prerelease: false},
+				}
+
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: onlyPrereleaseVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "2", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v2.0.0-beta")) // Use prerelease when no stable available
+			})
+
+			It("should return error when no versions match partial constraint", func() {
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: extendedVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "5", plat)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("no versions found matching pattern 5"))
+				Expect(result).To(Equal(""))
 			})
 		})
 

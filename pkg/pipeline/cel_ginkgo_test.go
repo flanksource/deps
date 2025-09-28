@@ -10,7 +10,7 @@ import (
 
 var _ = Describe("CEL Pipeline Evaluator", func() {
 	var (
-		evaluator        *CELPipelineEvaluator
+		evaluator               *CELPipelineEvaluator
 		tmpDir, workDir, binDir string
 	)
 
@@ -25,12 +25,12 @@ var _ = Describe("CEL Pipeline Evaluator", func() {
 
 	Describe("Basic CEL Function Operations", func() {
 		testCases := []struct {
-			name        string
-			expressions []string
-			setupFiles  map[string]string  // filename -> content
-			expectError bool
+			name          string
+			expressions   []string
+			setupFiles    map[string]string // filename -> content
+			expectError   bool
 			errorContains string
-			verifyFunc  func()
+			verifyFunc    func()
 		}{
 			{
 				name:        "log function executes successfully",
@@ -144,11 +144,11 @@ var _ = Describe("CEL Pipeline Evaluator", func() {
 
 	Describe("File Operations", func() {
 		fileOpTestCases := []struct {
-			name            string
-			setupFiles      map[string]string
-			expression      string
-			expectedInBin   []string // Files that should exist in binDir after execution
-			expectedError   string
+			name          string
+			setupFiles    map[string]string
+			expression    string
+			expectedInBin []string // Files that should exist in binDir after execution
+			expectedError string
 		}{
 			{
 				name: "delete function removes matching files",

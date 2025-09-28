@@ -95,9 +95,13 @@ func (m *MavenManager) DiscoverVersions(ctx context.Context, pkg types.Package, 
 
 	// Debug: Maven found %d versions in metadata
 
-	// Apply limit if specified
-	if limit > 0 && len(versions) > limit {
-		versions = versions[:limit]
+	// Apply version expression filtering if specified
+	if pkg.VersionExpr != "" {
+		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
+		}
+		versions = filteredVersions
 	}
 
 	// Sort versions in descending order (newest first)
@@ -113,9 +117,13 @@ func (m *MavenManager) DiscoverVersions(ctx context.Context, pkg types.Package, 
 		return v1.GreaterThan(v2)
 	})
 
+	// Apply limit if specified
+	if limit > 0 && len(versions) > limit {
+		versions = versions[:limit]
+	}
+
 	return versions, nil
 }
-
 
 // Resolve gets the download URL and metadata for a specific version and platform
 func (m *MavenManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
@@ -383,4 +391,3 @@ func (m *MavenManager) enhanceErrorWithVersions(ctx context.Context, pkg types.P
 	packageName := fmt.Sprintf("%s:%s", coords.GroupID, coords.ArtifactID)
 	return manager.EnhanceErrorWithVersions(packageName, coords.Version, versions, originalErr)
 }
-

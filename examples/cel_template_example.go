@@ -40,10 +40,10 @@ func main() {
 	// Example 3: Complex CEL logic
 	fmt.Println("3. Complex CEL Logic:")
 	complexData := map[string]interface{}{
-		"version":     "v1.2.3-alpha",
-		"os":          "darwin",
-		"arch":        "arm64",
-		"build_type":  "release",
+		"version":    "v1.2.3-alpha",
+		"os":         "darwin",
+		"arch":       "arm64",
+		"build_type": "release",
 	}
 
 	complexCEL := `

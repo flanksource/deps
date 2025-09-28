@@ -38,14 +38,14 @@ func (ctx *PipelineContext) FailPipeline(message string) {
 // LogInfo logs an info message if task context is available
 func (ctx *PipelineContext) LogInfo(message string) {
 	if ctx.Task != nil {
-		ctx.Task.Infof("%s", message)
+		ctx.Task.Debugf("%s", message)
 	}
 }
 
 // LogDebug logs a debug message if task context is available
 func (ctx *PipelineContext) LogDebug(message string) {
 	if ctx.Task != nil {
-		ctx.Task.Debugf("%s", message)
+		ctx.Task.V(3).Infof("%s", message)
 	}
 }
 

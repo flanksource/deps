@@ -31,10 +31,12 @@ type Package struct {
 	ChecksumExpr   string                 `json:"checksum_expr,omitempty" yaml:"checksum_expr,omitempty"`     // CEL expression to extract checksum from file contents
 	VersionCommand string                 `json:"version_command,omitempty" yaml:"version_command,omitempty"` // Command to get version
 	VersionPattern string                 `json:"version_pattern,omitempty" yaml:"version_pattern,omitempty"` // Regex to extract version
+	VersionExpr    string                 `json:"version_expr,omitempty" yaml:"version_expr,omitempty"`       // CEL expression to filter and map versions
 	BinaryName     string                 `json:"binary_name,omitempty" yaml:"binary_name,omitempty"`         // Custom binary name
 	BinaryPath     string                 `json:"binary_path,omitempty" yaml:"binary_path,omitempty"`         // Path within archive (supports CEL expressions)
 	PreInstalled   []string               `json:"pre_installed,omitempty" yaml:"pre_installed,omitempty"`     // Pre-installed binary names
 	PostProcess    []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"`       // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"])
+	Mode           string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                       // Installation mode: "binary" (default) or "directory"
 	Extra          map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`                     // Manager-specific config
 }
 

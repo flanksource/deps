@@ -7,9 +7,10 @@ import (
 )
 
 func init() {
-	// Register GitHub manager with token from multiple possible environment variables
+	// Register GitHub managers with token from multiple possible environment variables
 	token, tokenSource := detectGitHubToken()
 	manager.Register(NewGitHubReleaseManager(token, tokenSource))
+	manager.Register(NewGitHubTagsManager(token, tokenSource))
 }
 
 // detectGitHubToken checks multiple environment variables for GitHub tokens

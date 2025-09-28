@@ -3,9 +3,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/flanksource/clicky/task"
 )
@@ -36,26 +34,20 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 		return nil
 	}
 
-	// Create a sandbox directory for operations
-	sandboxDir, err := os.MkdirTemp(e.tmpDir, "deps-pipeline-cel-")
-	if err != nil {
-		return fmt.Errorf("failed to create sandbox directory: %w", err)
+	// Check if workDir exists and is accessible
+	if _, err := os.Stat(e.workDir); os.IsNotExist(err) {
+		if e.task != nil {
+			e.task.Debugf("WorkDir %s does not exist, nothing to process", e.workDir)
+		}
+		return nil // Empty workDir is not an error for pipeline operations
 	}
 
-	// Clean up sandbox unless debug mode
-	if !e.debug {
-		defer os.RemoveAll(sandboxDir)
-	} else if e.task != nil {
-		e.task.Infof("Debug mode: keeping sandbox directory %s", sandboxDir)
+	if e.task != nil {
+		e.task.V(3).Infof("Pipeline: working directly in %s (no copy needed)", e.workDir)
 	}
 
-	// Copy extracted files from workDir to sandbox for pipeline operations
-	if err := e.copyStagingToSandbox(sandboxDir); err != nil {
-		return fmt.Errorf("failed to copy staging files to sandbox: %w", err)
-	}
-
-	// Create pipeline context
-	ctx := NewPipelineContext(e.task, sandboxDir, e.binDir, e.tmpDir, e.debug)
+	// Create pipeline context - work directly in workDir
+	ctx := NewPipelineContext(e.task, e.workDir, e.binDir, e.tmpDir, e.debug)
 
 	// Create CEL environment
 	celEnv, err := NewCELPipelineEnvironment(ctx)
@@ -90,210 +82,6 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 		return errors.New(ctx.GetFailureMessage())
 	}
 
-	// Move final results to binDir
-	return e.moveResults(sandboxDir)
-}
-
-// moveResults moves any files from sandbox to the final binDir
-func (e *CELPipelineEvaluator) moveResults(sandboxDir string) error {
-	entries, err := os.ReadDir(sandboxDir)
-	if err != nil {
-		return fmt.Errorf("failed to read sandbox directory: %w", err)
-	}
-
-	if len(entries) == 0 {
-		if e.task != nil {
-			e.task.Debugf("No files to move from sandbox")
-		}
-		return nil
-	}
-
-	if len(entries) == 1 && entries[0].IsDir() {
-		// Single directory: move it to replace binDir entirely
-		return e.moveSingleDirectoryToBinDir(sandboxDir, entries[0])
-	} else {
-		// Multiple items: move entire sandbox to become binDir
-		return e.moveSandboxToBinDir(sandboxDir)
-	}
-}
-
-// moveSingleDirectoryToBinDir moves a single directory to completely replace binDir
-func (e *CELPipelineEvaluator) moveSingleDirectoryToBinDir(sandboxDir string, entry os.DirEntry) error {
-	srcPath := filepath.Join(sandboxDir, entry.Name())
-
-	if e.task != nil {
-		e.task.V(3).Infof("Moving single directory %s to replace %s entirely", entry.Name(), e.binDir)
-	}
-
-	// Remove existing binDir if it exists
-	if _, err := os.Stat(e.binDir); err == nil {
-		if err := os.RemoveAll(e.binDir); err != nil {
-			return fmt.Errorf("failed to remove existing binDir %s: %w", e.binDir, err)
-		}
-	}
-
-	// Ensure parent directory exists
-	parentDir := filepath.Dir(e.binDir)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
-	}
-
-	// Move the directory to replace binDir entirely
-	if err := os.Rename(srcPath, e.binDir); err != nil {
-		return fmt.Errorf("failed to move directory %s to %s: %w", srcPath, e.binDir, err)
-	}
-
-	// Clean up the now-empty sandbox directory
-	if err := os.RemoveAll(sandboxDir); err != nil {
-		// Log but don't fail if we can't clean up sandbox
-		if e.task != nil {
-			e.task.V(2).Infof("Warning: failed to clean up sandbox directory %s: %v", sandboxDir, err)
-		}
-	}
-
-	if e.task != nil {
-		e.task.V(3).Infof("Successfully moved directory %s to replace %s", entry.Name(), e.binDir)
-	}
-
-	return nil
-}
-
-// moveSandboxToBinDir moves the entire sandbox directory to become binDir
-func (e *CELPipelineEvaluator) moveSandboxToBinDir(sandboxDir string) error {
-	if e.task != nil {
-		e.task.V(3).Infof("Moving entire sandbox directory to replace %s", e.binDir)
-	}
-
-	// Remove existing binDir if it exists
-	if _, err := os.Stat(e.binDir); err == nil {
-		if err := os.RemoveAll(e.binDir); err != nil {
-			return fmt.Errorf("failed to remove existing binDir %s: %w", e.binDir, err)
-		}
-	}
-
-	// Ensure parent directory exists
-	parentDir := filepath.Dir(e.binDir)
-	if err := os.MkdirAll(parentDir, 0755); err != nil {
-		return fmt.Errorf("failed to create parent directory: %w", err)
-	}
-
-	// Move the entire sandbox to become binDir
-	if err := os.Rename(sandboxDir, e.binDir); err != nil {
-		return fmt.Errorf("failed to move sandbox %s to %s: %w", sandboxDir, e.binDir, err)
-	}
-
-	if e.task != nil {
-		e.task.V(3).Infof("Successfully moved sandbox to replace %s", e.binDir)
-	}
-
-	return nil
-}
-
-// copyStagingToSandbox copies all files from workDir to sandbox for pipeline operations
-func (e *CELPipelineEvaluator) copyStagingToSandbox(sandboxDir string) error {
-	// Check if workDir exists and is accessible
-	workEntries, err := os.ReadDir(e.workDir)
-	if err != nil {
-		if e.task != nil {
-			e.task.Debugf("WorkDir %s is empty or inaccessible: %v", e.workDir, err)
-		}
-		return nil // Empty workDir is not an error for pipeline operations
-	}
-
-	if len(workEntries) == 0 {
-		if e.task != nil {
-			e.task.Debugf("WorkDir %s is empty, nothing to copy to sandbox", e.workDir)
-		}
-		return nil
-	}
-
-	if e.task != nil {
-		e.task.V(3).Infof("Pipeline: copying %d items from workDir %s to sandbox %s", len(workEntries), e.workDir, sandboxDir)
-	}
-
-	// Copy each entry from workDir to sandbox
-	for i, entry := range workEntries {
-		srcPath := filepath.Join(e.workDir, entry.Name())
-		dstPath := filepath.Join(sandboxDir, entry.Name())
-
-		if e.task != nil {
-			e.task.V(4).Infof("Pipeline: copying item %d/%d: %s", i+1, len(workEntries), entry.Name())
-		}
-
-		// Copy file or directory
-		if entry.IsDir() {
-			if err := e.copyDir(srcPath, dstPath); err != nil {
-				return fmt.Errorf("failed to copy directory %s: %w", entry.Name(), err)
-			}
-		} else {
-			if err := e.copyFile(srcPath, dstPath); err != nil {
-				return fmt.Errorf("failed to copy file %s: %w", entry.Name(), err)
-			}
-		}
-	}
-
-	if e.task != nil {
-		e.task.V(3).Infof("Pipeline: successfully copied %d items", len(workEntries))
-	}
-
-	return nil
-}
-
-// copyFile copies a single file from src to dst
-func (e *CELPipelineEvaluator) copyFile(srcPath, dstPath string) error {
-	srcFile, err := os.Open(srcPath)
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
-	}
-	defer srcFile.Close()
-
-	dstFile, err := os.Create(dstPath)
-	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer dstFile.Close()
-
-	// Copy file contents
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		return fmt.Errorf("failed to copy file contents: %w", err)
-	}
-
-	// Copy file permissions
-	if srcInfo, err := srcFile.Stat(); err == nil {
-		os.Chmod(dstPath, srcInfo.Mode())
-	}
-
-	return nil
-}
-
-// copyDir recursively copies a directory from src to dst
-func (e *CELPipelineEvaluator) copyDir(srcPath, dstPath string) error {
-	// Create destination directory
-	if err := os.MkdirAll(dstPath, 0755); err != nil {
-		return fmt.Errorf("failed to create destination directory: %w", err)
-	}
-
-	// Read source directory entries
-	entries, err := os.ReadDir(srcPath)
-	if err != nil {
-		return fmt.Errorf("failed to read source directory: %w", err)
-	}
-
-	// Copy each entry recursively
-	for _, entry := range entries {
-		srcEntryPath := filepath.Join(srcPath, entry.Name())
-		dstEntryPath := filepath.Join(dstPath, entry.Name())
-
-		if entry.IsDir() {
-			if err := e.copyDir(srcEntryPath, dstEntryPath); err != nil {
-				return err
-			}
-		} else {
-			if err := e.copyFile(srcEntryPath, dstEntryPath); err != nil {
-				return err
-			}
-		}
-	}
-
+	// No move needed - installer handles all file placement
 	return nil
 }
