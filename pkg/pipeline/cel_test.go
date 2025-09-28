@@ -406,3 +406,198 @@ func TestListDirectoryItems(t *testing.T) {
 		assert.Empty(t, items)
 	})
 }
+
+func TestMoveResultsOptimization(t *testing.T) {
+	t.Run("single directory - should move as whole unit", func(t *testing.T) {
+		// Setup directories
+		tmpDir := t.TempDir()
+		sandboxDir := filepath.Join(tmpDir, "sandbox")
+		binDir := filepath.Join(tmpDir, "bin")
+
+		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+
+		// Create a single directory with multiple files in sandbox
+		testDir := filepath.Join(sandboxDir, "test-app")
+		require.NoError(t, os.MkdirAll(testDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "file1.txt"), []byte("content1"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "file2.txt"), []byte("content2"), 0644))
+
+		// Create subdirectory with files
+		subDir := filepath.Join(testDir, "subdir")
+		require.NoError(t, os.MkdirAll(subDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(subDir, "nested.txt"), []byte("nested"), 0644))
+
+		// Create evaluator
+		evaluator := &CELPipelineEvaluator{
+			binDir: binDir,
+			task:   nil, // nil is fine for testing
+		}
+
+		// Move results
+		err := evaluator.moveResults(sandboxDir)
+		require.NoError(t, err)
+
+		// Verify the directory was moved as a whole
+		movedDir := filepath.Join(binDir, "test-app")
+		require.DirExists(t, movedDir)
+
+		// Verify all files and subdirectories are intact
+		assert.FileExists(t, filepath.Join(movedDir, "file1.txt"))
+		assert.FileExists(t, filepath.Join(movedDir, "file2.txt"))
+		assert.FileExists(t, filepath.Join(movedDir, "subdir", "nested.txt"))
+
+		// Verify content is preserved
+		content1, err := os.ReadFile(filepath.Join(movedDir, "file1.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "content1", string(content1))
+
+		content2, err := os.ReadFile(filepath.Join(movedDir, "subdir", "nested.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "nested", string(content2))
+
+		// Verify sandbox is empty after move
+		entries, err := os.ReadDir(sandboxDir)
+		require.NoError(t, err)
+		assert.Empty(t, entries)
+	})
+
+	t.Run("multiple items - should move individually", func(t *testing.T) {
+		// Setup directories
+		tmpDir := t.TempDir()
+		sandboxDir := filepath.Join(tmpDir, "sandbox")
+		binDir := filepath.Join(tmpDir, "bin")
+
+		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+
+		// Create multiple items in sandbox
+		require.NoError(t, os.WriteFile(filepath.Join(sandboxDir, "file1.txt"), []byte("content1"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(sandboxDir, "file2.txt"), []byte("content2"), 0644))
+
+		testDir := filepath.Join(sandboxDir, "test-dir")
+		require.NoError(t, os.MkdirAll(testDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "nested.txt"), []byte("nested"), 0644))
+
+		// Create evaluator
+		evaluator := &CELPipelineEvaluator{
+			binDir: binDir,
+			task:   nil,
+		}
+
+		// Move results
+		err := evaluator.moveResults(sandboxDir)
+		require.NoError(t, err)
+
+		// Verify all items were moved to bin directory
+		assert.FileExists(t, filepath.Join(binDir, "file1.txt"))
+		assert.FileExists(t, filepath.Join(binDir, "file2.txt"))
+		assert.DirExists(t, filepath.Join(binDir, "test-dir"))
+		assert.FileExists(t, filepath.Join(binDir, "test-dir", "nested.txt"))
+
+		// Verify content is preserved
+		content, err := os.ReadFile(filepath.Join(binDir, "file1.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "content1", string(content))
+
+		// Verify sandbox is empty after move
+		entries, err := os.ReadDir(sandboxDir)
+		require.NoError(t, err)
+		assert.Empty(t, entries)
+	})
+
+	t.Run("empty sandbox - should handle gracefully", func(t *testing.T) {
+		// Setup directories
+		tmpDir := t.TempDir()
+		sandboxDir := filepath.Join(tmpDir, "sandbox")
+		binDir := filepath.Join(tmpDir, "bin")
+
+		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+
+		// Create evaluator
+		evaluator := &CELPipelineEvaluator{
+			binDir: binDir,
+			task:   nil,
+		}
+
+		// Move results from empty sandbox
+		err := evaluator.moveResults(sandboxDir)
+		require.NoError(t, err)
+
+		// Verify no bin directory was created (since nothing to move)
+		_, err = os.Stat(binDir)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("single file - should move individually", func(t *testing.T) {
+		// Setup directories
+		tmpDir := t.TempDir()
+		sandboxDir := filepath.Join(tmpDir, "sandbox")
+		binDir := filepath.Join(tmpDir, "bin")
+
+		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+
+		// Create a single file in sandbox
+		require.NoError(t, os.WriteFile(filepath.Join(sandboxDir, "single-file.txt"), []byte("content"), 0644))
+
+		// Create evaluator
+		evaluator := &CELPipelineEvaluator{
+			binDir: binDir,
+			task:   nil,
+		}
+
+		// Move results
+		err := evaluator.moveResults(sandboxDir)
+		require.NoError(t, err)
+
+		// Verify the file was moved
+		assert.FileExists(t, filepath.Join(binDir, "single-file.txt"))
+
+		// Verify content is preserved
+		content, err := os.ReadFile(filepath.Join(binDir, "single-file.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "content", string(content))
+
+		// Verify sandbox is empty after move
+		entries, err := os.ReadDir(sandboxDir)
+		require.NoError(t, err)
+		assert.Empty(t, entries)
+	})
+
+	t.Run("existing destination - should replace", func(t *testing.T) {
+		// Setup directories
+		tmpDir := t.TempDir()
+		sandboxDir := filepath.Join(tmpDir, "sandbox")
+		binDir := filepath.Join(tmpDir, "bin")
+
+		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+		require.NoError(t, os.MkdirAll(binDir, 0755))
+
+		// Create existing file in bin directory
+		existingFile := filepath.Join(binDir, "test-app")
+		require.NoError(t, os.WriteFile(existingFile, []byte("old content"), 0644))
+
+		// Create new directory with same name in sandbox
+		testDir := filepath.Join(sandboxDir, "test-app")
+		require.NoError(t, os.MkdirAll(testDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(testDir, "new-file.txt"), []byte("new content"), 0644))
+
+		// Create evaluator
+		evaluator := &CELPipelineEvaluator{
+			binDir: binDir,
+			task:   nil,
+		}
+
+		// Move results
+		err := evaluator.moveResults(sandboxDir)
+		require.NoError(t, err)
+
+		// Verify the old file was replaced with new directory
+		movedDir := filepath.Join(binDir, "test-app")
+		require.DirExists(t, movedDir)
+		assert.FileExists(t, filepath.Join(movedDir, "new-file.txt"))
+
+		// Verify new content
+		content, err := os.ReadFile(filepath.Join(movedDir, "new-file.txt"))
+		require.NoError(t, err)
+		assert.Equal(t, "new content", string(content))
+	})
+}

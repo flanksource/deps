@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -65,12 +66,12 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 	// Execute each CEL expression in sequence
 	for i, expr := range pipeline.Expressions {
 		if e.task != nil {
-			e.task.Debugf("Pipeline: evaluating expression %d: %s", i+1, expr)
+			e.task.V(4).Infof("Pipeline: evaluating expression %d: %s", i+1, expr)
 		}
 
 		// Check if pipeline failed from previous expression
 		if ctx.CheckFailed() {
-			return fmt.Errorf(ctx.GetFailureMessage())
+			return errors.New(ctx.GetFailureMessage())
 		}
 
 		result, err := celEnv.Evaluate(expr)
@@ -80,13 +81,13 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 
 		// Log result if not nil
 		if result != nil && e.task != nil {
-			e.task.Debugf("Expression result: %v", result)
+			e.task.V(4).Infof("Expression result: %v", result)
 		}
 	}
 
 	// Check final pipeline state
 	if ctx.CheckFailed() {
-		return fmt.Errorf(ctx.GetFailureMessage())
+		return errors.New(ctx.GetFailureMessage())
 	}
 
 	// Move final results to binDir
@@ -105,6 +106,54 @@ func (e *CELPipelineEvaluator) moveResults(sandboxDir string) error {
 			e.task.Debugf("No files to move from sandbox")
 		}
 		return nil
+	}
+
+	if len(entries) == 1 && entries[0].IsDir() {
+		// Single directory: move it as a whole for efficiency
+		return e.moveSingleDirectory(sandboxDir, entries[0])
+	} else {
+		// Multiple items: move each entry individually
+		return e.moveAllEntries(sandboxDir, entries)
+	}
+}
+
+// moveSingleDirectory moves a single directory from sandbox to binDir as a whole unit
+func (e *CELPipelineEvaluator) moveSingleDirectory(sandboxDir string, entry os.DirEntry) error {
+	srcPath := filepath.Join(sandboxDir, entry.Name())
+	dstPath := filepath.Join(e.binDir, entry.Name())
+
+	if e.task != nil {
+		e.task.V(3).Infof("Moving single directory %s to %s as whole unit", entry.Name(), e.binDir)
+	}
+
+	// Remove existing destination if it exists
+	if _, err := os.Stat(dstPath); err == nil {
+		if err := os.RemoveAll(dstPath); err != nil {
+			return fmt.Errorf("failed to remove existing destination %s: %w", dstPath, err)
+		}
+	}
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(e.binDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	// Move the entire directory
+	if err := os.Rename(srcPath, dstPath); err != nil {
+		return fmt.Errorf("failed to move directory %s to %s: %w", srcPath, dstPath, err)
+	}
+
+	if e.task != nil {
+		e.task.V(3).Infof("Successfully moved directory %s to %s", entry.Name(), e.binDir)
+	}
+
+	return nil
+}
+
+// moveAllEntries moves all entries from sandbox to binDir individually
+func (e *CELPipelineEvaluator) moveAllEntries(sandboxDir string, entries []os.DirEntry) error {
+	if e.task != nil {
+		e.task.V(3).Infof("Moving all entries (%d items) from sandbox to %s", len(entries), e.binDir)
 	}
 
 	// Ensure bin directory exists
@@ -131,9 +180,9 @@ func (e *CELPipelineEvaluator) moveResults(sandboxDir string) error {
 
 		if e.task != nil {
 			if entry.IsDir() {
-				e.task.Infof("Moved directory %s to %s", entry.Name(), e.binDir)
+				e.task.V(3).Infof("Moved directory %s to %s", entry.Name(), e.binDir)
 			} else {
-				e.task.Infof("Moved file %s to %s", entry.Name(), e.binDir)
+				e.task.V(3).Infof("Moved file %s to %s", entry.Name(), e.binDir)
 			}
 		}
 	}
@@ -160,7 +209,7 @@ func (e *CELPipelineEvaluator) copyStagingToSandbox(sandboxDir string) error {
 	}
 
 	if e.task != nil {
-		e.task.Debugf("Pipeline: copying %d items from workDir %s to sandbox %s", len(workEntries), e.workDir, sandboxDir)
+		e.task.V(3).Infof("Pipeline: copying %d items from workDir %s to sandbox %s", len(workEntries), e.workDir, sandboxDir)
 	}
 
 	// Copy each entry from workDir to sandbox
@@ -169,7 +218,7 @@ func (e *CELPipelineEvaluator) copyStagingToSandbox(sandboxDir string) error {
 		dstPath := filepath.Join(sandboxDir, entry.Name())
 
 		if e.task != nil {
-			e.task.Debugf("Pipeline: copying item %d/%d: %s", i+1, len(workEntries), entry.Name())
+			e.task.V(4).Infof("Pipeline: copying item %d/%d: %s", i+1, len(workEntries), entry.Name())
 		}
 
 		// Copy file or directory
@@ -185,7 +234,7 @@ func (e *CELPipelineEvaluator) copyStagingToSandbox(sandboxDir string) error {
 	}
 
 	if e.task != nil {
-		e.task.Debugf("Pipeline: successfully copied %d items to sandbox", len(workEntries))
+		e.task.V(3).Infof("Pipeline: successfully copied %d items", len(workEntries))
 	}
 
 	return nil
