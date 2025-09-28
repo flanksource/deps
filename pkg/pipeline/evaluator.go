@@ -109,82 +109,81 @@ func (e *CELPipelineEvaluator) moveResults(sandboxDir string) error {
 	}
 
 	if len(entries) == 1 && entries[0].IsDir() {
-		// Single directory: move it as a whole for efficiency
-		return e.moveSingleDirectory(sandboxDir, entries[0])
+		// Single directory: move it to replace binDir entirely
+		return e.moveSingleDirectoryToBinDir(sandboxDir, entries[0])
 	} else {
-		// Multiple items: move each entry individually
-		return e.moveAllEntries(sandboxDir, entries)
+		// Multiple items: move entire sandbox to become binDir
+		return e.moveSandboxToBinDir(sandboxDir)
 	}
 }
 
-// moveSingleDirectory moves a single directory from sandbox to binDir as a whole unit
-func (e *CELPipelineEvaluator) moveSingleDirectory(sandboxDir string, entry os.DirEntry) error {
+// moveSingleDirectoryToBinDir moves a single directory to completely replace binDir
+func (e *CELPipelineEvaluator) moveSingleDirectoryToBinDir(sandboxDir string, entry os.DirEntry) error {
 	srcPath := filepath.Join(sandboxDir, entry.Name())
-	dstPath := filepath.Join(e.binDir, entry.Name())
 
 	if e.task != nil {
-		e.task.V(3).Infof("Moving single directory %s to %s as whole unit", entry.Name(), e.binDir)
+		e.task.V(3).Infof("Moving single directory %s to replace %s entirely", entry.Name(), e.binDir)
 	}
 
-	// Remove existing destination if it exists
-	if _, err := os.Stat(dstPath); err == nil {
-		if err := os.RemoveAll(dstPath); err != nil {
-			return fmt.Errorf("failed to remove existing destination %s: %w", dstPath, err)
+	// Remove existing binDir if it exists
+	if _, err := os.Stat(e.binDir); err == nil {
+		if err := os.RemoveAll(e.binDir); err != nil {
+			return fmt.Errorf("failed to remove existing binDir %s: %w", e.binDir, err)
 		}
 	}
 
 	// Ensure parent directory exists
-	if err := os.MkdirAll(e.binDir, 0755); err != nil {
-		return fmt.Errorf("failed to create bin directory: %w", err)
+	parentDir := filepath.Dir(e.binDir)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	// Move the entire directory
-	if err := os.Rename(srcPath, dstPath); err != nil {
-		return fmt.Errorf("failed to move directory %s to %s: %w", srcPath, dstPath, err)
+	// Move the directory to replace binDir entirely
+	if err := os.Rename(srcPath, e.binDir); err != nil {
+		return fmt.Errorf("failed to move directory %s to %s: %w", srcPath, e.binDir, err)
+	}
+
+	// Clean up the now-empty sandbox directory
+	if err := os.RemoveAll(sandboxDir); err != nil {
+		// Log but don't fail if we can't clean up sandbox
+		if e.task != nil {
+			e.task.V(2).Infof("Warning: failed to clean up sandbox directory %s: %v", sandboxDir, err)
+		}
 	}
 
 	if e.task != nil {
-		e.task.V(3).Infof("Successfully moved directory %s to %s", entry.Name(), e.binDir)
+		e.task.V(3).Infof("Successfully moved directory %s to replace %s", entry.Name(), e.binDir)
 	}
 
 	return nil
 }
 
-// moveAllEntries moves all entries from sandbox to binDir individually
-func (e *CELPipelineEvaluator) moveAllEntries(sandboxDir string, entries []os.DirEntry) error {
+// moveSandboxToBinDir moves the entire sandbox directory to become binDir
+func (e *CELPipelineEvaluator) moveSandboxToBinDir(sandboxDir string) error {
 	if e.task != nil {
-		e.task.V(3).Infof("Moving all entries (%d items) from sandbox to %s", len(entries), e.binDir)
+		e.task.V(3).Infof("Moving entire sandbox directory to replace %s", e.binDir)
 	}
 
-	// Ensure bin directory exists
-	if err := os.MkdirAll(e.binDir, 0755); err != nil {
-		return fmt.Errorf("failed to create bin directory: %w", err)
+	// Remove existing binDir if it exists
+	if _, err := os.Stat(e.binDir); err == nil {
+		if err := os.RemoveAll(e.binDir); err != nil {
+			return fmt.Errorf("failed to remove existing binDir %s: %w", e.binDir, err)
+		}
 	}
 
-	// Move each entry to binDir
-	for _, entry := range entries {
-		srcPath := filepath.Join(sandboxDir, entry.Name())
-		dstPath := filepath.Join(e.binDir, entry.Name())
+	// Ensure parent directory exists
+	parentDir := filepath.Dir(e.binDir)
+	if err := os.MkdirAll(parentDir, 0755); err != nil {
+		return fmt.Errorf("failed to create parent directory: %w", err)
+	}
 
-		// Remove existing destination if it exists
-		if _, err := os.Stat(dstPath); err == nil {
-			if err := os.RemoveAll(dstPath); err != nil {
-				return fmt.Errorf("failed to remove existing destination %s: %w", dstPath, err)
-			}
-		}
+	// Move the entire sandbox to become binDir
+	if err := os.Rename(sandboxDir, e.binDir); err != nil {
+		return fmt.Errorf("failed to move sandbox %s to %s: %w", sandboxDir, e.binDir, err)
+	}
 
-		// Move the file/directory
-		if err := os.Rename(srcPath, dstPath); err != nil {
-			return fmt.Errorf("failed to move %s to %s: %w", srcPath, dstPath, err)
-		}
-
-		if e.task != nil {
-			if entry.IsDir() {
-				e.task.V(3).Infof("Moved directory %s to %s", entry.Name(), e.binDir)
-			} else {
-				e.task.V(3).Infof("Moved file %s to %s", entry.Name(), e.binDir)
-			}
-		}
+	if e.task != nil {
+		e.task.V(3).Infof("Successfully moved sandbox to replace %s", e.binDir)
 	}
 
 	return nil

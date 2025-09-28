@@ -408,11 +408,11 @@ func TestListDirectoryItems(t *testing.T) {
 }
 
 func TestMoveResultsOptimization(t *testing.T) {
-	t.Run("single directory - should move as whole unit", func(t *testing.T) {
+	t.Run("single directory - should replace binDir entirely", func(t *testing.T) {
 		// Setup directories
 		tmpDir := t.TempDir()
 		sandboxDir := filepath.Join(tmpDir, "sandbox")
-		binDir := filepath.Join(tmpDir, "bin")
+		binDir := filepath.Join(tmpDir, "bin", "package-name")
 
 		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
 
@@ -437,35 +437,31 @@ func TestMoveResultsOptimization(t *testing.T) {
 		err := evaluator.moveResults(sandboxDir)
 		require.NoError(t, err)
 
-		// Verify the directory was moved as a whole
-		movedDir := filepath.Join(binDir, "test-app")
-		require.DirExists(t, movedDir)
-
-		// Verify all files and subdirectories are intact
-		assert.FileExists(t, filepath.Join(movedDir, "file1.txt"))
-		assert.FileExists(t, filepath.Join(movedDir, "file2.txt"))
-		assert.FileExists(t, filepath.Join(movedDir, "subdir", "nested.txt"))
+		// Verify the directory contents are now directly at binDir (not nested)
+		require.DirExists(t, binDir)
+		assert.FileExists(t, filepath.Join(binDir, "file1.txt"))
+		assert.FileExists(t, filepath.Join(binDir, "file2.txt"))
+		assert.FileExists(t, filepath.Join(binDir, "subdir", "nested.txt"))
 
 		// Verify content is preserved
-		content1, err := os.ReadFile(filepath.Join(movedDir, "file1.txt"))
+		content1, err := os.ReadFile(filepath.Join(binDir, "file1.txt"))
 		require.NoError(t, err)
 		assert.Equal(t, "content1", string(content1))
 
-		content2, err := os.ReadFile(filepath.Join(movedDir, "subdir", "nested.txt"))
+		content2, err := os.ReadFile(filepath.Join(binDir, "subdir", "nested.txt"))
 		require.NoError(t, err)
 		assert.Equal(t, "nested", string(content2))
 
-		// Verify sandbox is empty after move
-		entries, err := os.ReadDir(sandboxDir)
-		require.NoError(t, err)
-		assert.Empty(t, entries)
+		// Verify sandbox no longer exists after move
+		_, err = os.Stat(sandboxDir)
+		assert.True(t, os.IsNotExist(err))
 	})
 
-	t.Run("multiple items - should move individually", func(t *testing.T) {
+	t.Run("multiple items - should move sandbox to become binDir", func(t *testing.T) {
 		// Setup directories
 		tmpDir := t.TempDir()
 		sandboxDir := filepath.Join(tmpDir, "sandbox")
-		binDir := filepath.Join(tmpDir, "bin")
+		binDir := filepath.Join(tmpDir, "bin", "package-name")
 
 		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
 
@@ -487,7 +483,7 @@ func TestMoveResultsOptimization(t *testing.T) {
 		err := evaluator.moveResults(sandboxDir)
 		require.NoError(t, err)
 
-		// Verify all items were moved to bin directory
+		// Verify all items are now directly at binDir (sandbox became binDir)
 		assert.FileExists(t, filepath.Join(binDir, "file1.txt"))
 		assert.FileExists(t, filepath.Join(binDir, "file2.txt"))
 		assert.DirExists(t, filepath.Join(binDir, "test-dir"))
@@ -498,10 +494,9 @@ func TestMoveResultsOptimization(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "content1", string(content))
 
-		// Verify sandbox is empty after move
-		entries, err := os.ReadDir(sandboxDir)
-		require.NoError(t, err)
-		assert.Empty(t, entries)
+		// Verify sandbox no longer exists after move
+		_, err = os.Stat(sandboxDir)
+		assert.True(t, os.IsNotExist(err))
 	})
 
 	t.Run("empty sandbox - should handle gracefully", func(t *testing.T) {
@@ -527,11 +522,11 @@ func TestMoveResultsOptimization(t *testing.T) {
 		assert.True(t, os.IsNotExist(err))
 	})
 
-	t.Run("single file - should move individually", func(t *testing.T) {
+	t.Run("single file - should move sandbox to become binDir", func(t *testing.T) {
 		// Setup directories
 		tmpDir := t.TempDir()
 		sandboxDir := filepath.Join(tmpDir, "sandbox")
-		binDir := filepath.Join(tmpDir, "bin")
+		binDir := filepath.Join(tmpDir, "bin", "package-name")
 
 		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
 
@@ -548,7 +543,7 @@ func TestMoveResultsOptimization(t *testing.T) {
 		err := evaluator.moveResults(sandboxDir)
 		require.NoError(t, err)
 
-		// Verify the file was moved
+		// Verify the file is now directly at binDir (sandbox became binDir)
 		assert.FileExists(t, filepath.Join(binDir, "single-file.txt"))
 
 		// Verify content is preserved
@@ -556,26 +551,24 @@ func TestMoveResultsOptimization(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "content", string(content))
 
-		// Verify sandbox is empty after move
-		entries, err := os.ReadDir(sandboxDir)
-		require.NoError(t, err)
-		assert.Empty(t, entries)
+		// Verify sandbox no longer exists after move
+		_, err = os.Stat(sandboxDir)
+		assert.True(t, os.IsNotExist(err))
 	})
 
-	t.Run("existing destination - should replace", func(t *testing.T) {
+	t.Run("existing destination - should replace entirely", func(t *testing.T) {
 		// Setup directories
 		tmpDir := t.TempDir()
 		sandboxDir := filepath.Join(tmpDir, "sandbox")
-		binDir := filepath.Join(tmpDir, "bin")
+		binDir := filepath.Join(tmpDir, "bin", "package-name")
 
 		require.NoError(t, os.MkdirAll(sandboxDir, 0755))
+
+		// Create existing binDir with old content
 		require.NoError(t, os.MkdirAll(binDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(binDir, "old-file.txt"), []byte("old content"), 0644))
 
-		// Create existing file in bin directory
-		existingFile := filepath.Join(binDir, "test-app")
-		require.NoError(t, os.WriteFile(existingFile, []byte("old content"), 0644))
-
-		// Create new directory with same name in sandbox
+		// Create new directory with new content in sandbox
 		testDir := filepath.Join(sandboxDir, "test-app")
 		require.NoError(t, os.MkdirAll(testDir, 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(testDir, "new-file.txt"), []byte("new content"), 0644))
@@ -590,14 +583,20 @@ func TestMoveResultsOptimization(t *testing.T) {
 		err := evaluator.moveResults(sandboxDir)
 		require.NoError(t, err)
 
-		// Verify the old file was replaced with new directory
-		movedDir := filepath.Join(binDir, "test-app")
-		require.DirExists(t, movedDir)
-		assert.FileExists(t, filepath.Join(movedDir, "new-file.txt"))
+		// Verify the old binDir was completely replaced with test-app contents
+		require.DirExists(t, binDir)
+		assert.FileExists(t, filepath.Join(binDir, "new-file.txt"))
+
+		// Verify old content is gone
+		assert.NoFileExists(t, filepath.Join(binDir, "old-file.txt"))
 
 		// Verify new content
-		content, err := os.ReadFile(filepath.Join(movedDir, "new-file.txt"))
+		content, err := os.ReadFile(filepath.Join(binDir, "new-file.txt"))
 		require.NoError(t, err)
 		assert.Equal(t, "new content", string(content))
+
+		// Verify sandbox no longer exists after move
+		_, err = os.Stat(sandboxDir)
+		assert.True(t, os.IsNotExist(err))
 	})
 }
