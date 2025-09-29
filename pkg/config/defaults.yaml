@@ -342,6 +342,27 @@ registry:
         version_command: --version
         version_pattern: node_exporter.*version\s+(\d+\.\d+\.\d+)
 
+    # Apache Archives packages
+    maven-apache:
+        name: maven
+        manager: apache
+        asset_patterns:
+            "*": "apache-maven-{{.version}}-bin.tar.gz"
+        checksum_file: "apache-maven-{{.version}}-bin.tar.gz.sha256"
+        version_command: "--version"
+        version_pattern: "Apache Maven (\\d+\\.\\d+\\.\\d+)"
+        binary_path: "apache-maven-{{.version}}/bin/mvn"
+
+    ant:
+        name: ant
+        manager: apache
+        asset_patterns:
+            "*": "apache-ant-{{.version}}-bin.tar.gz"
+        checksum_file: "apache-ant-{{.version}}-bin.tar.gz.sha512"
+        version_command: "-version"
+        version_pattern: "Apache Ant\\(TM\\) version (\\d+\\.\\d+\\.\\d+)"
+        binary_path: "apache-ant-{{.version}}/bin/ant"
+
     prometheus:
         name: prometheus
         repo: prometheus/prometheus
