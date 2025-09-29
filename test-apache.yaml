@@ -1,0 +1,13 @@
+dependencies:
+    maven-apache: "3.9.0"
+
+registry:
+    maven-apache:
+        name: maven
+        manager: apache
+        url_template: "https://archive.apache.org/dist/maven/maven-3/{{.version}}/binaries/{{.asset}}"
+        asset_patterns:
+            "*": "apache-maven-{{.version}}-bin.tar.gz"
+        checksum_file: "apache-maven-{{.version}}-bin.tar.gz.sha256"
+        version_command: "--version"
+        version_pattern: "Apache Maven (\\d+\\.\\d+\\.\\d+)"

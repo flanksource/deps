@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
@@ -138,7 +139,7 @@ const graphQLReleasesQuery = `query allReleases($fullPath: ID!, $first: Int, $la
 // NewGitLabReleaseManager creates a new GitLab release manager
 func NewGitLabReleaseManager(token, tokenSource string) *GitLabReleaseManager {
 	return &GitLabReleaseManager{
-		client:      &http.Client{},
+		client:      depshttp.GetHttpClient(),
 		token:       token,
 		tokenSource: tokenSource,
 	}

@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/Masterminds/semver/v3"
+	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
@@ -50,9 +50,7 @@ type MavenCoordinates struct {
 // NewMavenManager creates a new Maven manager
 func NewMavenManager() *MavenManager {
 	return &MavenManager{
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client: depshttp.GetHttpClient(),
 	}
 }
 

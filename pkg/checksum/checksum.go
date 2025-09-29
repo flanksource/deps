@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 
+	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/gomplate/v3"
 	"gopkg.in/yaml.v3"
@@ -211,12 +212,13 @@ func (d *Discovery) FindChecksums(ctx context.Context, resolution *types.Resolut
 
 // CalculateFileChecksum downloads a file and calculates its SHA256 checksum
 func CalculateFileChecksum(ctx context.Context, url string) (string, int64, error) {
+	client := depshttp.GetHttpClient()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to download file: %w", err)
 	}
@@ -264,7 +266,8 @@ func (g *GoreleaserStrategy) FindChecksums(ctx context.Context, resolution *type
 }
 
 func (g *GoreleaserStrategy) parseChecksumFile(ctx context.Context, url string) (map[string]string, error) {
-	resp, err := http.Get(url)
+	client := depshttp.GetHttpClient()
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
@@ -337,7 +340,8 @@ func (h *HashiCorpStrategy) FindChecksums(ctx context.Context, resolution *types
 }
 
 func (h *HashiCorpStrategy) parseChecksumFile(ctx context.Context, url string) (map[string]string, error) {
-	resp, err := http.Get(url)
+	client := depshttp.GetHttpClient()
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
@@ -385,7 +389,8 @@ func (i *IndividualFileStrategy) FindChecksums(ctx context.Context, resolution *
 	// Try filename.sha256
 	checksumURL := resolution.DownloadURL + ".sha256"
 
-	resp, err := http.Get(checksumURL)
+	client := depshttp.GetHttpClient()
+	resp, err := client.Get(checksumURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
@@ -695,6 +700,7 @@ func ParseChecksumFile(content, fileURL string) (value string, hashType HashType
 // DownloadChecksumFiles downloads multiple checksum files and returns their contents
 func DownloadChecksumFiles(ctx context.Context, checksumURLs []string) (map[string]string, error) {
 	contents := make(map[string]string)
+	client := depshttp.GetHttpClient()
 
 	for _, url := range checksumURLs {
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -702,7 +708,7 @@ func DownloadChecksumFiles(ctx context.Context, checksumURLs []string) (map[stri
 			return nil, fmt.Errorf("failed to create request for %s: %w", url, err)
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to download checksum file %s: %w", url, err)
 		}

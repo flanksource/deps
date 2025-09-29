@@ -356,12 +356,12 @@ registry:
     ant:
         name: ant
         manager: apache
+        mode: directory
         asset_patterns:
             "*": "apache-ant-{{.version}}-bin.tar.gz"
         checksum_file: "apache-ant-{{.version}}-bin.tar.gz.sha512"
-        version_command: "-version"
+        version_command: bin/ant -version
         version_pattern: "Apache Ant\\(TM\\) version (\\d+\\.\\d+\\.\\d+)"
-        binary_path: "apache-ant-{{.version}}/bin/ant"
 
     prometheus:
         name: prometheus

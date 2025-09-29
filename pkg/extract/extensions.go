@@ -43,7 +43,7 @@ func GetExtension(url string) string {
 // IsArchive returns true if the file appears to be an archive based on its extension
 func IsArchive(path string) bool {
 	lower := strings.ToLower(path)
-	extensions := []string{".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".zip", ".jar"}
+	extensions := []string{".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".zip", ".jar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".zip", ".jar", ".war"}
 	for _, ext := range extensions {
 		if strings.HasSuffix(lower, ext) {
 			return true
