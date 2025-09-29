@@ -57,7 +57,7 @@ var _ = Describe("Apache Manager", func() {
 		Context("with custom URL template", func() {
 			It("should use custom template", func() {
 				pkg := types.Package{
-					Name: "ant",
+					Name:        "ant",
 					URLTemplate: "https://archive.apache.org/dist/{{.name}}/{{.asset}}",
 					AssetPatterns: map[string]string{
 						"*": "apache-ant-{{.version}}-bin.tar.gz",
