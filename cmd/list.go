@@ -18,11 +18,6 @@ type DependencyInfo struct {
 	Source    string `json:"source" pretty:"label=Source"`
 }
 
-// DependencyList represents a list of dependencies for table display
-type DependencyList struct {
-	Dependencies []DependencyInfo `json:"dependencies" pretty:"table"`
-}
-
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available dependencies",
@@ -122,13 +117,8 @@ func runList(cmd *cobra.Command, args []string) error {
 		return dependencies[i].Name < dependencies[j].Name
 	})
 
-	// Create dependency list structure
-	dependencyList := DependencyList{
-		Dependencies: dependencies,
-	}
-
 	// Format and display using clicky
-	result, err := clicky.Format(dependencyList)
+	result, err := clicky.Format(dependencies)
 	if err != nil {
 		return err
 	}
