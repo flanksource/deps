@@ -3,7 +3,10 @@ package types
 import (
 	"time"
 
+	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/deps/pkg/platform"
+	"github.com/flanksource/deps/pkg/utils"
+	"github.com/flanksource/gomplate/v3"
 )
 
 // VersionCheckMode defines how version checking should be performed
@@ -38,6 +41,30 @@ type Package struct {
 	PostProcess    []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"`       // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"])
 	Mode           string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                       // Installation mode: "binary" (default) or "directory"
 	Extra          map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`                     // Manager-specific config
+}
+
+func (p Package) TemplateURL(platform platform.Platform, v string) (string, error) {
+	return p.Template(p.URLTemplate, platform, v)
+}
+
+func (p Package) Template(url string, platform platform.Platform, v string) (string, error) {
+	if url == "" {
+		return "", nil
+	}
+	data := map[string]any{
+		"tag":     utils.Normalize(v),
+		"name":    p.Name,
+		"version": v,
+		"os":      platform.OS,
+		"arch":    platform.Arch,
+	}
+
+	v, err := gomplate.RunTemplate(data, gomplate.Template{Template: url})
+	if err != nil {
+		logger.Warnf("Failed to template URL %s: %v", url, err)
+	}
+	logger.V(3).Infof("Templated URL: %s from %v", v, data)
+	return v, err
 }
 
 // Dependency represents a dependency specification with version constraints
