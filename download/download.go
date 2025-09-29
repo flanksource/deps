@@ -325,14 +325,11 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	var writer io.Writer = out
 	var hasher hash.Hash
 
-	// Only create hasher if we have a checksum to verify OR if we will fetch checksum from URLs
-	willVerifyChecksum := config.expectedChecksum != "" || checksumType != "" || config.checksumURL != "" || len(config.checksumURLs) > 0
-	if willVerifyChecksum {
-		// If we don't have a checksum type yet but we have checksum URLs, default to SHA256
-		if checksumType == "" && (config.checksumURL != "" || len(config.checksumURLs) > 0) {
-			checksumType = checksum.HashType("sha256")
-		}
+	// Only create hasher if we already know the checksum type
+	// If we need to fetch checksum from URL, we'll hash the file after download
+	needsDeferredHashing := (config.checksumURL != "" || len(config.checksumURLs) > 0) && checksumType == ""
 
+	if checksumType != "" && config.expectedChecksum != "" {
 		var err error
 		hasher, err = checksum.CreateHasher(checksumType)
 		if err != nil {
@@ -391,11 +388,39 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		}
 	}
 
-	// Verify checksum if provided and hasher was created
-	if config.expectedChecksum != "" && hasher != nil {
-		// Verify checksum
+	// Verify checksum
+	if config.expectedChecksum != "" {
+		var actualChecksum string
 
-		actualChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
+		// If we deferred hashing (because we needed to fetch checksum type from URL),
+		// compute the hash now with the correct algorithm
+		if needsDeferredHashing {
+			// Re-open the file and compute hash with correct type
+			f, err := os.Open(tempFile)
+			if err != nil {
+				return fmt.Errorf("failed to open file for hashing: %w", err)
+			}
+			defer f.Close()
+
+			hasher, err := checksum.CreateHasher(checksum.HashType(config.checksumType))
+			if err != nil {
+				return fmt.Errorf("failed to create hasher for type %s: %w", config.checksumType, err)
+			}
+
+			if _, err := io.Copy(hasher, f); err != nil {
+				return fmt.Errorf("failed to compute checksum: %w", err)
+			}
+
+			actualChecksum = fmt.Sprintf("%x", hasher.Sum(nil))
+		} else if hasher != nil {
+			// Use the hash that was computed during download
+			actualChecksum = fmt.Sprintf("%x", hasher.Sum(nil))
+		} else {
+			// No hasher available - shouldn't happen but handle gracefully
+			return fmt.Errorf("cannot verify checksum: no hash computed")
+		}
+
+		// Compare checksums
 		if actualChecksum != config.expectedChecksum {
 			return fmt.Errorf("checksum mismatch: expected %s, got %s", config.expectedChecksum, actualChecksum)
 		}
@@ -407,12 +432,17 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 				checksumDisplay = checksumDisplay[:8] + "..."
 			}
 
+			displayType := config.checksumType
+			if displayType == "" {
+				displayType = string(checksumType)
+			}
+
 			if config.checksumSource != "" {
 				t.Infof("✓ Checksum verified: %s:%s (from %s)",
-					checksumType, checksumDisplay, utils.ShortenURL(config.checksumSource))
+					displayType, checksumDisplay, utils.ShortenURL(config.checksumSource))
 			} else {
 				t.Infof("✓ Checksum verified: %s:%s",
-					checksumType, checksumDisplay)
+					displayType, checksumDisplay)
 			}
 		}
 	}
