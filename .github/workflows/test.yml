@@ -24,6 +24,9 @@ jobs:
         with:
           version: 3.x
 
+      - name: Install Ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
       - name: Download dependencies
         run: go mod download
 
