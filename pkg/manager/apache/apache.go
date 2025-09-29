@@ -147,6 +147,11 @@ func (m *ApacheManager) Resolve(ctx context.Context, pkg types.Package, version 
 		}
 	}
 
+	// Default Apache packages to directory mode if not explicitly set
+	if pkg.Mode == "" {
+		pkg.Mode = "directory"
+	}
+
 	resolution := &types.Resolution{
 		Package:     pkg,
 		Version:     validVersion,

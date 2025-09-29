@@ -511,12 +511,15 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 
 	var finalPath string
 
+	// Use resolution.Package since managers can modify the mode
+	resolvedPkg := resolution.Package
+
 	// Handle directory mode installation
-	if pkg.Mode == "directory" {
+	if resolvedPkg.Mode == "directory" {
 		t.SetDescription("Installing directory")
 
 		// Move entire directory to bin/{package-name}/
-		targetDir := filepath.Join(i.options.BinDir, pkg.Name)
+		targetDir := filepath.Join(i.options.BinDir, resolvedPkg.Name)
 		if err := i.moveExtractedDirectory(workDir, targetDir, t); err != nil {
 			return "", fmt.Errorf("failed to move directory: %w", err)
 		}
@@ -524,7 +527,7 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 		finalPath = targetDir
 
 		// Run post-process operations inside the moved directory (sandboxed)
-		if err := i.executePostProcessing(pkg, targetDir, targetDir, t); err != nil {
+		if err := i.executePostProcessing(resolvedPkg, targetDir, targetDir, t); err != nil {
 			return "", fmt.Errorf("failed to execute post-process pipeline: %w", err)
 		}
 
@@ -532,9 +535,9 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 		finalPath = filepath.Join(i.options.BinDir, name)
 
 		// Check if package has post-processing pipeline
-		if len(pkg.PostProcess) > 0 {
+		if len(resolvedPkg.PostProcess) > 0 {
 			// Execute the CEL pipeline on the extracted contents
-			if err := i.executePostProcessing(pkg, workDir, finalPath, t); err != nil {
+			if err := i.executePostProcessing(resolvedPkg, workDir, finalPath, t); err != nil {
 				return "", err
 			}
 
