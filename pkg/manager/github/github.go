@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
@@ -150,10 +151,10 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 
 	// First try to get asset pattern from AssetPatterns (with wildcard support)
 	if pkg.AssetPatterns != nil {
-		fmt.Printf("DEBUG: Looking for asset pattern for platform: %s\n", platformKey)
-		fmt.Printf("DEBUG: Available asset patterns: %+v\n", pkg.AssetPatterns)
+		logger.V(4).Infof("Looking for asset pattern for platform: %s", platformKey)
+		logger.V(4).Infof("Available asset patterns: %+v", pkg.AssetPatterns)
 		assetPattern = findAssetPatternForPlatform(pkg.AssetPatterns, platformKey)
-		fmt.Printf("DEBUG: Selected asset pattern: %s\n", assetPattern)
+		logger.V(4).Infof("Selected asset pattern: %s", assetPattern)
 	}
 
 	// If no asset pattern found, fall back to url_template or default pattern
@@ -175,14 +176,14 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		"os":      plat.OS,
 		"arch":    plat.Arch,
 	}
-	fmt.Printf("DEBUG: Template data: %+v\n", templateData)
-	fmt.Printf("DEBUG: Raw asset pattern: %s\n", assetPattern)
+	logger.V(4).Infof("Template data: %+v", templateData)
+	logger.V(4).Infof("Raw asset pattern: %s", assetPattern)
 
 	templatedPattern, err := m.templateString(assetPattern, templateData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
-	fmt.Printf("DEBUG: Templated asset pattern: %s\n", templatedPattern)
+	logger.V(4).Infof("Templated asset pattern: %s", templatedPattern)
 
 	// Debug: GitHub asset pattern templated: %s -> %s
 
@@ -217,25 +218,28 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		// Debug: GitHub templated URL: %s
 	} else {
 		// Find the matching asset in GitHub release
-		fmt.Printf("DEBUG: Searching for asset pattern '%s' in %d release assets\n", templatedPattern, len(release.Assets))
-		fmt.Printf("DEBUG: Available assets:\n")
-		for i, asset := range release.Assets {
-			if asset.Name != nil {
-				fmt.Printf("DEBUG:   [%d] %s\n", i, *asset.Name)
+		logger.V(4).Infof("Searching for asset pattern '%s' in %d release assets", templatedPattern, len(release.Assets))
+		if logger.IsLevelEnabled(4) {
+			assetNames := make([]string, 0, len(release.Assets))
+			for _, asset := range release.Assets {
+				if asset.Name != nil {
+					assetNames = append(assetNames, *asset.Name)
+				}
 			}
+			logger.V(4).Infof("Available assets: %v", assetNames)
 		}
 
 		var matchedAsset *github.ReleaseAsset
 		for _, asset := range release.Assets {
 			if asset.Name != nil && *asset.Name == templatedPattern {
-				fmt.Printf("DEBUG: Found matching asset: %s\n", *asset.Name)
+				logger.V(3).Infof("Found matching asset: %s", *asset.Name)
 				matchedAsset = asset
 				break
 			}
 		}
 
 		if matchedAsset == nil {
-			fmt.Printf("DEBUG: No matching asset found for pattern: %s\n", templatedPattern)
+			logger.V(3).Infof("No matching asset found for pattern: %s", templatedPattern)
 			// Extract available asset names for enhanced error
 			availableAssets := make([]string, 0, len(release.Assets))
 			for _, asset := range release.Assets {
@@ -426,7 +430,7 @@ func extractRateLimit(response *github.Response) *types.RateLimit {
 // Helper methods
 
 func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion string) (*github.RepositoryRelease, error) {
-	fmt.Printf("DEBUG: GitHub fetching releases for %s/%s, looking for version: %s\n", owner, repo, targetVersion)
+	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
 	releases, _, err := m.client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
 		PerPage: 100,
@@ -435,22 +439,25 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 		return nil, fmt.Errorf("failed to list releases: %w", err)
 	}
 
-	fmt.Printf("DEBUG: GitHub found %d releases, checking for version %s\n", len(releases), targetVersion)
-	for i, release := range releases {
-		if release.TagName != nil {
-			fmt.Printf("DEBUG:   [%d] Tag: %s\n", i, *release.TagName)
+	logger.V(4).Infof("GitHub found %d releases, checking for version %s", len(releases), targetVersion)
+	if logger.IsLevelEnabled(4) {
+		tagNames := make([]string, 0, min(6, len(releases)))
+		for i, release := range releases {
+			if release.TagName != nil {
+				tagNames = append(tagNames, *release.TagName)
+			}
+			if i >= 5 {
+				break
+			}
 		}
-		if i >= 5 { // Show first 5 for brevity
-			fmt.Printf("DEBUG:   ... and %d more releases\n", len(releases)-6)
-			break
-		}
+		logger.V(4).Infof("First releases: %v (and %d more)", tagNames, max(0, len(releases)-6))
 	}
 
 	// Try exact tag match first
-	fmt.Printf("DEBUG: Trying exact tag match for: %s or v%s\n", targetVersion, targetVersion)
+	logger.V(4).Infof("Trying exact tag match for: %s or v%s", targetVersion, targetVersion)
 	for _, release := range releases {
 		if release.TagName != nil && (*release.TagName == targetVersion || *release.TagName == "v"+targetVersion) {
-			fmt.Printf("DEBUG: Found exact tag match: %s\n", *release.TagName)
+			logger.V(3).Infof("Found exact tag match: %s", *release.TagName)
 			return release, nil
 		}
 	}
