@@ -162,6 +162,16 @@ registry:
             'md5:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
                 checksums_hashes_order.split('\n').indexOf('SHA-256') + 1
             ]
+    svu:
+        name: svu
+        repo: caarlos0/svu
+        asset_patterns:
+            darwin-amd64: svu_{{.version}}_darwin_all.tar.gz
+            darwin-arm64: svu_{{.version}}_darwin_all.tar.gz
+            linux-amd64: svu_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: svu_{{.version}}_linux_arm64.tar.gz
+        version_command: --version
+        version_pattern: svu\s+version\s+v?(\d+\.\d+\.\d+)
     canary-checker:
         name: canary-checker
 

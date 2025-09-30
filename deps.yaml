@@ -20,6 +20,7 @@ dependencies:
     postgres: 16.1.0
     postgrest: v13.0.5
     sops: v3.5.0
+    svu: v3.2.4
     terraform: v1.13.3
     trivy: 0.40.0
     wal-g: v3.0.5

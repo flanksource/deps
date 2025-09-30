@@ -22,7 +22,27 @@ dependencies:
             tag: v1.34.1
             checksum_file: |
                 os == "linux" ? "{{.asset}}.sha256" : "https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/master/envtest-releases.yaml"
-generated: 2025-09-29T17:15:33.123133+03:00
+    svu:
+        version: v3.2.4
+        version_command: --version
+        version_pattern: svu\s+version\s+v?(\d+\.\d+\.\d+)
+        platforms:
+            darwin-amd64:
+                url: https://github.com/caarlos0/svu/releases/download/v3.2.4/svu_3.2.4_darwin_all.tar.gz
+                checksum: sha256:e5664b4de41c6696358bd456f5283e86f0bd30e65ab65faad349293d804f088e
+                size: 6218859
+                archive: true
+                binary_path: svu
+            darwin-arm64:
+                url: https://github.com/caarlos0/svu/releases/download/v3.2.4/svu_3.2.4_darwin_all.tar.gz
+                checksum: sha256:e5664b4de41c6696358bd456f5283e86f0bd30e65ab65faad349293d804f088e
+                size: 6218859
+                archive: true
+                binary_path: svu
+        github:
+            repo: caarlos0/svu
+            tag: v3.2.4
+generated: 2025-09-30T12:21:37.314175+03:00
 current_platform:
     os: darwin
     arch: arm64
