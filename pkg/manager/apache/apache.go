@@ -19,6 +19,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
+	"github.com/samber/lo"
 	"golang.org/x/net/html"
 )
 
@@ -44,6 +45,8 @@ func (m *ApacheManager) Name() string {
 // DiscoverVersions returns available versions from Apache archives
 func (m *ApacheManager) DiscoverVersions(ctx context.Context, pkg types.Package, plat platform.Platform, limit int) ([]types.Version, error) {
 
+	logger.Tracef("Discovering versions for package %s on platform %s: %s", pkg.Name, plat.String(), pkg.URLTemplate)
+
 	url := pkg.URLTemplate
 	if url == "" {
 		url = m.defaultURLTemplate
@@ -56,7 +59,7 @@ func (m *ApacheManager) DiscoverVersions(ctx context.Context, pkg types.Package,
 	url, _ = filepath.Split(url) // Ignore the filename part
 
 	// Try to discover versions from the directory listing
-	versions, err := m.discoverVersionsFromListing(ctx, url)
+	versions, err := m.discoverVersionsFromListing(ctx, pkg, url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover versions for %s: %w", pkg.Name, err)
 	}
@@ -112,10 +115,12 @@ func (m *ApacheManager) Resolve(ctx context.Context, pkg types.Package, version 
 	if pkg.URLTemplate != "" {
 		urlTemplate = pkg.URLTemplate
 	}
+	// Normalize URL template to auto-append {{.asset}} if it ends with /
+	urlTemplate = manager.NormalizeURLTemplate(urlTemplate)
 	log.Debugf("Apache resolve: using URL template: %s", urlTemplate)
 
 	// Resolve asset name from patterns using the validated version
-	asset, err := m.resolveAsset(pkg, validVersion, plat)
+	asset, err := m.resolveAssetPattern(pkg, validVersion, plat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset: %w", err)
 	}
@@ -193,7 +198,7 @@ func (m *ApacheManager) GetChecksums(ctx context.Context, pkg types.Package, ver
 		return nil, fmt.Errorf("failed to fetch checksum: %w", err)
 	}
 
-	asset, _ := m.resolveAsset(pkg, version, plat)
+	asset, _ := m.resolveAssetPattern(pkg, version, plat)
 	return map[string]string{
 		asset: checksum,
 	}, nil
@@ -206,33 +211,12 @@ func (m *ApacheManager) Verify(ctx context.Context, binaryPath string, pkg types
 
 // Helper methods
 
-func (m *ApacheManager) resolveAsset(pkg types.Package, version string, plat platform.Platform) (string, error) {
-	log := logger.GetLogger()
-
-	if len(pkg.AssetPatterns) == 0 {
-		return "", fmt.Errorf("no asset patterns defined for package %s", pkg.Name)
-	}
-
-	// Find the best matching pattern
-	pattern := ""
-	platformKey := fmt.Sprintf("%s-%s", plat.OS, plat.Arch)
-	log.Debugf("Apache resolveAsset: looking for pattern for platform key: %s", platformKey)
-
-	// Try exact platform match first
-	if p, exists := pkg.AssetPatterns[platformKey]; exists {
-		pattern = p
-		log.Debugf("Apache resolveAsset: found exact platform match: %s", pattern)
-	} else if p, exists := pkg.AssetPatterns["*"]; exists {
-		// Fall back to wildcard pattern
-		pattern = p
-		log.Debugf("Apache resolveAsset: using wildcard pattern: %s", pattern)
-	} else {
-		availablePatterns := make([]string, 0, len(pkg.AssetPatterns))
-		for k := range pkg.AssetPatterns {
-			availablePatterns = append(availablePatterns, k)
-		}
-		log.Debugf("Apache resolveAsset: no pattern found for %s, available patterns: %v", platformKey, availablePatterns)
-		return "", fmt.Errorf("no asset pattern found for platform %s", platformKey)
+// resolveAssetPattern resolves the asset pattern for a package and platform, then templates it
+func (m *ApacheManager) resolveAssetPattern(pkg types.Package, version string, plat platform.Platform) (string, error) {
+	// Use common asset pattern resolution
+	pattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	if err != nil {
+		return "", err
 	}
 
 	// Template the pattern
@@ -275,7 +259,7 @@ func (m *ApacheManager) templateString(pattern string, data map[string]string) (
 	return buf.String(), nil
 }
 
-func (m *ApacheManager) discoverVersionsFromListing(ctx context.Context, baseURL string) ([]types.Version, error) {
+func (m *ApacheManager) discoverVersionsFromListing(ctx context.Context, pkg types.Package, baseURL string) ([]types.Version, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", baseURL, nil)
 	if err != nil {
 		return nil, err
@@ -296,13 +280,13 @@ func (m *ApacheManager) discoverVersionsFromListing(ctx context.Context, baseURL
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	versions := m.ParseVersionsFromHTML(string(body))
+	versions := m.ParseVersionsFromHTML(pkg, string(body))
 
 	return versions, nil
 }
 
 // ParseVersionsFromHTML extracts version information from Apache directory listing HTML
-func (m *ApacheManager) ParseVersionsFromHTML(htmlContent string) []types.Version {
+func (m *ApacheManager) ParseVersionsFromHTML(pkg types.Package, htmlContent string) []types.Version {
 	log := logger.GetLogger()
 	doc, err := html.Parse(strings.NewReader(htmlContent))
 	if err != nil {
@@ -329,27 +313,18 @@ func (m *ApacheManager) ParseVersionsFromHTML(htmlContent string) []types.Versio
 
 	var versions []types.Version
 	versionSet := make(map[string]bool)
+	versionStrings := m.extractVersionFromHref(hrefs...)
 
-	for _, href := range hrefs {
-		// Skip query parameters, parent directory, and non-relevant files
-		if strings.Contains(href, "?") || href == "/dist/ant/" || href == "../" {
-			continue
-		}
+	if len(versionStrings) == 0 {
+		hrefs = lo.Map(hrefs, func(href string, _ int) string {
+			return strings.TrimPrefix(href, pkg.Name+"-")
+		})
+		versionStrings = m.extractVersionFromHref(hrefs...)
+	}
 
-		// Skip checksum and signature files
-		if strings.HasSuffix(href, ".asc") || strings.HasSuffix(href, ".md5") ||
-			strings.HasSuffix(href, ".sha1") || strings.HasSuffix(href, ".sha256") ||
-			strings.HasSuffix(href, ".sha512") {
-			continue
-		}
+	// Try to extract version from the href
+	for _, ver := range versionStrings {
 
-		// Skip release notes and other metadata
-		if strings.HasPrefix(href, "RELEASE-NOTES") {
-			continue
-		}
-
-		// Try to extract version from the href
-		ver := m.extractVersionFromHref(href)
 		if ver != "" && !versionSet[ver] {
 			versionSet[ver] = true
 			versions = append(versions, types.Version{
@@ -370,36 +345,56 @@ func (m *ApacheManager) ParseVersionsFromHTML(htmlContent string) []types.Versio
 }
 
 // extractVersionFromHref extracts version from various Apache href patterns
-func (m *ApacheManager) extractVersionFromHref(href string) string {
-	// Pattern 1: Version directory (e.g., "3.9.0/" for maven, "v1.0.0/" variants)
-	if strings.HasSuffix(href, "/") {
-		dir := strings.TrimSuffix(href, "/")
-		// Remove 'v' prefix if present
-		dir = strings.TrimPrefix(dir, "v")
-		if isVersionLike(dir) {
-			return dir
+func (m *ApacheManager) extractVersionFromHref(hrefs ...string) []string {
+	versions := []string{}
+	for _, href := range hrefs {
+		logger.Tracef("Found href: %s", href)
+		// Skip query parameters, parent directory, and non-relevant files
+		if strings.Contains(href, "?") || href == "../" {
+			continue
+		}
+
+		// Skip checksum and signature files
+		if strings.HasSuffix(href, ".asc") || strings.HasSuffix(href, ".md5") ||
+			strings.HasSuffix(href, ".sha1") || strings.HasSuffix(href, ".sha256") ||
+			strings.HasSuffix(href, ".sha512") {
+			continue
+		}
+
+		// Skip release notes and other metadata
+		if strings.HasPrefix(href, "RELEASE-NOTES") {
+			continue
+		}
+
+		// Pattern 1: Version directory (e.g., "3.9.0/" for maven, "v1.0.0/" variants)
+		if strings.HasSuffix(href, "/") {
+			dir := strings.TrimSuffix(href, "/")
+			// Remove 'v' prefix if present
+			dir = strings.TrimPrefix(dir, "v")
+			if isVersionLike(dir) {
+				versions = append(versions, dir)
+			}
+		}
+
+		// Pattern 2: Filename with version (e.g., "apache-ant-1.10.15-bin.tar.gz")
+		// Extract version from filename patterns like: apache-{name}-{version}-{suffix}.{ext}
+		// Match version but exclude common suffixes like -bin, -src
+		versionPattern := regexp.MustCompile(`-([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?(?:-(?:alpha|beta|rc|M|milestone)[0-9]*)?)-(?:bin|src|all|distribution)\.(?:tar\.gz|tar\.bz2|zip|tgz)`)
+		if matches := versionPattern.FindStringSubmatch(href); len(matches) > 1 {
+			versions = append(versions, matches[1])
+		}
+
+		// Pattern 3: Try without the suffix requirement (for other formats)
+		versionPattern2 := regexp.MustCompile(`-([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?(?:-(?:alpha|beta|rc|M|milestone)[0-9]*)?)\.(?:tar\.gz|tar\.bz2|zip|tgz)`)
+		if matches := versionPattern2.FindStringSubmatch(href); len(matches) > 1 {
+			ver := matches[1]
+			// Only return if it doesn't end with -bin, -src, etc.
+			if !strings.HasSuffix(ver, "-bin") && !strings.HasSuffix(ver, "-src") {
+				versions = append(versions, ver)
+			}
 		}
 	}
-
-	// Pattern 2: Filename with version (e.g., "apache-ant-1.10.15-bin.tar.gz")
-	// Extract version from filename patterns like: apache-{name}-{version}-{suffix}.{ext}
-	// Match version but exclude common suffixes like -bin, -src
-	versionPattern := regexp.MustCompile(`-([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?(?:-(?:alpha|beta|rc|M|milestone)[0-9]*)?)-(?:bin|src|all|distribution)\.(?:tar\.gz|tar\.bz2|zip|tgz)`)
-	if matches := versionPattern.FindStringSubmatch(href); len(matches) > 1 {
-		return matches[1]
-	}
-
-	// Pattern 3: Try without the suffix requirement (for other formats)
-	versionPattern2 := regexp.MustCompile(`-([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?(?:-(?:alpha|beta|rc|M|milestone)[0-9]*)?)\.(?:tar\.gz|tar\.bz2|zip|tgz)`)
-	if matches := versionPattern2.FindStringSubmatch(href); len(matches) > 1 {
-		ver := matches[1]
-		// Only return if it doesn't end with -bin, -src, etc.
-		if !strings.HasSuffix(ver, "-bin") && !strings.HasSuffix(ver, "-src") {
-			return ver
-		}
-	}
-
-	return ""
+	return versions
 }
 
 // isVersionLike checks if a string looks like a version number

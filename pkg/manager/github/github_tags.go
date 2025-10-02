@@ -192,12 +192,15 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 	}
 
 	// Get the asset pattern for this platform or use fallback
-	platformKey := plat.String()
 	assetPattern := ""
 
-	// First try to get asset pattern from AssetPatterns (with wildcard support)
+	// Use common asset pattern resolution
 	if pkg.AssetPatterns != nil {
-		assetPattern = findAssetPatternForPlatform(pkg.AssetPatterns, platformKey)
+		var err error
+		assetPattern, err = manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+		if err != nil {
+			// Continue with empty assetPattern to fall back to default
+		}
 	}
 
 	// If no asset pattern found, use default pattern
@@ -217,8 +220,11 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
 
+	// Normalize URL template to auto-append {{.asset}} if it ends with /
+	urlTemplate := manager.NormalizeURLTemplate(pkg.URLTemplate)
+
 	// Template the URL using the URL template (mandatory for github_tags)
-	downloadURL, err := m.templateString(pkg.URLTemplate, map[string]string{
+	downloadURL, err := m.templateString(urlTemplate, map[string]string{
 		"name":    pkg.Name,
 		"version": depstemplate.NormalizeVersion(version),
 		"tag":     tag.Name,

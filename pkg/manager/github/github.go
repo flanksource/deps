@@ -3,7 +3,6 @@ package github
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -149,12 +148,18 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	platformKey := plat.String()
 	assetPattern := ""
 
-	// First try to get asset pattern from AssetPatterns (with wildcard support)
+	// Use common asset pattern resolution
 	if pkg.AssetPatterns != nil {
 		logger.V(4).Infof("Looking for asset pattern for platform: %s", platformKey)
 		logger.V(4).Infof("Available asset patterns: %+v", pkg.AssetPatterns)
-		assetPattern = findAssetPatternForPlatform(pkg.AssetPatterns, platformKey)
-		logger.V(4).Infof("Selected asset pattern: %s", assetPattern)
+		var err error
+		assetPattern, err = manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+		if err != nil {
+			logger.V(4).Infof("Failed to resolve asset pattern: %v", err)
+			// Continue with empty assetPattern to fall back to default
+		} else {
+			logger.V(4).Infof("Selected asset pattern: %s", assetPattern)
+		}
 	}
 
 	// If no asset pattern found, fall back to url_template or default pattern
@@ -201,8 +206,11 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	} else if pkg.URLTemplate != "" {
 		// Debug: GitHub using URL template: %s
 
+		// Normalize URL template to auto-append {{.asset}} if it ends with /
+		urlTemplate := manager.NormalizeURLTemplate(pkg.URLTemplate)
+
 		// Use the URL template instead of GitHub release assets
-		downloadURL, err = m.templateString(pkg.URLTemplate, map[string]string{
+		downloadURL, err = m.templateString(urlTemplate, map[string]string{
 			"name":    pkg.Name,
 			"version": depstemplate.NormalizeVersion(version), // normalized without "v" prefix
 			"tag":     *release.TagName,
@@ -638,35 +646,4 @@ func hasURLSchema(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
-// matchPlatformPattern checks if a platform matches a wildcard pattern
-// Supports comma-separated patterns like "darwin-*,windows-*"
-func matchPlatformPattern(pattern string, platform string) bool {
-	patterns := strings.Split(pattern, ",")
-	for _, p := range patterns {
-		p = strings.TrimSpace(p)
-		if matched, _ := filepath.Match(p, platform); matched {
-			return true
-		}
-	}
-	return false
-}
-
-// findAssetPatternForPlatform finds the best matching asset pattern for a platform
-// First tries exact match, then tries wildcard patterns
-func findAssetPatternForPlatform(assetPatterns map[string]string, platform string) string {
-	// First try exact match
-	if pattern, exists := assetPatterns[platform]; exists {
-		return pattern
-	}
-
-	// Try wildcard patterns
-	for patternKey, patternValue := range assetPatterns {
-		if strings.Contains(patternKey, "*") || strings.Contains(patternKey, ",") {
-			if matchPlatformPattern(patternKey, platform) {
-				return patternValue
-			}
-		}
-	}
-
-	return ""
-}
+// These functions are no longer needed - moved to manager.ResolveAssetPattern
