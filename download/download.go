@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flanksource/clicky/task"
+	"github.com/flanksource/deps/pkg/cache"
 	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/utils"
 )
@@ -57,6 +58,7 @@ type downloadConfig struct {
 	checksumNames    []string // Logical variable names for multiple checksum files
 	checksumExpr     string   // CEL expression for extracting checksum from files
 	simpleMode       bool     // No task/progress support
+	cacheDir         string   // Directory for download cache
 }
 
 // WithChecksum sets the expected checksum for verification
@@ -115,6 +117,13 @@ func WithChecksumURLsAndNames(urls []string, names []string, expr string) Downlo
 func WithSimpleMode() DownloadOption {
 	return func(c *downloadConfig) {
 		c.simpleMode = true
+	}
+}
+
+// WithCacheDir sets the cache directory for downloads
+func WithCacheDir(cacheDir string) DownloadOption {
+	return func(c *downloadConfig) {
+		c.cacheDir = strings.TrimSpace(cacheDir)
 	}
 }
 
@@ -265,6 +274,78 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	// Handle simple mode - disable task if configured
 	if config.simpleMode {
 		t = nil
+	}
+
+	// Check cache first
+	filename := filepath.Base(dest)
+	if cachePath, isCached := cache.IsCached(config.cacheDir, url, filename); isCached {
+		if t != nil {
+			t.V(3).Infof("Found in cache: %s", cachePath)
+		}
+
+		// If we have a checksum, validate cached file
+		if config.expectedChecksum != "" {
+			// Parse checksum type if not already set
+			var checksumType checksum.HashType
+			if config.checksumType == "" {
+				var err error
+				_, checksumType, err = checksum.ParseChecksumWithType(config.expectedChecksum)
+				if err == nil {
+					config.checksumType = string(checksumType)
+				}
+			} else {
+				checksumType = checksum.HashType(config.checksumType)
+			}
+
+			// Validate cached file checksum
+			if checksumType != "" {
+				hasher, err := checksum.CreateHasher(checksumType)
+				if err == nil {
+					f, err := os.Open(cachePath)
+					if err == nil {
+						defer f.Close()
+						io.Copy(hasher, f)
+						actualChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
+
+						if actualChecksum == config.expectedChecksum {
+							// Valid cached file, copy to destination
+							if t != nil {
+								t.Infof("Using cached download: %s", filename)
+							}
+							if err := cache.CopyFromCache(cachePath, dest); err != nil {
+								if t != nil {
+									t.V(3).Infof("Failed to copy from cache, will re-download: %v", err)
+								}
+							} else {
+								if t != nil {
+									t.SetDescription(fmt.Sprintf("Copied from cache (%s)", utils.FormatBytes(0)))
+								}
+								return nil
+							}
+						} else {
+							if t != nil {
+								t.V(3).Infof("Cached file checksum mismatch, will re-download")
+							}
+						}
+					}
+				}
+			}
+		} else {
+			// No checksum to validate, use cached file as-is
+			if t != nil {
+				t.Infof("Using cached download: %s", filename)
+			}
+			if err := cache.CopyFromCache(cachePath, dest); err != nil {
+				if t != nil {
+					t.V(3).Infof("Failed to copy from cache, will re-download: %v", err)
+				}
+			} else {
+				if t != nil {
+					t.SetDescription(fmt.Sprintf("Copied from cache (%s)", utils.FormatBytes(0)))
+				}
+				return nil
+			}
+		}
 	}
 
 	// Create destination directory if it doesn't exist
@@ -450,6 +531,20 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	// Atomically move temp file to final destination
 	if err := os.Rename(tempFile, dest); err != nil {
 		return fmt.Errorf("failed to move temp file to destination: %w", err)
+	}
+
+	// Save to cache after successful download and verification
+	if config.cacheDir != "" {
+		if err := cache.SaveToCache(config.cacheDir, url, dest); err != nil {
+			// Log but don't fail the download if caching fails
+			if t != nil {
+				t.V(3).Infof("Failed to save to cache: %v", err)
+			}
+		} else {
+			if t != nil {
+				t.V(3).Infof("Saved to cache: %s", filepath.Base(dest))
+			}
+		}
 	}
 
 	if t != nil {

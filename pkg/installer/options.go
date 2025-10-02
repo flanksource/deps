@@ -10,7 +10,9 @@ import (
 // InstallOptions configures the installation behavior
 type InstallOptions struct {
 	BinDir         string
+	AppDir         string
 	TmpDir         string
+	CacheDir       string
 	Force          bool
 	SkipChecksum   bool
 	StrictChecksum bool // If true, checksum failures cause installation to fail
@@ -33,10 +35,24 @@ func WithBinDir(dir string) InstallOption {
 	}
 }
 
+// WithAppDir sets the application directory for directory-mode packages
+func WithAppDir(dir string) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.AppDir = dir
+	}
+}
+
 // WithTmpDir sets the temporary directory for downloads and extraction
 func WithTmpDir(dir string) InstallOption {
 	return func(opts *InstallOptions) {
 		opts.TmpDir = dir
+	}
+}
+
+// WithCacheDir sets the cache directory for downloads
+func WithCacheDir(dir string) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.CacheDir = dir
 	}
 }
 
@@ -101,8 +117,15 @@ func WithPreferLocal(prefer bool) InstallOption {
 
 // DefaultOptions returns sensible default options
 func DefaultOptions() InstallOptions {
+	home, err := os.UserHomeDir()
+	defaultAppDir := "/opt"
+	if err == nil && os.Geteuid() != 0 {
+		defaultAppDir = home + "/.local/opt"
+	}
+
 	return InstallOptions{
 		BinDir:         "/usr/local/bin",
+		AppDir:         defaultAppDir,
 		TmpDir:         os.TempDir(),
 		Force:          false,
 		SkipChecksum:   false,

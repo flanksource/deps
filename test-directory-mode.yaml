@@ -14,6 +14,9 @@ registry:
       linux-arm64: node-{{.tag}}-linux-arm64.tar.gz
     version_command: bin/node --version
     version_pattern: v(\d+\.\d+\.\d+)
+    symlinks:
+      - "bin/*"
 
 settings:
   bin_dir: ./test-bin
+  app_dir: ./test-apps

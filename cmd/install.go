@@ -41,11 +41,19 @@ func init() {
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
+	// Get cache dir from flag or config
+	cacheDirToUse := cacheDir
+	if cacheDirToUse == "" {
+		cacheDirToUse = GetDepsConfig().Settings.CacheDir
+	}
+
 	// Create installer with options from global flags and depsConfig
 	inst := installer.NewWithConfig(
 		GetDepsConfig(),
 		installer.WithBinDir(binDir),
+		installer.WithAppDir(appDir),
 		installer.WithTmpDir(tmpDir),
+		installer.WithCacheDir(cacheDirToUse),
 		installer.WithForce(force),
 		installer.WithSkipChecksum(skipChecksum),
 		installer.WithStrictChecksum(strictChecksum),

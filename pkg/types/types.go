@@ -40,6 +40,7 @@ type Package struct {
 	PreInstalled   []string               `json:"pre_installed,omitempty" yaml:"pre_installed,omitempty"`     // Pre-installed binary names
 	PostProcess    []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"`       // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"])
 	Mode           string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                       // Installation mode: "binary" (default) or "directory"
+	Symlinks       []string               `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`               // Glob patterns of paths in app-dir to symlink to bin-dir (directory mode only)
 	Extra          map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`                     // Manager-specific config
 }
 
@@ -139,6 +140,7 @@ type DepsConfig struct {
 // Settings represents global configuration settings
 type Settings struct {
 	BinDir     string            `json:"bin_dir" yaml:"bin_dir"`
+	AppDir     string            `json:"app_dir,omitempty" yaml:"app_dir,omitempty"`
 	CacheDir   string            `json:"cache_dir,omitempty" yaml:"cache_dir,omitempty"`
 	Platform   platform.Platform `json:"platform" yaml:"platform"`
 	Parallel   bool              `json:"parallel,omitempty" yaml:"parallel,omitempty"`

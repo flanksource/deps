@@ -371,6 +371,8 @@ registry:
             "*": "apache-ant-{{.version}}-bin.tar.gz"
         checksum_file: "apache-ant-{{.version}}-bin.tar.gz.sha512"
         version_command: bin/ant -version
+        symlinks:
+            - bin/ant
         version_pattern: "Apache Ant\\(TM\\) version (\\d+\\.\\d+\\.\\d+)"
 
     prometheus:
@@ -429,6 +431,10 @@ registry:
             linux-arm64: node-{{.tag}}-linux-arm64.tar.gz
         version_command: bin/node --version
         version_pattern: v(\d+\.\d+\.\d+)
+        symlinks:
+            - bin/node
+            - bin/npm
+            - bin/npx
 
     go:
         name: go
@@ -444,6 +450,7 @@ registry:
         version_command: bin/go version
         version_pattern: go version go(\d+\.\d+\.\d+)
         version_expr: 'tag.startsWith("go") ? tag.substring(2) : tag'
+
     powershell:
         name: pwsh
         repo: PowerShell/PowerShell
@@ -457,6 +464,8 @@ registry:
         version_pattern: PowerShell (\S+)
         post_process:
             - chmod("pwsh", "0755")
+        symlinks:
+            - pwsh
 
     task:
         name: task
@@ -505,6 +514,10 @@ registry:
             windows-amd64: google-cloud-cli-{{.version}}-windows-x86_64.zip
         version_command: bin/gcloud version --format="value(Google Cloud SDK)"
         version_pattern: '(\d+\.\d+\.\d+)'
+        symlinks:
+            - bin/gcloud
+            - bin/gsutil
+            - bin/bq
 
     python:
         name: python
@@ -518,6 +531,87 @@ registry:
             windows-amd64: python-{{.version}}-amd64.exe
         version_command: python --version
         version_pattern: 'Python (\d+\.\d+\.\d+)'
+        symlinks:
+            - python
+            - pip
+
+    openjdk:
+        name: openjdk
+        repo: adoptium/temurin21-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK21U-jdk_x64_mac_hotspot_{{.version}}.tar.gz
+            darwin-arm64: OpenJDK21U-jdk_aarch64_mac_hotspot_{{.version}}.tar.gz
+            linux-amd64: OpenJDK21U-jdk_x64_linux_hotspot_{{.version}}.tar.gz
+            linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version}}.tar.gz
+        version_command: jdk-{{.version}}/bin/java --version
+        version_pattern: 'openjdk (\d+\.\d+\.\d+)'
+        symlinks:
+            - jdk-{{.version}}/bin/java
+            - jdk-{{.version}}/bin/javac
+            - jdk-{{.version}}/bin/jar
+
+    openjre:
+        name: openjre
+        repo: adoptium/temurin21-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK21U-jre_x64_mac_hotspot_{{.version}}.tar.gz
+            darwin-arm64: OpenJDK21U-jre_aarch64_mac_hotspot_{{.version}}.tar.gz
+            linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version}}.tar.gz
+            linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version}}.tar.gz
+        version_command: jdk-{{.version}}-jre/bin/java --version
+        version_pattern: 'openjdk (\d+\.\d+\.\d+)'
+        symlinks:
+            - jdk-{{.version}}-jre/bin/java
+
+    tomee:
+        name: tomee
+        manager: apache
+        mode: directory
+        url_template: https://archive.apache.org/dist/tomee/
+        asset_patterns:
+            "*": tomee-{{.version}}/apache-tomee-{{.version}}-plume.zip
+        checksum_file: "{{.asset}}.sha512"
+        version_command: bin/version.sh
+        version_pattern: 'Server version:\\s+Apache Tomcat/\\S+\\s+Apache TomEE/([\\d\\.]+)'
+        symlinks:
+            - bin/catalina.sh
+
+    activemq-classic:
+        name: activemq-classic
+        manager: apache
+        mode: directory
+        asset_patterns:
+            "*": apache-activemq-{{.version}}-bin.tar.gz
+        checksum_file: apache-activemq-{{.version}}-bin.tar.gz.sha512
+        version_command: bin/activemq --version
+        version_pattern: 'ActiveMQ\\s+(\\d+\\.\\d+\\.\\d+)'
+        symlinks:
+            - bin/activemq
+
+    activemq-artemis:
+        name: activemq-artemis
+        manager: apache
+        mode: directory
+        asset_patterns:
+            "*": apache-artemis-{{.version}}-bin.tar.gz
+        checksum_file: apache-artemis-{{.version}}-bin.tar.gz.sha512
+        version_command: bin/artemis version
+        version_pattern: 'ActiveMQ Artemis\\s+(\\d+\\.\\d+\\.\\d+)'
+        symlinks:
+            - bin/artemis
+
+    arthas:
+        name: arthas
+        repo: alibaba/arthas
+        mode: directory
+        asset_patterns:
+            "*": arthas-packaging-{{.version}}-bin.zip
+        version_command: cat VERSION
+        version_pattern: '(\\d+\\.\\d+\\.\\d+)'
+        symlinks:
+            - as.sh
 
 settings:
     bin_dir: ./bin

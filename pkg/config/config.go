@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	DepsFile      = "deps.yaml"
-	LockFile      = "deps-lock.yaml"
-	DefaultBinDir = "./bin"
+	DepsFile        = "deps.yaml"
+	LockFile        = "deps-lock.yaml"
+	DefaultBinDir   = "./bin"
+	DefaultCacheDir = "~/.deps/cache"
 )
 
 // LoadDepsConfig loads and parses the deps.yaml configuration file
@@ -63,6 +64,9 @@ func applyConfigPostProcessing(config *types.DepsConfig) {
 	// Set defaults
 	if config.Settings.BinDir == "" {
 		config.Settings.BinDir = DefaultBinDir
+	}
+	if config.Settings.CacheDir == "" {
+		config.Settings.CacheDir = DefaultCacheDir
 	}
 	if config.Settings.Platform.OS == "" || config.Settings.Platform.Arch == "" {
 		config.Settings.Platform = platform.Current()

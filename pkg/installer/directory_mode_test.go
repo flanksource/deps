@@ -59,4 +59,16 @@ var _ = Describe("Directory Mode Installation", func() {
 		Expect(pkg.Mode).To(Equal("directory"))
 		Expect(pkg.VersionCommand).To(Equal("bin/node --version"))
 	})
+
+	It("should support symlinks configuration", func() {
+		pkg := types.Package{
+			Name:     "test-tool",
+			Mode:     "directory",
+			Symlinks: []string{"bin/*", "lib/tool"},
+		}
+
+		Expect(pkg.Symlinks).To(HaveLen(2))
+		Expect(pkg.Symlinks[0]).To(Equal("bin/*"))
+		Expect(pkg.Symlinks[1]).To(Equal("lib/tool"))
+	})
 })

@@ -22,7 +22,9 @@ import (
 
 var (
 	binDir         string
+	appDir         string
 	tmpDir         string
+	cacheDir       string
 	force          bool
 	skipChecksum   bool
 	strictChecksum bool
@@ -77,14 +79,18 @@ func init() {
 		home = "/usr/local"
 	}
 	defaultBinDir := fmt.Sprintf("%s/.local/bin", home)
+	defaultAppDir := fmt.Sprintf("%s/.local/opt", home)
 
 	// Check if running as root/sudo
 	if os.Geteuid() == 0 {
 		defaultBinDir = "/usr/local/bin"
+		defaultAppDir = "/opt"
 	}
 
 	rootCmd.PersistentFlags().StringVar(&binDir, "bin-dir", defaultBinDir, "Directory to install binaries")
+	rootCmd.PersistentFlags().StringVar(&appDir, "app-dir", defaultAppDir, "Directory to install directory-mode packages")
 	rootCmd.PersistentFlags().StringVar(&tmpDir, "tmp-dir", os.TempDir(), "Directory for temporary files (will not be cleaned up on exit)")
+	rootCmd.PersistentFlags().StringVar(&cacheDir, "cache-dir", "", "Directory for download cache (default: ~/.deps/cache, empty to disable)")
 	rootCmd.PersistentFlags().BoolVar(&force, "force", false, "Force reinstall even if binary exists")
 	rootCmd.PersistentFlags().BoolVar(&skipChecksum, "skip-checksum", false, "Skip checksum verification")
 	rootCmd.PersistentFlags().BoolVar(&strictChecksum, "strict-checksum", true, "Fail installation when checksum verification fails (default: true)")

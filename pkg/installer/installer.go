@@ -487,6 +487,14 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 		}
 	}
 
+	// Create symlinks for directory-mode packages
+	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 {
+		t.SetDescription("Creating symlinks")
+		if err := i.createSymlinks(finalPath, i.options.BinDir, pkg.Symlinks, t); err != nil {
+			return fmt.Errorf("failed to create symlinks: %w", err)
+		}
+	}
+
 	// Mark task successful only after all operations (including post-processing) complete
 	t.Infof("✓ Successfully installed %s@%s to %s", name, resolvedVersion, finalPath)
 	t.Success()
@@ -518,8 +526,8 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 	if resolvedPkg.Mode == "directory" {
 		t.SetDescription("Installing directory")
 
-		// Move entire directory to bin/{package-name}/
-		targetDir := filepath.Join(i.options.BinDir, resolvedPkg.Name)
+		// Move entire directory to app-dir/{package-name}/
+		targetDir := filepath.Join(i.options.AppDir, resolvedPkg.Name)
 		if err := i.moveExtractedDirectory(workDir, targetDir, t); err != nil {
 			return "", fmt.Errorf("failed to move directory: %w", err)
 		}
@@ -615,6 +623,70 @@ func (i *Installer) handleDirectBinaryInstallation(downloadPath, name string) (s
 	return finalPath, nil
 }
 
+// createSymlinks creates symlinks from app directory to bin directory based on glob patterns
+func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t *task.Task) error {
+	if len(patterns) == 0 {
+		return nil
+	}
+
+	t.V(3).Infof("Creating symlinks from %s to %s", appPath, binDir)
+
+	// Ensure bin directory exists
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	for _, pattern := range patterns {
+		// Resolve pattern relative to app directory
+		fullPattern := filepath.Join(appPath, pattern)
+		t.V(3).Infof("Resolving symlink pattern: %s", fullPattern)
+
+		matches, err := filepath.Glob(fullPattern)
+		if err != nil {
+			return fmt.Errorf("failed to glob pattern %s: %w", pattern, err)
+		}
+
+		if len(matches) == 0 {
+			t.Warnf("No files matched symlink pattern: %s", pattern)
+			continue
+		}
+
+		for _, match := range matches {
+			// Skip directories
+			info, err := os.Stat(match)
+			if err != nil {
+				t.Warnf("Failed to stat %s: %v", match, err)
+				continue
+			}
+			if info.IsDir() {
+				continue
+			}
+
+			// Get the basename for the symlink
+			linkName := filepath.Base(match)
+			linkPath := filepath.Join(binDir, linkName)
+
+			// Remove existing symlink or file if it exists
+			if _, err := os.Lstat(linkPath); err == nil {
+				if err := os.Remove(linkPath); err != nil {
+					t.Warnf("Failed to remove existing symlink %s: %v", linkPath, err)
+					continue
+				}
+			}
+
+			// Create symlink
+			if err := os.Symlink(match, linkPath); err != nil {
+				t.Warnf("Failed to create symlink %s -> %s: %v", linkPath, match, err)
+				continue
+			}
+
+			t.V(3).Infof("Created symlink: %s -> %s", linkPath, match)
+		}
+	}
+
+	return nil
+}
+
 // resolveVersionConstraint resolves a version constraint to a specific version
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
 	// Use the centralized version resolver
@@ -628,7 +700,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	// Skip checksum verification if requested
 	if i.options.SkipChecksum {
 		t.Debugf("Skipping checksum verification (--skip-checksum)")
-		return download.Download(url, dest, t)
+		return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
 	}
 
 	// Try the provided checksum URL if configured
@@ -654,10 +726,10 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 			}
 
 			// Use multi-file checksum with CEL support
-			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr))
+			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithCacheDir(i.options.CacheDir))
 		} else {
 			// Use single checksum file
-			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL))
+			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir))
 		}
 
 		if err == nil {
@@ -675,5 +747,5 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	}
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
-	return download.Download(url, dest, t)
+	return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
 }
