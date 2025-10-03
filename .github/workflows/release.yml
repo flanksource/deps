@@ -93,39 +93,33 @@ jobs:
           go build -ldflags="-s -w -X main.version=$VERSION -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o "$BINARY_NAME" ./cmd/deps/main.go
 
+
+          sha256sum "$BINARY_NAME" > "$BINARY_NAME".sha256
+
       - name: Create archive
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           GOOS="${{ matrix.goos }}"
           GOARCH="${{ matrix.goarch }}"
 
-          # Normalize arch name
-          ARCH="$GOARCH"
-          if [ "$GOARCH" = "amd64" ]; then
-            ARCH="x86_64"
-          fi
 
-          ARCHIVE_NAME="deps_$(echo $GOOS | sed 's/.*/\u&/')_${ARCH}"
+          ARCHIVE_NAME="deps-${$GOOS}-${ARCH}"
 
           if [ "$GOOS" = "windows" ]; then
             zip "${ARCHIVE_NAME}.zip" deps.exe
-            echo "ASSET=${ARCHIVE_NAME}.zip" >> $GITHUB_ENV
+            sha256sum  "${ARCHIVE_NAME}.zip" >  "${ARCHIVE_NAME}.sha256"
           else
             tar czf "${ARCHIVE_NAME}.tar.gz" deps
-            echo "ASSET=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
+            sha256sum  "${ARCHIVE_NAME}.tar.gz" >  "${ARCHIVE_NAME}.tar.gz.sha256"
           fi
 
-      - name: Generate checksum
-        run: |
-          sha256sum "$ASSET" > "${ASSET}.sha256"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: ${{ env.ASSET }}
-          path: |
-            ${{ env.ASSET }}
-            ${{ env.ASSET }}.sha256
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file_glob: true
+          file: deps*
+          tag: ${{ github.ref }}
 
   release:
     name: Create Release
