@@ -124,7 +124,8 @@ var _ = Describe("Apache Manager", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Parse versions from HTML
-				versions := apacheManager.ParseVersionsFromHTML(string(htmlBytes))
+				pkg := types.Package{Name: "test"}
+				versions := apacheManager.ParseVersionsFromHTML(pkg, string(htmlBytes))
 
 				// Verify minimum number of versions found
 				Expect(len(versions)).To(BeNumerically(">=", minVersionCount),
@@ -155,13 +156,15 @@ var _ = Describe("Apache Manager", func() {
 		)
 
 		It("should handle empty HTML", func() {
-			versions := apacheManager.ParseVersionsFromHTML("")
+			pkg := types.Package{Name: "test"}
+			versions := apacheManager.ParseVersionsFromHTML(pkg, "")
 			Expect(versions).To(BeEmpty())
 		})
 
 		It("should handle HTML with no version links", func() {
 			html := `<html><body><h1>No versions here</h1><a href="/other">Other</a></body></html>`
-			versions := apacheManager.ParseVersionsFromHTML(html)
+			pkg := types.Package{Name: "test"}
+			versions := apacheManager.ParseVersionsFromHTML(pkg, html)
 			Expect(versions).To(BeEmpty())
 		})
 
@@ -171,7 +174,8 @@ var _ = Describe("Apache Manager", func() {
 				<a href="v1.0.0/">v1.0.0/</a>
 				<a href="project-1.0.0/">project-1.0.0/</a>
 			</body></html>`
-			versions := apacheManager.ParseVersionsFromHTML(html)
+			pkg := types.Package{Name: "test"}
+			versions := apacheManager.ParseVersionsFromHTML(pkg, html)
 
 			// Should only find one unique version 1.0.0
 			Expect(len(versions)).To(Equal(1))
@@ -185,7 +189,8 @@ var _ = Describe("Apache Manager", func() {
 				<a href="3.0.0-snapshot/">3.0.0-snapshot/</a>
 				<a href="4.0.0/">4.0.0/</a>
 			</body></html>`
-			versions := apacheManager.ParseVersionsFromHTML(html)
+			pkg := types.Package{Name: "test"}
+			versions := apacheManager.ParseVersionsFromHTML(pkg, html)
 
 			Expect(len(versions)).To(Equal(4))
 

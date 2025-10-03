@@ -33,7 +33,7 @@ type ApacheManager struct {
 func NewApacheManager() *ApacheManager {
 	return &ApacheManager{
 		client:             depshttp.GetHttpClient(),
-		defaultURLTemplate: "https://archive.apache.org/dist/{{.name}}/binaries/{{.asset}}",
+		defaultURLTemplate: "https://archive.apache.org/dist/{{.name}}/{{.asset}}",
 	}
 }
 
@@ -260,7 +260,35 @@ func (m *ApacheManager) templateString(pattern string, data map[string]string) (
 }
 
 func (m *ApacheManager) discoverVersionsFromListing(ctx context.Context, pkg types.Package, baseURL string) ([]types.Version, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", baseURL, nil)
+	log := logger.GetLogger()
+
+	// Try fetching from the base URL first
+	versions, err := m.fetchVersionsFromURL(ctx, pkg, baseURL)
+	if err == nil && len(versions) > 0 {
+		return versions, nil
+	}
+
+	// If that fails or returns no versions, try with binaries/ subdirectory
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL = baseURL + "/"
+	}
+	binariesURL := baseURL + "binaries/"
+
+	log.V(2).Infof("Trying binaries/ subdirectory: %s", binariesURL)
+	versions, binErr := m.fetchVersionsFromURL(ctx, pkg, binariesURL)
+	if binErr == nil && len(versions) > 0 {
+		return versions, nil
+	}
+
+	// If both fail, return the original error
+	if err != nil {
+		return nil, err
+	}
+	return versions, nil
+}
+
+func (m *ApacheManager) fetchVersionsFromURL(ctx context.Context, pkg types.Package, url string) ([]types.Version, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +300,7 @@ func (m *ApacheManager) discoverVersionsFromListing(ctx context.Context, pkg typ
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch directory listing from %s: HTTP %d", baseURL, resp.StatusCode)
+		return nil, fmt.Errorf("failed to fetch directory listing from %s: HTTP %d", url, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
