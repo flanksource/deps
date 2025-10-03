@@ -3,7 +3,6 @@ package installer
 import (
 	"os"
 	"path/filepath"
-	"testing"
 
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
@@ -17,11 +16,6 @@ import (
 	_ "github.com/flanksource/deps/pkg/manager/gitlab"
 	_ "github.com/flanksource/deps/pkg/manager/maven"
 )
-
-func TestInstallerIntegration(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Installer Integration Suite")
-}
 
 var _ = Describe("End-to-End Pipeline Error Propagation", func() {
 	var (

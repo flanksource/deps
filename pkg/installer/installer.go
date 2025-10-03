@@ -458,12 +458,21 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 		return nil // No post-processing needed
 	}
 
-	t.V(3).Infof("Applying post-process pipeline: %v", pkg.PostProcess)
+	// Filter post-process commands by platform
+	plat := platform.Current()
+	filteredPostProcess := manager.FilterEntriesByPlatform(pkg.PostProcess, plat)
 
-	// Create CEL pipeline from expressions
-	celPipeline := pipeline.NewCELPipeline(pkg.PostProcess)
+	if len(filteredPostProcess) == 0 {
+		t.V(3).Infof("No post-process commands for platform %s", plat.String())
+		return nil
+	}
+
+	t.V(3).Infof("Applying post-process pipeline: %v", filteredPostProcess)
+
+	// Create CEL pipeline from filtered expressions
+	celPipeline := pipeline.NewCELPipeline(filteredPostProcess)
 	if celPipeline == nil {
-		return fmt.Errorf("failed to create CEL pipeline from expressions: %v", pkg.PostProcess)
+		return fmt.Errorf("failed to create CEL pipeline from expressions: %v", filteredPostProcess)
 	}
 
 	// Execute the CEL pipeline on the extracted contents
@@ -488,26 +497,12 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 	}
 
 	// Create symlinks for directory-mode packages
-	if pkg.Mode == "directory" {
-		// Determine which symlink patterns to use
-		var symlinkPatterns []string
+	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 {
+		// Filter symlinks by platform
+		plat := platform.Current()
+		symlinkPatterns := manager.FilterEntriesByPlatform(pkg.Symlinks, plat)
 
-		// First try platform-specific symlink patterns
-		if len(pkg.SymlinkPatterns) > 0 {
-			plat := platform.Current()
-			patterns, err := manager.ResolveSymlinkPatterns(pkg.SymlinkPatterns, plat)
-			if err != nil {
-				return fmt.Errorf("failed to resolve symlink patterns: %w", err)
-			}
-			symlinkPatterns = patterns
-		}
-
-		// Fall back to simple symlinks list if no platform-specific patterns
-		if len(symlinkPatterns) == 0 && len(pkg.Symlinks) > 0 {
-			symlinkPatterns = pkg.Symlinks
-		}
-
-		// Create symlinks if any patterns are defined
+		// Create symlinks if any patterns match
 		if len(symlinkPatterns) > 0 {
 			t.SetDescription("Creating symlinks")
 			if err := i.createSymlinks(finalPath, i.options.BinDir, symlinkPatterns, t); err != nil {

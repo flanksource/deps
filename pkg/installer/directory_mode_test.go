@@ -2,18 +2,12 @@ package installer_test
 
 import (
 	"os"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/flanksource/deps/pkg/types"
 )
-
-func TestDirectoryMode(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Directory Mode Suite")
-}
 
 var _ = Describe("Directory Mode Installation", func() {
 	var tmpDir string

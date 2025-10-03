@@ -537,29 +537,28 @@ registry:
 
     openjdk:
         name: openjdk
-        repo: adoptium/temurin21-binaries
+        repo: adoptium/temurin17-binaries
         mode: directory
         asset_patterns:
-            darwin-amd64: OpenJDK21U-jdk_x64_mac_hotspot_{{.version}}.tar.gz
-            darwin-arm64: OpenJDK21U-jdk_aarch64_mac_hotspot_{{.version}}.tar.gz
-            linux-amd64: OpenJDK21U-jdk_x64_linux_hotspot_{{.version}}.tar.gz
-            linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version}}.tar.gz
+            darwin-amd64: OpenJDK17U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK17U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK17U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK17U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: jdk-{{.version}}/bin/java --version
         version_pattern: 'openjdk (\d+\.\d+\.\d+)'
         symlinks:
-            - jdk-{{.version}}/bin/java
-            - jdk-{{.version}}/bin/javac
-            - jdk-{{.version}}/bin/jar
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: jdk-{{.version}}/bin/*"
 
     openjre:
         name: openjre
         repo: adoptium/temurin21-binaries
         mode: directory
         asset_patterns:
-            darwin-amd64: OpenJDK21U-jre_x64_mac_hotspot_{{.version}}.tar.gz
-            darwin-arm64: OpenJDK21U-jre_aarch64_mac_hotspot_{{.version}}.tar.gz
-            linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version}}.tar.gz
-            linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version}}.tar.gz
+            darwin-amd64: OpenJDK21U-jre_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK21U-jre_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: jdk-{{.version}}-jre/bin/java --version
         version_pattern: 'openjdk (\d+\.\d+\.\d+)'
         symlinks:
@@ -578,13 +577,14 @@ registry:
         symlinks:
             - bin/catalina.sh
 
-    activemq-classic:
-        name: activemq-classic
+    activemq:
+        name: activemq
         manager: apache
         mode: directory
+        url_template: https://archive.apache.org/dist/activemq/{{.version}}/
         asset_patterns:
-            "*": apache-activemq-{{.version}}-bin.tar.gz
-        checksum_file: apache-activemq-{{.version}}-bin.tar.gz.sha512
+            "*": apache-activemq-{{.version}}-bin.zip
+        checksum_file: "{{.asset}}.sha512"
         version_command: bin/activemq --version
         version_pattern: 'ActiveMQ\\s+(\\d+\\.\\d+\\.\\d+)'
         symlinks:
@@ -612,6 +612,15 @@ registry:
         version_pattern: '(\\d+\\.\\d+\\.\\d+)'
         symlinks:
             - as.sh
+
+    xmlstarlet:
+        name: xmlstarlet
+        manager: direct
+        url_template: https://sourceforge.net/projects/xmlstar/files/xmlstarlet/{{.version}}/xmlstarlet-{{.version}}.tar.gz/download
+        asset_patterns:
+            "*": xmlstarlet-{{.version}}.tar.gz
+        version_command: --version
+        version_pattern: 'compiled against libxml2 (\d+\.\d+\.\d+)'
 
 settings:
     bin_dir: ./bin
