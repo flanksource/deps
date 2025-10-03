@@ -103,7 +103,7 @@ jobs:
           GOARCH="${{ matrix.goarch }}"
 
 
-          ARCHIVE_NAME="deps-${$GOOS}-${ARCH}"
+          ARCHIVE_NAME="deps-${GOOS}-${ARCH}"
 
           if [ "$GOOS" = "windows" ]; then
             zip "${ARCHIVE_NAME}.zip" deps.exe
