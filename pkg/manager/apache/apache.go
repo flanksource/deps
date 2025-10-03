@@ -97,7 +97,7 @@ func (m *ApacheManager) DiscoverVersions(ctx context.Context, pkg types.Package,
 // Resolve gets the download URL for a specific version and platform
 func (m *ApacheManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
 	log := logger.GetLogger()
-	log.Debugf("Apache resolve: package=%s, version=%s, platform=%s", pkg.Name, version, plat.String())
+	log.Tracef("Apache resolve: package=%s, version=%s, platform=%s", pkg.Name, version, plat.String())
 
 	// Validate that the requested version exists
 	validVersion, err := m.validateVersion(ctx, pkg, version, plat)
@@ -108,7 +108,7 @@ func (m *ApacheManager) Resolve(ctx context.Context, pkg types.Package, version 
 		}
 		return nil, err
 	}
-	log.Debugf("Apache resolve: validated version: %s", validVersion)
+	log.V(4).Infof("Apache resolve: validated version: %s", validVersion)
 
 	// Use custom URL template if provided, otherwise use default
 	urlTemplate := m.defaultURLTemplate
@@ -117,21 +117,18 @@ func (m *ApacheManager) Resolve(ctx context.Context, pkg types.Package, version 
 	}
 	// Normalize URL template to auto-append {{.asset}} if it ends with /
 	urlTemplate = manager.NormalizeURLTemplate(urlTemplate)
-	log.Debugf("Apache resolve: using URL template: %s", urlTemplate)
 
 	// Resolve asset name from patterns using the validated version
 	asset, err := m.resolveAssetPattern(pkg, validVersion, plat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve asset: %w", err)
 	}
-	log.Debugf("Apache resolve: resolved asset name: %s", asset)
 
 	// Template the URL using the validated version
 	downloadURL, err := m.templateURL(urlTemplate, pkg.Name, validVersion, asset, plat)
 	if err != nil {
 		return nil, fmt.Errorf("failed to template URL: %w", err)
 	}
-	log.Debugf("Apache resolve: templated download URL: %s", downloadURL)
 
 	// Build checksum URL if checksum file pattern is provided
 	var checksumURL string
@@ -376,7 +373,7 @@ func (m *ApacheManager) ParseVersionsFromHTML(pkg types.Package, htmlContent str
 func (m *ApacheManager) extractVersionFromHref(hrefs ...string) []string {
 	versions := []string{}
 	for _, href := range hrefs {
-		logger.Tracef("Found href: %s", href)
+		logger.V(5).Infof("Found href: %s", href)
 		// Skip query parameters, parent directory, and non-relevant files
 		if strings.Contains(href, "?") || href == "../" {
 			continue
@@ -519,29 +516,22 @@ func (m *ApacheManager) fetchChecksum(ctx context.Context, checksumURL string) (
 
 // validateVersion checks if the requested version exists in the available versions
 func (m *ApacheManager) validateVersion(ctx context.Context, pkg types.Package, requestedVersion string, plat platform.Platform) (string, error) {
-	log := logger.GetLogger()
-	log.Debugf("Apache validateVersion: checking if version %s exists for %s", requestedVersion, pkg.Name)
-
 	// Get available versions to validate against
 	versions, err := m.DiscoverVersions(ctx, pkg, plat, 0) // Get all versions
 	if err != nil {
-		log.Debugf("Apache validateVersion: failed to discover versions: %v", err)
 		return "", fmt.Errorf("failed to discover available versions: %w", err)
 	}
 
 	// Normalize the requested version for comparison
 	normalizedRequested := version.Normalize(requestedVersion)
-	log.Debugf("Apache validateVersion: normalized requested version: %s", normalizedRequested)
 
 	// Check if the requested version exists in available versions
 	for _, v := range versions {
 		if v.Version == normalizedRequested || v.Tag == requestedVersion {
-			log.Debugf("Apache validateVersion: found matching version: %s (tag: %s)", v.Version, v.Tag)
 			return v.Tag, nil // Return the original tag for URL building
 		}
 	}
 
-	log.Debugf("Apache validateVersion: version %s not found among %d available versions", requestedVersion, len(versions))
 	return "", &manager.ErrVersionNotFound{
 		Package: pkg.Name,
 		Version: requestedVersion,
@@ -550,17 +540,12 @@ func (m *ApacheManager) validateVersion(ctx context.Context, pkg types.Package, 
 
 // enhanceErrorWithVersions enhances version not found errors with available version suggestions
 func (m *ApacheManager) enhanceErrorWithVersions(ctx context.Context, pkg types.Package, requestedVersion string, plat platform.Platform, originalErr error) error {
-	log := logger.GetLogger()
-	log.Debugf("Apache enhanceErrorWithVersions: discovering available versions for %s", pkg.Name)
-
 	// Try to get available versions using a default platform for error enhancement
 	versions, err := m.DiscoverVersions(ctx, pkg, plat, 20)
 	if err != nil {
-		log.Debugf("Apache enhanceErrorWithVersions: failed to discover versions: %v", err)
 		// If we can't get versions, return the original error
 		return originalErr
 	}
 
-	log.Debugf("Apache enhanceErrorWithVersions: found %d available versions", len(versions))
 	return manager.EnhanceErrorWithVersions(pkg.Name, requestedVersion, versions, originalErr)
 }

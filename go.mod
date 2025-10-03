@@ -5,12 +5,13 @@ go 1.25.1
 require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/flanksource/clicky v1.3.1
-	github.com/flanksource/commons v1.42.1
+	github.com/flanksource/commons v1.42.3
 	github.com/flanksource/gomplate/v3 v3.24.60
 	github.com/google/cel-go v0.26.1
 	github.com/google/go-github/v57 v57.0.0
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
+	github.com/samber/lo v1.51.0
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.2-0.20250831231508-51d675196729
@@ -113,7 +114,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/robertkrimen/otto v0.2.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/samber/lo v1.51.0 // indirect
 	github.com/samber/oops v1.19.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
@@ -173,4 +173,6 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/flanksource/commons => /Users/moshe/go/src/github.com/flanksource/commons
+// replace github.com/flanksource/commons => /Users/moshe/go/src/github.com/flanksource/commons
+
+//replace github.com/flanksource/clicky => /Users/moshe/go/src/github.com/flanksource/clicky
