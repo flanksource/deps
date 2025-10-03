@@ -160,6 +160,26 @@ var _ = Describe("CEL Pipeline Evaluator", func() {
 				expectedInBin: []string{}, // delete doesn't move files to bin
 			},
 			{
+				name: "delete with glob results removes multiple files",
+				setupFiles: map[string]string{
+					"file1.bat": "content",
+					"file2.bat": "content",
+					"keep.txt":  "content",
+				},
+				expression:    `delete(glob("*.bat"))`,
+				expectedInBin: []string{}, // delete doesn't move files to bin
+			},
+			{
+				name: "delete with glob single result",
+				setupFiles: map[string]string{
+					"dir1/":    "",
+					"dir2/":    "",
+					"file.txt": "content",
+				},
+				expression:    `delete(glob("*:dir")[0])`,
+				expectedInBin: []string{}, // delete doesn't move files to bin
+			},
+			{
 				name: "move function relocates files",
 				setupFiles: map[string]string{
 					"source.txt": "content to move",

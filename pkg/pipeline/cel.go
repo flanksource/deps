@@ -45,6 +45,8 @@ func NewCELPipelineEnvironment(ctx *PipelineContext) (*CELPipelineEnvironment, e
 				cel.BinaryBinding(f.chmodCEL))),
 		cel.Function("delete",
 			cel.Overload("delete_string", []*cel.Type{cel.StringType}, cel.ListType(cel.StringType),
+				cel.UnaryBinding(f.deleteCEL)),
+			cel.Overload("delete_list", []*cel.Type{cel.ListType(cel.StringType)}, cel.ListType(cel.StringType),
 				cel.UnaryBinding(f.deleteCEL))),
 		cel.Function("cleanup",
 			cel.Overload("cleanup_void", []*cel.Type{}, cel.ListType(cel.StringType),
@@ -645,42 +647,35 @@ func (f *functions) chmod(pattern, modeStr string) ([]string, error) {
 	return changed, nil
 }
 
-// delete removes files matching a pattern
-func (f *functions) delete(pattern string) ([]string, error) {
-	start := f.logFunctionEntry("delete", pattern)
-
-	searchPath := filepath.Join(f.ctx.SandboxDir, pattern)
-	absSearchPath, _ := filepath.Abs(searchPath)
-	f.ctx.LogDebug(fmt.Sprintf("Deleting %s/%s ", pattern, absSearchPath))
-
-	matches, err := filepath.Glob(searchPath)
-	if err != nil {
-		deleteErr := fmt.Errorf("failed to glob pattern %s: %v", pattern, err)
-		f.logFunctionError("delete", start, deleteErr)
-		f.ctx.FailPipeline(deleteErr.Error())
-		return nil, deleteErr
-	}
-
-	f.ctx.LogInfo(fmt.Sprintf("Deleting %d items matching %s", len(matches), pattern))
-
+// deleteFiles performs the actual deletion of files/directories
+func (f *functions) deleteFiles(matches []string, context string) ([]string, error) {
 	if len(matches) == 0 {
-		f.ctx.LogDebug(fmt.Sprintf("No files found matching pattern %s, nothing to delete", pattern))
-		f.logFunctionSuccess("delete", start, []string{})
+		f.ctx.LogDebug(fmt.Sprintf("No files to delete for %s", context))
 		return []string{}, nil
 	}
+
+	f.ctx.LogInfo(fmt.Sprintf("Deleting %d items for %s", len(matches), context))
 
 	var deleted []string
 	var failed []string
 	var totalSize int64
 
 	for i, match := range matches {
-		itemName := filepath.Base(match)
+		// Ensure path is absolute and within sandbox
+		var absMatch string
+		if filepath.IsAbs(match) {
+			absMatch = match
+		} else {
+			absMatch = filepath.Join(f.ctx.SandboxDir, match)
+		}
+
+		itemName := filepath.Base(absMatch)
 		f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting item %d/%d: %s", i+1, len(matches), itemName))
 
 		// Get size info before deletion for logging
-		if info, err := os.Stat(match); err == nil {
+		if info, err := os.Stat(absMatch); err == nil {
 			if info.IsDir() {
-				if entries, err := os.ReadDir(match); err == nil {
+				if entries, err := os.ReadDir(absMatch); err == nil {
 					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting directory %s with %d entries", itemName, len(entries)))
 				}
 			} else {
@@ -690,12 +685,12 @@ func (f *functions) delete(pattern string) ([]string, error) {
 		}
 
 		deleteStart := time.Now()
-		if err := os.RemoveAll(match); err != nil {
+		if err := os.RemoveAll(absMatch); err != nil {
 			failed = append(failed, itemName)
 			f.ctx.LogDebug(fmt.Sprintf("Failed to delete %s: %v", itemName, err))
 		} else {
 			deleteDuration := time.Since(deleteStart)
-			rel, err := filepath.Rel(f.ctx.SandboxDir, match)
+			rel, err := filepath.Rel(f.ctx.SandboxDir, absMatch)
 			if err != nil {
 				rel = itemName // fallback
 			}
@@ -713,6 +708,57 @@ func (f *functions) delete(pattern string) ([]string, error) {
 			len(deleted), len(matches), totalSize))
 	} else {
 		f.ctx.LogDebug(fmt.Sprintf("Successfully deleted %d/%d items", len(deleted), len(matches)))
+	}
+
+	return deleted, nil
+}
+
+// delete removes files matching a pattern
+func (f *functions) delete(pattern string) ([]string, error) {
+	start := f.logFunctionEntry("delete", pattern)
+
+	searchPath := filepath.Join(f.ctx.SandboxDir, pattern)
+	absSearchPath, _ := filepath.Abs(searchPath)
+	f.ctx.LogDebug(fmt.Sprintf("Deleting %s/%s ", pattern, absSearchPath))
+
+	matches, err := filepath.Glob(searchPath)
+	if err != nil {
+		deleteErr := fmt.Errorf("failed to glob pattern %s: %v", pattern, err)
+		f.logFunctionError("delete", start, deleteErr)
+		f.ctx.FailPipeline(deleteErr.Error())
+		return nil, deleteErr
+	}
+
+	if len(matches) == 0 {
+		f.ctx.LogDebug(fmt.Sprintf("No files found matching pattern %s, nothing to delete", pattern))
+		f.logFunctionSuccess("delete", start, []string{})
+		return []string{}, nil
+	}
+
+	deleted, err := f.deleteFiles(matches, fmt.Sprintf("pattern '%s'", pattern))
+	if err != nil {
+		f.logFunctionError("delete", start, err)
+		return nil, err
+	}
+
+	f.logFunctionSuccess("delete", start, deleted)
+	return deleted, nil
+}
+
+// deleteList removes files from a list of paths
+func (f *functions) deleteList(paths []string) ([]string, error) {
+	start := f.logFunctionEntry("delete", fmt.Sprintf("list of %d paths", len(paths)))
+
+	if len(paths) == 0 {
+		f.ctx.LogDebug("Empty path list provided, nothing to delete")
+		f.logFunctionSuccess("delete", start, []string{})
+		return []string{}, nil
+	}
+
+	deleted, err := f.deleteFiles(paths, fmt.Sprintf("list of %d paths", len(paths)))
+	if err != nil {
+		f.logFunctionError("delete", start, err)
+		return nil, err
 	}
 
 	f.logFunctionSuccess("delete", start, deleted)
@@ -1126,13 +1172,35 @@ func (f *functions) chmodCEL(lhs, rhs ref.Val) ref.Val {
 }
 
 // deleteCEL wraps delete function for CEL
+// Accepts either a string pattern or a list of paths:
+//
+//	delete("*.bat") - glob pattern
+//	delete(glob("*.bat")) - list of paths from glob()
 func (f *functions) deleteCEL(arg ref.Val) ref.Val {
-	pattern, ok := arg.Value().(string)
-	if !ok {
-		return types.NewErr("delete: expected string argument")
+	var result []string
+	var err error
+
+	// Check if argument is a list (from glob() results)
+	if lister, ok := arg.(traits.Lister); ok {
+		// Convert CEL list to []string
+		size := int(lister.Size().Value().(int64))
+		paths := make([]string, size)
+		for i := 0; i < size; i++ {
+			item := lister.Get(types.Int(i))
+			path, ok := item.Value().(string)
+			if !ok {
+				return types.NewErr("delete: list must contain only strings")
+			}
+			paths[i] = path
+		}
+		result, err = f.deleteList(paths)
+	} else if pattern, ok := arg.Value().(string); ok {
+		// String pattern - use glob-based delete
+		result, err = f.delete(pattern)
+	} else {
+		return types.NewErr("delete: expected string pattern or list of paths")
 	}
 
-	result, err := f.delete(pattern)
 	if err != nil {
 		return newCELError("delete", err)
 	}

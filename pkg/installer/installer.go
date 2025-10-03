@@ -640,6 +640,9 @@ func (i *Installer) handleDirectBinaryInstallation(downloadPath, name string) (s
 }
 
 // createSymlinks creates symlinks from app directory to bin directory based on glob patterns
+// Supports two formats:
+// 1. Pattern only: "bin/tool" creates symlink with basename "tool"
+// 2. Name->Pattern: "custom-name->bin/tool" creates symlink with name "custom-name"
 func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t *task.Task) error {
 	if len(patterns) == 0 {
 		return nil
@@ -653,17 +656,27 @@ func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t 
 	}
 
 	for _, pattern := range patterns {
+		// Parse symlink name mapping (e.g., "as.sh->arthas" or just "bin/tool")
+		var linkName, targetPattern string
+		if strings.Contains(pattern, "->") {
+			parts := strings.SplitN(pattern, "->", 2)
+			linkName = strings.TrimSpace(parts[0])
+			targetPattern = strings.TrimSpace(parts[1])
+		} else {
+			targetPattern = pattern
+		}
+
 		// Resolve pattern relative to app directory
-		fullPattern := filepath.Join(appPath, pattern)
+		fullPattern := filepath.Join(appPath, targetPattern)
 		t.V(3).Infof("Resolving symlink pattern: %s", fullPattern)
 
 		matches, err := filepath.Glob(fullPattern)
 		if err != nil {
-			return fmt.Errorf("failed to glob pattern %s: %w", pattern, err)
+			return fmt.Errorf("failed to glob pattern %s: %w", targetPattern, err)
 		}
 
 		if len(matches) == 0 {
-			t.Warnf("No files matched symlink pattern: %s", pattern)
+			t.Warnf("No files matched symlink pattern: %s", targetPattern)
 			continue
 		}
 
@@ -678,9 +691,16 @@ func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t 
 				continue
 			}
 
-			// Get the basename for the symlink
-			linkName := filepath.Base(match)
-			linkPath := filepath.Join(binDir, linkName)
+			// Determine symlink name
+			var symlinkName string
+			if linkName != "" {
+				// Use custom name from mapping
+				symlinkName = linkName
+			} else {
+				// Use basename of matched file
+				symlinkName = filepath.Base(match)
+			}
+			linkPath := filepath.Join(binDir, symlinkName)
 
 			// Remove existing symlink or file if it exists
 			if _, err := os.Lstat(linkPath); err == nil {
@@ -694,6 +714,11 @@ func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t 
 			if err := os.Symlink(match, linkPath); err != nil {
 				t.Warnf("Failed to create symlink %s -> %s: %v", linkPath, match, err)
 				continue
+			}
+
+			// Make symlink executable
+			if err := os.Chmod(linkPath, 0755); err != nil {
+				t.Warnf("Failed to chmod symlink %s: %v", linkPath, err)
 			}
 
 			t.V(3).Infof("Created symlink: %s -> %s", linkPath, match)

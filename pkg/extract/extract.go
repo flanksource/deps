@@ -96,7 +96,14 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 		}
 	}
 
-	// Ensure extract directory exists
+	// Remove extraction directory if it exists to avoid permission issues from previous failed runs
+	if _, err := os.Stat(extractDir); err == nil {
+		if err := os.RemoveAll(extractDir); err != nil {
+			return "", fmt.Errorf("failed to clean up existing extract directory: %w", err)
+		}
+	}
+
+	// Create fresh extract directory
 	if err := os.MkdirAll(extractDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create extract directory: %w", err)
 	}

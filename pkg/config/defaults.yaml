@@ -575,7 +575,10 @@ registry:
         version_command: bin/version.sh
         version_pattern: 'Server version:\\s+Apache Tomcat/\\S+\\s+Apache TomEE/([\\d\\.]+)'
         symlinks:
-            - bin/catalina.sh
+            - tomee->bin/catalina.sh
+        post_process:
+            - delete("webapps/docs/")
+            - delete("*.bat")
 
     activemq:
         name: activemq
@@ -589,6 +592,13 @@ registry:
         version_pattern: 'ActiveMQ\\s+(\\d+\\.\\d+\\.\\d+)'
         symlinks:
             - bin/activemq
+        post_process:
+            - delete("examples/")
+            - delete("docs/")
+            - delete("webapps-demo/")
+            - '!windows-*: delete("bin/win32/")'
+            - '!windows-*: delete("bin/win64/")'
+            - delete("*.bat")
 
     activemq-artemis:
         name: activemq-artemis
@@ -607,11 +617,11 @@ registry:
         repo: alibaba/arthas
         mode: directory
         asset_patterns:
-            "*": arthas-packaging-{{.version}}-bin.zip
+            "*": arthas-bin.zip
         version_command: cat VERSION
         version_pattern: '(\\d+\\.\\d+\\.\\d+)'
         symlinks:
-            - as.sh
+            - as.sh->arthas
 
     xmlstarlet:
         name: xmlstarlet
