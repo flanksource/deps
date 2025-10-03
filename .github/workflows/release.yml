@@ -81,13 +81,14 @@ jobs:
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
+          GOARCH: ${{ matrix.goos }}
           CGO_ENABLED: 0
           VERSION: ${{ needs.version.outputs.version }}
+
         run: |
-          BINARY_NAME="deps"
+
           if [ "$GOOS" = "windows" ]; then
-            BINARY_NAME="deps.exe"
+            BINARY_NAME="$BINARY_NAME.exe"
           fi
 
           go build -ldflags="-s -w -X main.version=$VERSION -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -97,8 +98,9 @@ jobs:
           sha256sum "$BINARY_NAME" > "$BINARY_NAME".sha256
 
       - name: Create archive
+        env:
+          BINARY_NAME: "deps-${{ matrix.goos }}-${{ matrix.goos }}"
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
           GOOS="${{ matrix.goos }}"
           GOARCH="${{ matrix.goarch }}"
 
@@ -106,20 +108,22 @@ jobs:
           ARCHIVE_NAME="deps-${GOOS}-${ARCH}"
 
           if [ "$GOOS" = "windows" ]; then
-            zip "${ARCHIVE_NAME}.zip" deps.exe
-            sha256sum  "${ARCHIVE_NAME}.zip" >  "${ARCHIVE_NAME}.sha256"
+            mv $BINARY_NAME.exe deps.exe
+            zip "${BINARY_NAME}.zip" deps.exe
+            sha256sum  "${BINARY_NAME}.zip" >  "${BINARY_NAME}.sha256"
           else
-            tar czf "${ARCHIVE_NAME}.tar.gz" deps
-            sha256sum  "${ARCHIVE_NAME}.tar.gz" >  "${ARCHIVE_NAME}.tar.gz.sha256"
+            mv $BINARY_NAME deps
+            tar czf "${BINARY_NAME}.tar.gz" deps
+            sha256sum  "${BINARY_NAME}.tar.gz" >  "${BINARY_NAME}.tar.gz.sha256"
           fi
 
-      - name: Upload binaries to release
+      - name: Upload bare to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: deps*
-          tag: ${{ github.ref }}
+          file: deps-*
+          tag: ${{ needs.version.outputs.version }}
 
   release:
     name: Create Release
