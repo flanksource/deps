@@ -15,72 +15,62 @@ env:
   GO_VERSION: "1.25"
 
 jobs:
-  semantic-release:
-    name: Semantic Release
+  version:
+    name: Determine Version
     runs-on: ubuntu-latest
     outputs:
-      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
-      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
-      new_release_major_version: ${{ steps.semantic.outputs.new_release_major_version }}
-      new_release_minor_version: ${{ steps.semantic.outputs.new_release_minor_version }}
-      new_release_patch_version: ${{ steps.semantic.outputs.new_release_patch_version }}
+      version: ${{ steps.svu.outputs.version }}
+      tag: ${{ steps.svu.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install semantic-release
+      - name: Install svu
         run: |
-          npm install -g semantic-release@23 \
-            @semantic-release/git@10 \
-            @semantic-release/github@10 \
-            @semantic-release/changelog@6 \
-            @semantic-release/exec@6 \
-            conventional-changelog-conventionalcommits@7
+          curl -sL https://github.com/caarlos0/svu/releases/download/v2.2.0/svu_2.2.0_linux_amd64.tar.gz | tar xz
+          sudo mv svu /usr/local/bin/
 
-      - name: Semantic Release
+      - name: Get next version
+        id: svu
+        run: |
+          NEXT_VERSION=$(svu patch)
+          echo "version=${NEXT_VERSION#v}" >> $GITHUB_OUTPUT
+          echo "tag=$NEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "Next version: $NEXT_VERSION"
 
-        id: semantic
+      - name: Create and push tag
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Running semantic-release with enhanced patch rules..."
-          echo "Last tag: ${{ steps.changes.outputs.last_tag }}"
-          echo "Commits since last release: ${{ steps.changes.outputs.commits_since_last }}"
-          npx semantic-release
-
-      - name: Release Summary
-        run: |
-          echo "=== Release Summary ==="
-          echo "New release published: ${{ steps.semantic.outputs}}"
-          echo "New version: v${{ steps.semantic.outputs.new_release_version }}"
-          echo "Release type: ${{ steps.semantic.outputs.new_release_major_version != '' && 'major' || (steps.semantic.outputs.new_release_minor_version != '' && 'minor' || 'patch') }}"
-          echo "GitHub release will be created by GoReleaser"
-
-
-          # Show recent commits for debugging
-          echo ""
-          echo "Recent commits: $(git describe --tags --abbrev=0)"
-          git log --oneline -5
-  goreleaser:
-    name: GoReleaser
-    needs: semantic-release
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.svu.outputs.tag }}
+          git push origin ${{ steps.svu.outputs.tag }}
+  build:
+    name: Build
+    needs: version
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Fetch tags
-        run: git fetch --force --tags
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -88,33 +78,58 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install dependencies
-        run: make build
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean
+      - name: Build binary
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          SCOOP_BUCKET_GITHUB_TOKEN: ${{ secrets.SCOOP_BUCKET_GITHUB_TOKEN }}
-          GITHUB_OWNER: ${{ github.repository_owner }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          BINARY_NAME="deps"
+          if [ "$GOOS" = "windows" ]; then
+            BINARY_NAME="deps.exe"
+          fi
 
-  announce:
-    name: Announce Release
-    needs: [semantic-release, goreleaser]
+          go build -ldflags="-s -w -X main.version=$VERSION -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "$BINARY_NAME" ./cmd/deps/main.go
+
+      - name: Create archive
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          GOOS="${{ matrix.goos }}"
+          GOARCH="${{ matrix.goarch }}"
+
+          # Normalize arch name
+          ARCH="$GOARCH"
+          if [ "$GOARCH" = "amd64" ]; then
+            ARCH="x86_64"
+          fi
+
+          ARCHIVE_NAME="deps_$(echo $GOOS | sed 's/.*/\u&/')_${ARCH}"
+
+          if [ "$GOOS" = "windows" ]; then
+            zip "${ARCHIVE_NAME}.zip" deps.exe
+            echo "ASSET=${ARCHIVE_NAME}.zip" >> $GITHUB_ENV
+          else
+            tar czf "${ARCHIVE_NAME}.tar.gz" deps
+            echo "ASSET=${ARCHIVE_NAME}.tar.gz" >> $GITHUB_ENV
+          fi
+
+      - name: Generate checksum
+        run: |
+          sha256sum "$ASSET" > "${ASSET}.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+
+  release:
+    name: Create Release
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -122,28 +137,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create release announcement
-        env:
-          VERSION: v${{ needs.semantic-release.outputs.new_release_version }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
         run: |
-          echo "🚀 Clicky $VERSION has been released!" > announcement.txt
-          echo "" >> announcement.txt
-          echo "## Installation" >> announcement.txt
-          echo "" >> announcement.txt
-          echo "### Using Go:" >> announcement.txt
-          echo "\`\`\`bash" >> announcement.txt
-          echo "go install github.com/${{ github.repository }}/cmd/clicky@$VERSION" >> announcement.txt
-          echo "\`\`\`" >> announcement.txt
-          echo "" >> announcement.txt
-          echo "### Using Homebrew (macOS/Linux):" >> announcement.txt
-          echo "\`\`\`bash" >> announcement.txt
-          echo "brew install ${{ github.repository_owner }}/tap/clicky" >> announcement.txt
-          echo "\`\`\`" >> announcement.txt
-          echo "" >> announcement.txt
-          echo "### Using Docker:" >> announcement.txt
-          echo "\`\`\`bash" >> announcement.txt
-          echo "docker pull ghcr.io/${{ github.repository }}:$VERSION" >> announcement.txt
-          echo "\`\`\`" >> announcement.txt
-          echo "" >> announcement.txt
-          echo "See the full changelog at: https://github.com/${{ github.repository }}/releases/tag/$VERSION" >> announcement.txt
-          cat announcement.txt
+          mkdir -p release
+          find artifacts -type f -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" | while read file; do
+            cp "$file" release/
+          done
+          ls -la release/
+
+      - name: Generate checksums file
+        run: |
+          cd release
+          sha256sum *.tar.gz *.zip > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "Release $TAG" \
+            --generate-notes \
+            release/*

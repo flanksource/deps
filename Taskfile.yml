@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 vars:
   BINARY_NAME: deps
@@ -13,9 +13,19 @@ tasks:
 
   build:
     desc: Build the deps binary
+    vars:
+      VERSION:
+        sh: git describe --tags --always 2>/dev/null || echo "dev"
+      COMMIT:
+        sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+      DATE:
+        sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
+      DIRTY:
+        sh: if [ -n "$(git status --porcelain 2>/dev/null)" ]; then echo "true"; else echo "false"; fi
+      LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}} -X main.dirty={{.DIRTY}}
     cmds:
       - mkdir -p {{.BUILD_DIR}}
-      - go build -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
     sources:
       - "**/*.go"
       - go.mod
