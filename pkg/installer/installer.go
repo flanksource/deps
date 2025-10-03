@@ -488,10 +488,31 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 	}
 
 	// Create symlinks for directory-mode packages
-	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 {
-		t.SetDescription("Creating symlinks")
-		if err := i.createSymlinks(finalPath, i.options.BinDir, pkg.Symlinks, t); err != nil {
-			return fmt.Errorf("failed to create symlinks: %w", err)
+	if pkg.Mode == "directory" {
+		// Determine which symlink patterns to use
+		var symlinkPatterns []string
+
+		// First try platform-specific symlink patterns
+		if len(pkg.SymlinkPatterns) > 0 {
+			plat := platform.Current()
+			patterns, err := manager.ResolveSymlinkPatterns(pkg.SymlinkPatterns, plat)
+			if err != nil {
+				return fmt.Errorf("failed to resolve symlink patterns: %w", err)
+			}
+			symlinkPatterns = patterns
+		}
+
+		// Fall back to simple symlinks list if no platform-specific patterns
+		if len(symlinkPatterns) == 0 && len(pkg.Symlinks) > 0 {
+			symlinkPatterns = pkg.Symlinks
+		}
+
+		// Create symlinks if any patterns are defined
+		if len(symlinkPatterns) > 0 {
+			t.SetDescription("Creating symlinks")
+			if err := i.createSymlinks(finalPath, i.options.BinDir, symlinkPatterns, t); err != nil {
+				return fmt.Errorf("failed to create symlinks: %w", err)
+			}
 		}
 	}
 

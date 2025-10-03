@@ -62,6 +62,43 @@ func matchPlatformPattern(pattern string, platform string) bool {
 	return false
 }
 
+// ResolveSymlinkPatterns finds the best matching symlink patterns for a platform.
+// It follows the same priority order as ResolveAssetPattern:
+// 1. Exact platform match (e.g., "darwin-arm64")
+// 2. Glob patterns (e.g., "darwin-*", "linux-*")
+// 3. Comma-separated patterns (e.g., "darwin-*,windows-*")
+// 4. Literal "*" wildcard (all platforms)
+func ResolveSymlinkPatterns(symlinkPatterns map[string][]string, plat platform.Platform) ([]string, error) {
+	if len(symlinkPatterns) == 0 {
+		return nil, nil
+	}
+
+	platformKey := plat.String() // e.g., "darwin-arm64"
+
+	// 1. Try exact platform match first
+	if patterns, exists := symlinkPatterns[platformKey]; exists {
+		return patterns, nil
+	}
+
+	// 2. Try glob patterns like "darwin-*", "linux-*" (more specific than "*")
+	for patternKey, patterns := range symlinkPatterns {
+		// Skip literal "*" here - it's handled later
+		if patternKey != "*" && (strings.Contains(patternKey, "*") || strings.Contains(patternKey, ",")) {
+			if matchPlatformPattern(patternKey, platformKey) {
+				return patterns, nil
+			}
+		}
+	}
+
+	// 3. Try literal "*" wildcard (all platforms) as last fallback
+	if patterns, exists := symlinkPatterns["*"]; exists {
+		return patterns, nil
+	}
+
+	// No match found - this is not an error, just means no platform-specific symlinks
+	return nil, nil
+}
+
 // NormalizeURLTemplate ensures that if a URL template ends with "/",
 // it automatically includes the {{.asset}} placeholder.
 // This allows for cleaner configuration where:
