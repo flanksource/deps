@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/flanksource/clicky/task"
-	"github.com/flanksource/commons/files"
+	"github.com/flanksource/deps/pkg/archive"
 	"github.com/flanksource/deps/pkg/system"
 	"github.com/flanksource/deps/pkg/utils"
 )
@@ -116,8 +116,8 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 		return "", fmt.Errorf("failed to create extract directory: %w", err)
 	}
 
-	// Extract archive using files.Unarchive which supports all formats
-	extractResult, err := files.Unarchive(archivePath, extractDir, files.WithOverwrite(true))
+	// Extract archive using archive.Unarchive which supports all formats
+	extractResult, err := archive.Unarchive(archivePath, extractDir, archive.WithOverwrite(true))
 	if err != nil {
 		return "", fmt.Errorf("failed to extract archive: %w", err)
 	}
