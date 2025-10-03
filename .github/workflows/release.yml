@@ -102,11 +102,11 @@ jobs:
           BINARY_NAME: "deps-${{ matrix.goos }}-${{ matrix.goarch }}"
         run: |
           if [ "$GOOS" = "windows" ]; then
-            mv $BINARY_NAME.exe deps.exe
+            cp $BINARY_NAME.exe deps.exe
             zip "${BINARY_NAME}.zip" deps.exe
             sha256sum  "${BINARY_NAME}.zip" >  "${BINARY_NAME}.sha256"
           else
-            mv $BINARY_NAME deps
+            cp $BINARY_NAME deps
             tar czf "${BINARY_NAME}.tar.gz" deps
             sha256sum  "${BINARY_NAME}.tar.gz" >  "${BINARY_NAME}.tar.gz.sha256"
           fi
@@ -116,5 +116,5 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: deps-*
+          file: deps-${{matrix.goos}}-*
           tag: ${{ needs.version.outputs.version }}
