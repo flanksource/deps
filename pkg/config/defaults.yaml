@@ -42,6 +42,19 @@ registry:
         version_command: version --client
         version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
 
+    sqlcmd:
+        name: sqlcmd
+        repo: microsoft/go-sqlcmd
+        asset_patterns:
+            darwin-amd64: sqlcmd-darwin-amd64.tar.bz2
+            darwin-arm64: sqlcmd-darwin-arm64.tar.bz2
+            linux-amd64: sqlcmd-linux-amd64.tar.bz2
+            linux-arm64: sqlcmd-linux-arm64.tar.bz2
+            windows-amd64: sqlcmd-windows-amd64.zip
+        binary_name: sqlcmd
+        version_command: --version
+        version_pattern: Version:\s*v?(\d+\.\d+\.\d+)
+
     commons-lang3:
         name: commons-lang3
         manager: maven

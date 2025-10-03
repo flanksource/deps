@@ -37,6 +37,14 @@ func WithFullExtract() ExtractOption {
 
 // detectFileType determines if a file is an archive or system installer
 func detectFileType(filePath string) string {
+	lower := strings.ToLower(filePath)
+
+	// Check for multi-extension archives first
+	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tar.xz") || strings.HasSuffix(lower, ".tar.bz2") {
+		return "tar_archive"
+	}
+
+	// Check single extension
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".pkg":
@@ -45,7 +53,7 @@ func detectFileType(filePath string) string {
 		return "windows_installer"
 	case ".zip", ".jar":
 		return "zip_archive"
-	case ".tar", ".tgz", ".tar.gz", ".tar.xz", ".txz":
+	case ".tar", ".tgz", ".txz", ".tbz2":
 		return "tar_archive"
 	default:
 		return "unknown"
