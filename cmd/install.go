@@ -16,6 +16,7 @@ import (
 
 var (
 	installCheck bool
+	systemEnv    bool
 )
 
 var installCmd = &cobra.Command{
@@ -38,6 +39,7 @@ Examples:
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().BoolVar(&installCheck, "check", false, "Verify installation by checking version after install")
+	installCmd.Flags().BoolVar(&systemEnv, "system", false, "Merge environment variables into /etc/environment (requires root)")
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
@@ -59,6 +61,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		installer.WithStrictChecksum(strictChecksum),
 		installer.WithDebug(debug),
 		installer.WithOS(osOverride, archOverride),
+		installer.WithSystemEnv(systemEnv),
 	)
 
 	// If no arguments provided, install from deps.yaml

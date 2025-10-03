@@ -11,6 +11,7 @@ import (
 	flanksourceContext "github.com/flanksource/commons/context"
 	"github.com/flanksource/deps/download"
 	"github.com/flanksource/deps/pkg/config"
+	"github.com/flanksource/deps/pkg/envs"
 	"github.com/flanksource/deps/pkg/extract"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/pipeline"
@@ -511,6 +512,27 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 		}
 	}
 
+	// Render and print environment variables if defined
+	if len(pkg.Envs) > 0 {
+		installDir := finalPath
+		if fileInfo, err := os.Stat(finalPath); err == nil && !fileInfo.IsDir() {
+			installDir = filepath.Dir(finalPath)
+		}
+
+		envData := map[string]interface{}{
+			"dir":      installDir,
+			"version":  resolvedVersion,
+			"name":     name,
+			"os":       i.options.OSOverride,
+			"arch":     i.options.ArchOverride,
+			"platform": fmt.Sprintf("%s-%s", i.options.OSOverride, i.options.ArchOverride),
+		}
+
+		if err := i.handleEnvironmentVariables(pkg, envData, t); err != nil {
+			return fmt.Errorf("failed to handle environment variables: %w", err)
+		}
+	}
+
 	// Mark task successful only after all operations (including post-processing) complete
 	t.Infof("✓ Successfully installed %s@%s to %s", name, resolvedVersion, finalPath)
 	t.Success()
@@ -789,4 +811,23 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
 	return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
+}
+
+// handleEnvironmentVariables renders environment variables and prints or merges them into /etc/environment
+func (i *Installer) handleEnvironmentVariables(pkg types.Package, data map[string]interface{}, t *task.Task) error {
+	renderedEnvs, err := envs.RenderEnvs(pkg.Envs, data)
+	if err != nil {
+		return err
+	}
+
+	if i.options.SystemEnv {
+		t.Infof("Merging environment variables into /etc/environment")
+		if err := envs.MergeToSystemEnvironment(renderedEnvs); err != nil {
+			return err
+		}
+	} else {
+		envs.PrintEnvs(renderedEnvs)
+	}
+
+	return nil
 }
