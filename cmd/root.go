@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/flanksource/clicky"
@@ -73,18 +74,23 @@ func GetDepsConfig() *types.DepsConfig {
 func init() {
 
 	clicky.BindAllFlags(rootCmd.PersistentFlags(), "tasks", "!format")
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "/usr/local"
+	home := "/usr/local"
+	if os.Geteuid() != 0 {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "/usr/local"
+		} else {
+			home = filepath.Join(home, ".local")
+		}
 	}
-	defaultBinDir := fmt.Sprintf("%s/.local/bin", home)
-	defaultAppDir := fmt.Sprintf("%s/.local/opt", home)
 
-	// Check if running as root/sudo
-	if os.Geteuid() == 0 {
-		defaultBinDir = "/usr/local/bin"
-		defaultAppDir = "/opt"
+	defaultAppDir := filepath.Join(home, "opt")
+	defaultBinDir := filepath.Join(home, "bin")
+	if d := os.Getenv("APP_DIR"); d != "" {
+		defaultAppDir = d
+	}
+	if d := os.Getenv("BIN_DIR"); d != "" {
+		defaultBinDir = d
 	}
 
 	rootCmd.PersistentFlags().StringVar(&binDir, "bin-dir", defaultBinDir, "Directory to install binaries")

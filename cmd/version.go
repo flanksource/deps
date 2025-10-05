@@ -4,78 +4,161 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/flanksource/clicky"
+	"github.com/flanksource/clicky/task"
+	flanksourceContext "github.com/flanksource/commons/context"
 	"github.com/flanksource/deps/pkg/config"
-	"github.com/spf13/cobra"
+	"github.com/flanksource/deps/pkg/types"
+	"github.com/flanksource/deps/pkg/version"
 )
 
-var versionCmd = &cobra.Command{
-	Use:   "version [tool...]",
-	Short: "Check installed versions of tools",
-	Long: `Check the installed versions of specified tools.
+type VersionOptions struct {
+	Latest   bool     `json:"latest,omitempty"`
+	Checksum bool     `json:"checksum,omitempty"`
+	Tools    []string `json:"tools,omitempty" arg:"positional"`
+}
 
-If no tools are specified, checks all tools found in the bin directory.
-
-Examples:
-  deps version                # Check all installed tools
-  deps version jq kubectl     # Check specific tools`,
-	RunE: runVersion,
+type DependencyVersion struct {
+	Name     string `json:"name"`
+	Version  string `json:"version,omitempty"`
+	Status   string `json:"status"`
+	Checksum string `json:"checksum,omitempty"`
 }
 
 func init() {
-	rootCmd.AddCommand(versionCmd)
+	clicky.AddCommand(rootCmd, VersionOptions{}, func(opts VersionOptions) (any, error) {
+		return GetVersion(opts, opts.Tools...)
+	})
 }
 
-func runVersion(cmd *cobra.Command, args []string) error {
-	// If specific tools are requested
-	if len(args) > 0 {
-		for _, toolName := range args {
-			checkToolVersion(toolName)
-		}
-		return nil
-	}
+func GetVersion(opts VersionOptions, dependencies ...string) ([]DependencyVersion, error) {
+	var results []DependencyVersion
+	var err error
 
-	// Check all tools in bin directory
-	if _, err := os.Stat(binDir); os.IsNotExist(err) {
-		fmt.Printf("Bin directory %s does not exist\n", binDir)
-		return nil
-	}
+	task.StartTask("version-check", func(ctx flanksourceContext.Context, t *task.Task) (interface{}, error) {
+		results, err = getVersionWithTask(opts, dependencies, t)
+		return results, err
+	})
 
-	fmt.Printf("Checking tools in %s:\n\n", binDir)
+	return results, err
+}
 
-	// List all files in bin directory
-	entries, err := os.ReadDir(binDir)
+func getVersionWithTask(opts VersionOptions, dependencies []string, t *task.Task) ([]DependencyVersion, error) {
+	// Load global configuration (defaults + user)
+	depsConfig := config.GetGlobalRegistry()
+
+	// Load lock file if it exists (optional)
+	lockFile, err := config.LoadLockFile("")
 	if err != nil {
-		return fmt.Errorf("failed to read bin directory: %w", err)
+		t.V(3).Infof("No lock file found: %v", err)
 	}
 
-	toolsFound := false
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	var toolsToCheck []string
+
+	// If specific tools are requested
+	if len(dependencies) > 0 {
+		t.V(3).Infof("Checking specific tools: %v", dependencies)
+		toolsToCheck = dependencies
+	} else {
+		// Check all tools in bin directory
+		if _, err := os.Stat(binDir); os.IsNotExist(err) {
+			return nil, fmt.Errorf("bin directory %s does not exist", binDir)
 		}
 
-		name := entry.Name()
-		// Check if this is a known dependency
-		if config.PackageExists(name) {
-			checkToolVersion(name)
-			toolsFound = true
+		t.V(3).Infof("Scanning bin directory: %s", binDir)
+
+		// List all files in bin directory
+		entries, err := os.ReadDir(binDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read bin directory: %w", err)
+		}
+
+		t.V(3).Infof("Found %d entries in bin directory", len(entries))
+
+		for _, entry := range entries {
+			name := entry.Name()
+
+			// Skip hidden files
+			if name[0] == '.' {
+				continue
+			}
+
+			// Check if this is a known dependency
+			if config.PackageExists(name) {
+				t.V(3).Infof("Adding known tool: %s", name)
+				toolsToCheck = append(toolsToCheck, name)
+			} else {
+				t.V(4).Infof("Skipping unknown tool: %s", name)
+			}
+		}
+
+		t.V(3).Infof("Found %d known tools to check", len(toolsToCheck))
+
+		if len(toolsToCheck) == 0 {
+			return []DependencyVersion{}, nil
 		}
 	}
 
-	if !toolsFound {
-		fmt.Println("No known tools found in bin directory")
+	var results []DependencyVersion
+	for _, toolName := range toolsToCheck {
+		t.V(3).Infof("Checking version for: %s", toolName)
+		result := checkToolVersion(toolName, opts, t, depsConfig, lockFile)
+		results = append(results, result)
 	}
 
-	return nil
+	t.V(3).Infof("Returning %d results", len(results))
+	return results, nil
 }
 
-func checkToolVersion(toolName string) {
-	_, exists := config.GetPackage(toolName)
+func checkToolVersion(toolName string, opts VersionOptions, t *task.Task, depsConfig *types.DepsConfig, lockFile *types.LockFile) DependencyVersion {
+	pkg, exists := config.GetPackage(toolName)
 	if !exists {
-		fmt.Printf("%-20s Unknown tool\n", toolName)
-		return
+		return DependencyVersion{
+			Name:   toolName,
+			Status: "unknown",
+		}
 	}
 
-	// TODO: Implement version checking for new package system
-	fmt.Printf("%-20s Version checking not yet implemented\n", toolName)
+	// Get version metadata from lock file if available
+	if lockFile != nil {
+		if lockEntry, exists := lockFile.Dependencies[toolName]; exists {
+			if lockEntry.VersionCommand != "" && pkg.VersionCommand == "" {
+				pkg.VersionCommand = lockEntry.VersionCommand
+			}
+			if lockEntry.VersionPattern != "" && pkg.VersionPattern == "" {
+				pkg.VersionPattern = lockEntry.VersionPattern
+			}
+		}
+	}
+
+	// Check binary version
+	result := version.CheckBinaryVersion(t, toolName, pkg, binDir, "", "")
+
+	status := ""
+	installedVersion := result.InstalledVersion
+	checksumValue := ""
+
+	switch result.Status {
+	case types.CheckStatusMissing:
+		status = "missing"
+	case types.CheckStatusError:
+		status = "error"
+		installedVersion = result.Error
+	case types.CheckStatusOK, types.CheckStatusNewer, types.CheckStatusOutdated, types.CheckStatusUnknown:
+		status = "installed"
+	default:
+		status = "unknown"
+	}
+
+	// Add checksum if requested
+	if opts.Checksum && result.ActualChecksum != "" {
+		checksumValue = result.ActualChecksum
+	}
+
+	return DependencyVersion{
+		Name:     toolName,
+		Version:  installedVersion,
+		Status:   status,
+		Checksum: checksumValue,
+	}
 }
