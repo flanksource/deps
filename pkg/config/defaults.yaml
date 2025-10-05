@@ -565,6 +565,21 @@ registry:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
 
+    openjdk8:
+        name: openjdk
+        repo: adoptium/temurin8-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK8U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK8U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+        version_command: java --version
+        version_pattern: '([\d.]+\+\d+)'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
+
     openjdk21:
         name: openjdk
         repo: adoptium/temurin21-binaries
