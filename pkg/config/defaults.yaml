@@ -546,6 +546,7 @@ registry:
             linux-arm64: OpenJDK17U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java --version
         version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
@@ -561,6 +562,7 @@ registry:
             linux-arm64: OpenJDK11U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java --version
         version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
@@ -576,6 +578,7 @@ registry:
             linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java --version
         version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
@@ -591,6 +594,7 @@ registry:
             linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java --version
         version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
