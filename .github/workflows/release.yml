@@ -84,10 +84,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
           VERSION: ${{ needs.version.outputs.version }}
+          BINARY_NAME: "deps-${{ matrix.goos }}-${{ matrix.goarch }}"
         run: |
-          BINARY_NAME="deps"
+
           if [ "$GOOS" = "windows" ]; then
-            BINARY_NAME="deps.exe"
+            BINARY_NAME="$BINARY_NAME.exe"
           fi
 
           go build -ldflags="-s -w -X main.version=$VERSION -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -97,65 +98,23 @@ jobs:
           sha256sum "$BINARY_NAME" > "$BINARY_NAME".sha256
 
       - name: Create archive
+        env:
+          BINARY_NAME: "deps-${{ matrix.goos }}-${{ matrix.goarch }}"
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          GOOS="${{ matrix.goos }}"
-          GOARCH="${{ matrix.goarch }}"
-
-
-          ARCHIVE_NAME="deps-${GOOS}-${ARCH}"
-
           if [ "$GOOS" = "windows" ]; then
-            zip "${ARCHIVE_NAME}.zip" deps.exe
-            sha256sum  "${ARCHIVE_NAME}.zip" >  "${ARCHIVE_NAME}.sha256"
+            cp $BINARY_NAME.exe deps.exe
+            zip "${BINARY_NAME}.zip" deps.exe
+            sha256sum  "${BINARY_NAME}.zip" >  "${BINARY_NAME}.sha256"
           else
-            tar czf "${ARCHIVE_NAME}.tar.gz" deps
-            sha256sum  "${ARCHIVE_NAME}.tar.gz" >  "${ARCHIVE_NAME}.tar.gz.sha256"
+            cp $BINARY_NAME deps
+            tar czf "${BINARY_NAME}.tar.gz" deps
+            sha256sum  "${BINARY_NAME}.tar.gz" >  "${BINARY_NAME}.tar.gz.sha256"
           fi
 
-      - name: Upload binaries to release
+      - name: Upload bare to release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: deps*
-          tag: ${{ github.ref }}
-
-  release:
-    name: Create Release
-    needs: [version, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare release assets
-        run: |
-          mkdir -p release
-          find artifacts -type f -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" | while read file; do
-            cp "$file" release/
-          done
-          ls -la release/
-
-      - name: Generate checksums file
-        run: |
-          cd release
-          sha256sum *.tar.gz *.zip > checksums.txt
-          cat checksums.txt
-
-      - name: Create GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.version.outputs.tag }}
-        run: |
-          gh release create "$TAG" \
-            --title "Release $TAG" \
-            --generate-notes \
-            release/*
+          file: deps-${{matrix.goos}}-*
+          tag: ${{ needs.version.outputs.version }}

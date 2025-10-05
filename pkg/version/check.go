@@ -515,11 +515,8 @@ func ScanBinDirectory(binDir string) ([]string, error) {
 			continue
 		}
 
-		// Remove .exe extension for Windows binaries
-		if strings.HasSuffix(name, ".exe") {
-			name = strings.TrimSuffix(name, ".exe")
-		}
-
+		// Keep the full name - don't strip .exe or skip directories
+		// The version checking logic will handle all entry types appropriately
 		tools = append(tools, name)
 	}
 

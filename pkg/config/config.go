@@ -61,9 +61,19 @@ func loadRawConfig(path string) (*types.DepsConfig, error) {
 // applyConfigPostProcessing applies defaults and post-processing to a config
 // This includes setting defaults, auto-detecting managers, and expanding paths
 func applyConfigPostProcessing(config *types.DepsConfig) {
-	// Set defaults
+	// Set defaults with environment variable fallback
+	// Priority: Config file > Environment variable > Default constant
 	if config.Settings.BinDir == "" {
-		config.Settings.BinDir = DefaultBinDir
+		if binDir := os.Getenv("BIN_DIR"); binDir != "" {
+			config.Settings.BinDir = binDir
+		} else {
+			config.Settings.BinDir = DefaultBinDir
+		}
+	}
+	if config.Settings.AppDir == "" {
+		if appDir := os.Getenv("APP_DIR"); appDir != "" {
+			config.Settings.AppDir = appDir
+		}
 	}
 	if config.Settings.CacheDir == "" {
 		config.Settings.CacheDir = DefaultCacheDir
@@ -102,6 +112,12 @@ func applyConfigPostProcessing(config *types.DepsConfig) {
 	if !filepath.IsAbs(config.Settings.BinDir) {
 		if abs, err := filepath.Abs(config.Settings.BinDir); err == nil {
 			config.Settings.BinDir = abs
+		}
+	}
+
+	if config.Settings.AppDir != "" && !filepath.IsAbs(config.Settings.AppDir) {
+		if abs, err := filepath.Abs(config.Settings.AppDir); err == nil {
+			config.Settings.AppDir = abs
 		}
 	}
 

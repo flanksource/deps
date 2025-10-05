@@ -19,6 +19,7 @@ type InstallOptions struct {
 	Debug          bool
 	OSOverride     string
 	ArchOverride   string
+	SystemEnv      bool // If true, merge env vars into /etc/environment
 	// Legacy compatibility
 	VersionCheck types.VersionCheckMode
 	Timeout      time.Duration
@@ -112,6 +113,13 @@ func WithTimeout(timeout time.Duration) InstallOption {
 func WithPreferLocal(prefer bool) InstallOption {
 	return func(opts *InstallOptions) {
 		opts.PreferLocal = prefer
+	}
+}
+
+// WithSystemEnv enables or disables merging env vars into /etc/environment
+func WithSystemEnv(system bool) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.SystemEnv = system
 	}
 }
 

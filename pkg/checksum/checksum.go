@@ -293,7 +293,8 @@ func (g *GoreleaserStrategy) parseChecksumFile(ctx context.Context, url string) 
 		if len(matches) == 3 {
 			checksum := matches[1]
 			filename := matches[2]
-			checksums[filename] = "sha256:" + checksum
+			hashType := DetectHashType(checksum)
+			checksums[filename] = string(hashType) + ":" + checksum
 		}
 	}
 
@@ -367,7 +368,8 @@ func (h *HashiCorpStrategy) parseChecksumFile(ctx context.Context, url string) (
 		if len(matches) == 3 {
 			checksum := matches[1]
 			filename := matches[2]
-			checksums[filename] = "sha256:" + checksum
+			hashType := DetectHashType(checksum)
+			checksums[filename] = string(hashType) + ":" + checksum
 		}
 	}
 
@@ -406,8 +408,9 @@ func (i *IndividualFileStrategy) FindChecksums(ctx context.Context, resolution *
 	}
 
 	checksum := strings.TrimSpace(string(content))
-	if !strings.HasPrefix(checksum, "sha256:") {
-		checksum = "sha256:" + checksum
+	if !strings.Contains(checksum, ":") {
+		hashType := DetectHashType(checksum)
+		checksum = string(hashType) + ":" + checksum
 	}
 
 	// Get filename from URL

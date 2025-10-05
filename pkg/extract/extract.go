@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/flanksource/clicky/task"
-	"github.com/flanksource/commons/files"
+	"github.com/flanksource/deps/pkg/archive"
 	"github.com/flanksource/deps/pkg/system"
 	"github.com/flanksource/deps/pkg/utils"
 )
@@ -37,6 +37,14 @@ func WithFullExtract() ExtractOption {
 
 // detectFileType determines if a file is an archive or system installer
 func detectFileType(filePath string) string {
+	lower := strings.ToLower(filePath)
+
+	// Check for multi-extension archives first
+	if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tar.xz") || strings.HasSuffix(lower, ".tar.bz2") {
+		return "tar_archive"
+	}
+
+	// Check single extension
 	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".pkg":
@@ -45,7 +53,7 @@ func detectFileType(filePath string) string {
 		return "windows_installer"
 	case ".zip", ".jar":
 		return "zip_archive"
-	case ".tar", ".tgz", ".tar.gz", ".tar.xz", ".txz":
+	case ".tar", ".tgz", ".txz", ".tbz2":
 		return "tar_archive"
 	default:
 		return "unknown"
@@ -108,8 +116,8 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 		return "", fmt.Errorf("failed to create extract directory: %w", err)
 	}
 
-	// Extract archive using files.Unarchive which supports all formats
-	extractResult, err := files.Unarchive(archivePath, extractDir, files.WithOverwrite(true))
+	// Extract archive using archive.Unarchive which supports all formats
+	extractResult, err := archive.Unarchive(archivePath, extractDir, archive.WithOverwrite(true))
 	if err != nil {
 		return "", fmt.Errorf("failed to extract archive: %w", err)
 	}
