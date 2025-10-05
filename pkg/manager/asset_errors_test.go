@@ -29,10 +29,12 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 			expectedContains: []string{
 				"Asset not found: tool-linux-amd64 for linux-amd64 in package example/tool",
 				"Available assets (4 total):",
-				"tool-darwin-amd64",
-				"tool-linux-arm64",
-				"tool-windows-amd64.exe",
-				"checksums.txt",
+				// Note: Assets will be sorted by Levenshtein distance and show distance/score
+				"tool-linux-arm64 [distance:",
+				"tool-darwin-amd64 [distance:",
+				"tool-windows-amd64.exe [distance:",
+				"checksums.txt [distance:",
+				"similarity:",
 				"Searched for pattern: tool-linux-amd64",
 				"Did you mean:", // Just check that it suggests something
 			},
@@ -53,8 +55,9 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 			expectedContains: []string{
 				"Asset not found: missing-asset for linux-amd64 in package big/project",
 				"Available assets (25 total):",
-				"asset-a",
-				"asset-t", // 20th asset (since we limit to 20)
+				"asset-a [distance:",
+				"[distance:", // Just check that distance is shown
+				"similarity:",
 				"... and 5 more assets",
 				"Searched for pattern: missing-asset",
 			},
@@ -81,6 +84,8 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 				"tool-darwin-amd64.tar.gz",
 			},
 			expectedContains: []string{
+				"tool-linux-amd64.tar.gz [distance:",
+				"similarity:",
 				"Did you mean: tool-linux-amd64.tar.gz?",
 			},
 			expectedCount: 2,
@@ -186,7 +191,7 @@ func TestCalculateAssetSimilarity(t *testing.T) {
 		name      string
 		target    string
 		candidate string
-		minScore  int // Minimum expected score
+		minScore  int // Minimum expected score based on Levenshtein distance
 		maxScore  int // Maximum expected score
 	}{
 		{
@@ -197,32 +202,32 @@ func TestCalculateAssetSimilarity(t *testing.T) {
 			maxScore:  100,
 		},
 		{
-			name:      "Extension difference",
+			name:      "Extension difference (7 chars different)",
 			target:    "tool-linux-amd64",
 			candidate: "tool-linux-amd64.tar.gz",
-			minScore:  70,
-			maxScore:  100,
+			minScore:  70, // ~7 chars difference out of ~24 = ~70% similarity
+			maxScore:  75,
 		},
 		{
-			name:      "Substring match",
+			name:      "Prefix match (5 chars different)",
 			target:    "linux-amd64",
 			candidate: "tool-linux-amd64",
-			minScore:  80,
-			maxScore:  100,
+			minScore:  68, // 5 chars difference out of 16 = ~68% similarity
+			maxScore:  72,
 		},
 		{
-			name:      "Common parts",
+			name:      "Similar with character substitutions (3 chars different)",
 			target:    "myapp-linux-x64",
 			candidate: "myapp-linux-amd64",
-			minScore:  30,
-			maxScore:  90,
+			minScore:  82, // 3 chars difference out of 17 = ~82% similarity
+			maxScore:  87,
 		},
 		{
 			name:      "No similarity",
 			target:    "completely-different",
 			candidate: "other-file",
 			minScore:  0,
-			maxScore:  30,
+			maxScore:  30, // Levenshtein may give some similarity due to common letters
 		},
 	}
 
@@ -237,51 +242,3 @@ func TestCalculateAssetSimilarity(t *testing.T) {
 	}
 }
 
-func TestSplitAssetName(t *testing.T) {
-	tests := []struct {
-		name      string
-		assetName string
-		expected  []string
-	}{
-		{
-			name:      "Hyphen separated",
-			assetName: "tool-linux-amd64.tar.gz",
-			expected:  []string{"tool", "linux", "amd64", "tar"},
-		},
-		{
-			name:      "Underscore separated",
-			assetName: "my_app_windows_x64.exe",
-			expected:  []string{"my", "app", "windows", "x64"},
-		},
-		{
-			name:      "Mixed separators",
-			assetName: "app-name_v1.2.3.tar.gz",
-			expected:  []string{"app", "name", "v1", "2", "3", "tar"},
-		},
-		{
-			name:      "No separators",
-			assetName: "simpletool.exe",
-			expected:  []string{"simpletool"},
-		},
-		{
-			name:      "Empty string",
-			assetName: "",
-			expected:  []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := splitAssetName(tt.assetName)
-			if len(result) != len(tt.expected) {
-				t.Errorf("Expected %d parts, got %d: %v", len(tt.expected), len(result), result)
-				return
-			}
-			for i, expected := range tt.expected {
-				if i >= len(result) || result[i] != expected {
-					t.Errorf("Expected part %d to be %q, got %q", i, expected, result[i])
-				}
-			}
-		})
-	}
-}

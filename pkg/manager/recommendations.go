@@ -2,10 +2,11 @@ package manager
 
 import (
 	"fmt"
-	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/agnivade/levenshtein"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
 )
@@ -155,31 +156,57 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 		return fmt.Errorf("%w\n\nNo assets found for %s", originalErr, packageName)
 	}
 
+	// Sort assets by Levenshtein distance (most similar first) and calculate distances
+	type assetWithDistance struct {
+		name     string
+		distance int
+		score    int
+	}
+
+	assetsWithDist := make([]assetWithDistance, len(availableAssets))
+	for i, asset := range availableAssets {
+		dist := levenshtein.ComputeDistance(strings.ToLower(assetPattern), strings.ToLower(asset))
+		score := calculateAssetSimilarity(assetPattern, asset)
+		assetsWithDist[i] = assetWithDistance{
+			name:     asset,
+			distance: dist,
+			score:    score,
+		}
+	}
+
+	sort.SliceStable(assetsWithDist, func(i, j int) bool {
+		return assetsWithDist[i].distance < assetsWithDist[j].distance
+	})
+
 	// Build enhanced error message
 	var errorMsg strings.Builder
 	errorMsg.WriteString(fmt.Sprintf("Asset not found: %s for %s in package %s\n\n", assetPattern, platform, packageName))
-	errorMsg.WriteString(fmt.Sprintf("Available assets (%d total):\n", len(availableAssets)))
+	errorMsg.WriteString(fmt.Sprintf("Available assets (%d total):\n", len(assetsWithDist)))
 
-	// Show up to 20 assets as requested
+	// Show up to 20 assets (most relevant ones)
 	maxAssets := 20
-	displayAssets := availableAssets
+	displayAssets := assetsWithDist
 	if len(displayAssets) > maxAssets {
 		displayAssets = displayAssets[:maxAssets]
 	}
 
 	for _, asset := range displayAssets {
-		errorMsg.WriteString(fmt.Sprintf("  %s\n", asset))
+		errorMsg.WriteString(fmt.Sprintf("  %s [distance: %d, similarity: %d%%]\n", asset.name, asset.distance, asset.score))
 	}
 
-	if len(availableAssets) > maxAssets {
-		errorMsg.WriteString(fmt.Sprintf("  ... and %d more assets\n", len(availableAssets)-maxAssets))
+	if len(assetsWithDist) > maxAssets {
+		errorMsg.WriteString(fmt.Sprintf("  ... and %d more assets\n", len(assetsWithDist)-maxAssets))
 	}
 
 	// Show the pattern that was searched for
 	errorMsg.WriteString(fmt.Sprintf("\nSearched for pattern: %s", assetPattern))
 
-	// Suggest closest match
-	if suggestion := SuggestClosestAsset(assetPattern, availableAssets); suggestion != "" {
+	// Suggest closest match (first sorted asset)
+	sortedAssetNames := make([]string, len(assetsWithDist))
+	for i, a := range assetsWithDist {
+		sortedAssetNames[i] = a.name
+	}
+	if suggestion := SuggestClosestAsset(assetPattern, sortedAssetNames); suggestion != "" {
 		errorMsg.WriteString(fmt.Sprintf("\nDid you mean: %s?", suggestion))
 	}
 
@@ -211,81 +238,36 @@ func SuggestClosestAsset(targetAsset string, availableAssets []string) string {
 	return ""
 }
 
-// calculateAssetSimilarity calculates similarity between two asset names
-// Returns a score from 0-100 based on common substrings and patterns
+// calculateAssetSimilarity calculates similarity between two asset names using Levenshtein distance
+// Returns a score from 0-100 where 100 is exact match and 0 is very dissimilar
 func calculateAssetSimilarity(target, candidate string) int {
 	if target == candidate {
 		return 100
 	}
 
 	// Convert to lowercase for comparison
-	target = strings.ToLower(target)
-	candidate = strings.ToLower(candidate)
+	targetLower := strings.ToLower(target)
+	candidateLower := strings.ToLower(candidate)
 
-	// Check if candidate contains target as substring
-	if strings.Contains(candidate, target) {
-		return 80
-	}
-	if strings.Contains(target, candidate) {
-		return 80
-	}
+	// Calculate Levenshtein distance
+	distance := levenshtein.ComputeDistance(targetLower, candidateLower)
 
-	// Check for common file extensions and patterns
-	targetBase := strings.TrimSuffix(target, filepath.Ext(target))
-	candidateBase := strings.TrimSuffix(candidate, filepath.Ext(candidate))
-
-	if targetBase == candidateBase {
-		return 70
+	// Convert distance to similarity score (0-100)
+	// Use the length of the longer string as the maximum possible distance
+	maxLen := len(targetLower)
+	if len(candidateLower) > maxLen {
+		maxLen = len(candidateLower)
 	}
 
-	// Split by common separators and check overlap
-	targetParts := splitAssetName(target)
-	candidateParts := splitAssetName(candidate)
-
-	commonParts := 0
-	for _, tPart := range targetParts {
-		for _, cPart := range candidateParts {
-			if tPart == cPart {
-				commonParts++
-				break
-			}
-		}
+	if maxLen == 0 {
+		return 100
 	}
 
-	totalParts := len(targetParts) + len(candidateParts)
-	if totalParts == 0 {
-		return 0
+	// Calculate similarity percentage: 100% - (distance/maxLen * 100)
+	score := 100 - (distance*100)/maxLen
+	if score < 0 {
+		score = 0
 	}
 
-	// Calculate similarity based on common parts
-	similarity := (commonParts * 2 * 100) / totalParts
-	return similarity
-}
-
-// splitAssetName splits an asset name into meaningful parts
-func splitAssetName(assetName string) []string {
-	// Remove file extensions
-	base := strings.TrimSuffix(assetName, filepath.Ext(assetName))
-
-	// Split by common separators
-	separators := []string{"-", "_", "."}
-	parts := []string{base}
-
-	for _, sep := range separators {
-		var newParts []string
-		for _, part := range parts {
-			newParts = append(newParts, strings.Split(part, sep)...)
-		}
-		parts = newParts
-	}
-
-	// Filter out empty parts
-	var result []string
-	for _, part := range parts {
-		if part != "" {
-			result = append(result, part)
-		}
-	}
-
-	return result
+	return score
 }
