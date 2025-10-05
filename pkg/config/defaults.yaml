@@ -535,7 +535,7 @@ registry:
             - python
             - pip
 
-    openjdk:
+    openjdk17:
         name: openjdk
         repo: adoptium/temurin17-binaries
         mode: directory
@@ -544,11 +544,41 @@ registry:
             darwin-arm64: OpenJDK17U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK17U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK17U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: jdk-{{.version}}/bin/java --version
-        version_pattern: 'openjdk (\d+\.\d+\.\d+)'
+        version_command: java --version
+        version_pattern: 'openjdk ([\d.]+(?:\+\d+)?)'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
-            - "linux-*: jdk-{{.version}}/bin/*"
+            - "linux-*: bin/*"
+
+    openjdk11:
+        name: openjdk
+        repo: adoptium/temurin11-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK11U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK11U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK11U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK11U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+        version_command: java --version
+        version_pattern: 'openjdk ([\d.]+(?:\+\d+)?)'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
+
+    openjdk21:
+        name: openjdk
+        repo: adoptium/temurin21-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK21U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK21U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK21U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+        version_command: java --version
+        version_pattern: 'openjdk ([\d.]+(?:\+\d+)?)'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
 
     openjre:
         name: openjre
@@ -560,9 +590,9 @@ registry:
             linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: jdk-{{.version}}-jre/bin/java --version
-        version_pattern: 'openjdk (\d+\.\d+\.\d+)'
+        version_pattern: 'openjdk ([\d.]+(?:\+\d+)?)'
         symlinks:
-            - jdk-{{.version}}-jre/bin/java
+            - e/bin/java
 
     tomee:
         name: tomee
