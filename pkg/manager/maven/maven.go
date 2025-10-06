@@ -142,7 +142,26 @@ func (m *MavenManager) Resolve(ctx context.Context, pkg types.Package, version s
 	repository := m.getRepository(pkg)
 
 	downloadURL := m.buildArtifactURL(repository, coords)
-	checksumURL := downloadURL + ".sha256"
+
+	// Build checksum URL - use package config if specified, otherwise default to .sha256
+	checksumURL := ""
+	if pkg.ChecksumFile != "" {
+		// For simple patterns like "{{.asset}}.sha1", just replace {{.asset}} with the filename
+		checksumPattern := pkg.ChecksumFile
+		artifactName := m.buildArtifactName(coords)
+		checksumPattern = strings.ReplaceAll(checksumPattern, "{{.asset}}", artifactName)
+
+		// If it's a relative path, resolve it relative to the download URL
+		if !strings.HasPrefix(checksumPattern, "http://") && !strings.HasPrefix(checksumPattern, "https://") {
+			baseURL := downloadURL[:strings.LastIndex(downloadURL, "/")+1]
+			checksumURL = baseURL + checksumPattern
+		} else {
+			checksumURL = checksumPattern
+		}
+	}
+	if checksumURL == "" {
+		checksumURL = downloadURL + ".sha256"
+	}
 
 	// Debug: Maven built URLs: download=%s, checksum=%s
 
@@ -152,13 +171,21 @@ func (m *MavenManager) Resolve(ctx context.Context, pkg types.Package, version s
 		return nil, m.enhanceErrorWithVersions(ctx, pkg, coords, err)
 	}
 
+	// Determine if this should be treated as an archive
+	isArchive := coords.Packaging == "jar" || coords.Packaging == "war" || coords.Packaging == "zip"
+
+	// Allow package config to override auto-detection
+	if pkg.Extract != nil {
+		isArchive = *pkg.Extract
+	}
+
 	resolution := &types.Resolution{
 		Package:     pkg,
 		Version:     version,
 		Platform:    plat,
 		DownloadURL: downloadURL,
 		ChecksumURL: checksumURL,
-		IsArchive:   coords.Packaging == "jar" || coords.Packaging == "war" || coords.Packaging == "zip",
+		IsArchive:   isArchive,
 	}
 
 	return resolution, nil
@@ -201,11 +228,7 @@ func (m *MavenManager) GetChecksums(ctx context.Context, pkg types.Package, vers
 	checksum := strings.TrimSpace(string(checksumBytes))
 
 	// Return a map with the artifact filename as key
-	artifactName := fmt.Sprintf("%s-%s", coords.ArtifactID, coords.Version)
-	if coords.Classifier != "" {
-		artifactName += "-" + coords.Classifier
-	}
-	artifactName += "." + coords.Packaging
+	artifactName := m.buildArtifactName(coords)
 
 	return map[string]string{
 		artifactName: checksum,
@@ -309,8 +332,7 @@ func (m *MavenManager) buildMetadataURL(repository string, coords *MavenCoordina
 	return fmt.Sprintf("%s/%s/%s/maven-metadata.xml", repository, groupPath, coords.ArtifactID)
 }
 
-func (m *MavenManager) buildArtifactURL(repository string, coords *MavenCoordinates) string {
-	groupPath := strings.ReplaceAll(coords.GroupID, ".", "/")
+func (m *MavenManager) buildArtifactName(coords *MavenCoordinates) string {
 	artifactName := fmt.Sprintf("%s-%s", coords.ArtifactID, coords.Version)
 
 	if coords.Classifier != "" {
@@ -318,6 +340,13 @@ func (m *MavenManager) buildArtifactURL(repository string, coords *MavenCoordina
 	}
 
 	artifactName += "." + coords.Packaging
+
+	return artifactName
+}
+
+func (m *MavenManager) buildArtifactURL(repository string, coords *MavenCoordinates) string {
+	groupPath := strings.ReplaceAll(coords.GroupID, ".", "/")
+	artifactName := m.buildArtifactName(coords)
 
 	return fmt.Sprintf("%s/%s/%s/%s/%s", repository, groupPath, coords.ArtifactID, coords.Version, artifactName)
 }
