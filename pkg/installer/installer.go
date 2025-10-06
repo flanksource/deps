@@ -21,6 +21,7 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/utils"
 	versionpkg "github.com/flanksource/deps/pkg/version"
+	"github.com/flanksource/gomplate/v3"
 )
 
 // ToolSpec represents a tool with optional version
@@ -540,6 +541,14 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 		}
 	}
 
+	// Create wrapper script if configured
+	if pkg.WrapperScript != "" {
+		t.SetDescription("Creating wrapper script")
+		if err := i.createWrapperScript(pkg, resolvedVersion, i.options.BinDir, t); err != nil {
+			return fmt.Errorf("failed to create wrapper script: %w", err)
+		}
+	}
+
 	// Mark task successful only after all operations (including post-processing) complete
 	t.Infof("✓ Successfully installed %s@%s to %s", name, resolvedVersion, finalPath)
 	t.Success()
@@ -753,6 +762,57 @@ func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t 
 			t.V(3).Infof("Created symlink: %s -> %s", linkPath, match)
 		}
 	}
+
+	return nil
+}
+
+// createWrapperScript creates a wrapper script in the bin directory based on the template
+func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binDir string, t *task.Task) error {
+	if pkg.WrapperScript == "" {
+		return nil // No wrapper script configured
+	}
+
+	t.V(3).Infof("Creating wrapper script for %s", pkg.Name)
+
+	plat := platform.Current()
+
+	// Template the wrapper script content
+	data := map[string]any{
+		"appDir":  i.options.AppDir,
+		"binDir":  binDir,
+		"name":    pkg.Name,
+		"version": resolvedVersion,
+		"os":      plat.OS,
+		"arch":    plat.Arch,
+	}
+
+	scriptContent, err := gomplate.RunTemplate(data, gomplate.Template{Template: pkg.WrapperScript})
+	if err != nil {
+		return fmt.Errorf("failed to template wrapper script: %w", err)
+	}
+
+	// Ensure bin directory exists
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	// Determine script name (use package name)
+	scriptName := pkg.Name
+	scriptPath := filepath.Join(binDir, scriptName)
+
+	// Remove existing script if it exists
+	if _, err := os.Lstat(scriptPath); err == nil {
+		if err := os.Remove(scriptPath); err != nil {
+			return fmt.Errorf("failed to remove existing wrapper script %s: %w", scriptPath, err)
+		}
+	}
+
+	// Write the wrapper script
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
+		return fmt.Errorf("failed to write wrapper script %s: %w", scriptPath, err)
+	}
+
+	t.V(3).Infof("Created wrapper script: %s", scriptPath)
 
 	return nil
 }

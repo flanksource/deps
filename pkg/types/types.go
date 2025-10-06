@@ -39,9 +39,10 @@ type Package struct {
 	BinaryPath     string                 `json:"binary_path,omitempty" yaml:"binary_path,omitempty"`         // Path within archive (supports CEL expressions)
 	PreInstalled   []string               `json:"pre_installed,omitempty" yaml:"pre_installed,omitempty"`     // Pre-installed binary names
 	PostProcess []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"` // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"]). Supports platform prefixes: ["!windows*: rm(glob('*.bat'))"]
-	Mode        string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                 // Installation mode: "binary" (default) or "directory"
-	Symlinks    []string               `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`         // Glob patterns of paths in app-dir to symlink to bin-dir (directory mode only). Supports platform prefixes: ["windows*: bin/tool.bat", "!windows*: bin/tool"]
-	Extra       map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`               // Manager-specific config
+	Mode          string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                   // Installation mode: "binary" (default) or "directory"
+	Symlinks      []string               `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`           // Glob patterns of paths in app-dir to symlink to bin-dir (directory mode only). Supports platform prefixes: ["windows*: bin/tool.bat", "!windows*: bin/tool"]
+	WrapperScript string                 `json:"wrapper_script,omitempty" yaml:"wrapper_script,omitempty"` // Wrapper script template to create in bin-dir. Supports templating with {{.appDir}}, {{.binDir}}, {{.name}}, {{.version}}, {{.os}}, {{.arch}}
+	Extra         map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`                 // Manager-specific config
 }
 
 func (p Package) TemplateURL(platform platform.Platform, v string) (string, error) {

@@ -661,6 +661,20 @@ registry:
         symlinks:
             - bin/artemis
 
+    openapi-generator-cli:
+        name: openapi-generator-cli
+        manager: maven
+        extra:
+            group_id: org.openapitools
+            artifact_id: openapi-generator-cli
+            packaging: jar
+            repository: https://repo1.maven.org/maven2
+        post_process:
+            - move(glob("*.jar")[0], "{{.name}}-{{.version}}.jar")
+        wrapper_script: |
+            #!/bin/bash
+            java -jar "{{.appDir}}/{{.name}}/{{.name}}-{{.version}}.jar" "$@"
+
     arthas:
         name: arthas
         repo: alibaba/arthas
