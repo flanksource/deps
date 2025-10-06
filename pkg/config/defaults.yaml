@@ -664,11 +664,14 @@ registry:
     openapi-generator-cli:
         name: openapi-generator-cli
         manager: maven
+        mode: directory
+        extract: false
         extra:
             group_id: org.openapitools
             artifact_id: openapi-generator-cli
             packaging: jar
             repository: https://repo1.maven.org/maven2
+        checksum_file: "{{.asset}}.sha1"
         post_process:
             - move(glob("*.jar")[0], "{{.name}}-{{.version}}.jar")
         wrapper_script: |

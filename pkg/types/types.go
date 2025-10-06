@@ -38,6 +38,7 @@ type Package struct {
 	BinaryName     string                 `json:"binary_name,omitempty" yaml:"binary_name,omitempty"`         // Custom binary name
 	BinaryPath     string                 `json:"binary_path,omitempty" yaml:"binary_path,omitempty"`         // Path within archive (supports CEL expressions)
 	PreInstalled   []string               `json:"pre_installed,omitempty" yaml:"pre_installed,omitempty"`     // Pre-installed binary names
+	Extract        *bool                  `json:"extract,omitempty" yaml:"extract,omitempty"`                 // Override auto-detection of archive extraction (nil=auto, true=force, false=skip)
 	PostProcess []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"` // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"]). Supports platform prefixes: ["!windows*: rm(glob('*.bat'))"]
 	Mode          string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                   // Installation mode: "binary" (default) or "directory"
 	Symlinks      []string               `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`           // Glob patterns of paths in app-dir to symlink to bin-dir (directory mode only). Supports platform prefixes: ["windows*: bin/tool.bat", "!windows*: bin/tool"]
