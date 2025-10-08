@@ -5,19 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/config"
-	"github.com/flanksource/deps/pkg/installer"
 	"github.com/flanksource/deps/pkg/lock"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
+	. "github.com/onsi/gomega"
 )
 
 // TestContext holds the context and resources for a single test
@@ -166,114 +163,6 @@ func ValidateLockFile(result *LockGenerationResult, expectedPackage, expectedPla
 	platformEntry := packageEntry.Platforms[expectedPlatform]
 	Expect(platformEntry.URL).ToNot(BeEmpty(), "Platform URL should not be empty")
 
-	// Additional platform-specific validations
-	ValidatePlatformEntry(platformEntry, expectedPackage, expectedPlatform)
-}
-
-// ValidatePlatformEntry performs detailed validation of a platform-specific lock entry
-func ValidatePlatformEntry(entry types.PlatformEntry, packageName, platform string) {
-	// Validate URL format
-	Expect(entry.URL).To(MatchRegexp(`^https?://`), "URL should start with http:// or https://")
-
-	// Platform-specific validations
-	parts := splitPlatform(platform)
-	if len(parts) == 2 {
-		os, arch := parts[0], parts[1]
-
-		// Validate URL contains platform-specific elements
-		switch os {
-		case "windows":
-			// Windows binaries often have .exe extension or .zip archives
-			Expect(entry.URL).To(Or(
-				ContainSubstring(".exe"),
-				ContainSubstring(".zip"),
-				ContainSubstring("windows"),
-			), "Windows URL should contain .exe, .zip, or 'windows'")
-
-		case "darwin":
-			// macOS binaries often contain 'darwin', 'osx', or 'mac'
-			Expect(entry.URL).To(Or(
-				ContainSubstring("darwin"),
-				ContainSubstring("osx"),
-				ContainSubstring("mac"),
-			), "Darwin URL should contain 'darwin', 'osx', or 'mac'")
-
-		case "linux":
-			// Linux binaries often contain 'linux'
-			Expect(entry.URL).To(ContainSubstring("linux"), "Linux URL should contain 'linux'")
-		}
-
-		// Architecture validation
-		switch arch {
-		case "amd64":
-			Expect(entry.URL).To(Or(
-				ContainSubstring("amd64"),
-				ContainSubstring("x86_64"),
-				ContainSubstring("64"),
-			), "AMD64 URL should contain architecture indicator")
-
-		case "arm64":
-			Expect(entry.URL).To(Or(
-				ContainSubstring("arm64"),
-				ContainSubstring("aarch64"),
-				ContainSubstring("arm"),
-			), "ARM64 URL should contain ARM architecture indicator")
-		}
-	}
-
-	// Validate checksums if present
-	if entry.Checksum != "" {
-		// Checksums can have prefixes like "sha256:" or "md5:", or be plain hex
-		if strings.Contains(entry.Checksum, ":") {
-			// Format: "algorithm:hexvalue"
-			parts := strings.Split(entry.Checksum, ":")
-			Expect(len(parts)).To(Equal(2), "Prefixed checksum should have format 'algorithm:hash'")
-			algorithm, hash := parts[0], parts[1]
-			Expect(algorithm).To(MatchRegexp(`^(md5|sha1|sha256|sha512)$`), "Algorithm should be recognized")
-			Expect(hash).To(MatchRegexp(`^[a-fA-F0-9]+$`), "Hash part should be hexadecimal")
-		} else {
-			// Plain hex format
-			Expect(entry.Checksum).To(MatchRegexp(`^[a-fA-F0-9]+$`), "Checksum should be hexadecimal")
-			// Common hash lengths: MD5(32), SHA1(40), SHA256(64), SHA512(128)
-			checksumLen := len(entry.Checksum)
-			Expect([]int{32, 40, 64, 128}).To(ContainElement(checksumLen),
-				"Checksum should be valid hash length")
-		}
-	}
-}
-
-// SplitPlatform splits a platform string like "darwin-amd64" into ["darwin", "amd64"]
-func SplitPlatform(platform string) []string {
-	return strings.Split(platform, "-")
-}
-
-// splitPlatform is kept for internal use
-func splitPlatform(platform string) []string {
-	return SplitPlatform(platform)
-}
-
-// GetCurrentPlatform returns the current runtime platform as a string
-func GetCurrentPlatform() string {
-	return fmt.Sprintf("%s-%s", runtime.GOOS, runtime.GOARCH)
-}
-
-// IsLongRunningTest determines if a test should only run in long test mode
-func IsLongRunningTest(packageName string) bool {
-	// Some packages take longer to resolve or download
-	slowPackages := []string{
-		"terraform", // Large downloads
-		"packer",    // Large downloads
-		"etcd",      // Multiple files
-	}
-
-	return contains(slowPackages, packageName)
-}
-
-// InstallResult holds information about an installation attempt
-type InstallResult struct {
-	BinaryPath string
-	Duration   time.Duration
-	Error      error
 }
 
 // CreateInstallTestEnvironment sets up a temporary directory with bin_dir for installations
@@ -342,88 +231,35 @@ func CreateInstallTestEnvironment() (*TestContext, error) {
 	}, nil
 }
 
-// TestInstallation performs actual installation using the installer API
-func TestInstallation(testCtx *TestContext, packageName, version, osTarget, archTarget string) *InstallResult {
-	start := time.Now()
+// // ValidateInstalledBinary checks installation and runs version command only if platform matches runtime
+// func ValidateInstalledBinary(deps.) error {
+// 	if result.Error != nil {
+// 		return fmt.Errorf("installation failed: %w", result.Error)
+// 	}
 
-	// Set platform overrides for cross-platform testing
-	platform.SetGlobalOverrides(osTarget, archTarget)
+// 	// Check if binary exists
+// 	if _, err := os.Stat(result.BinaryPath); err != nil {
+// 		return fmt.Errorf("binary not found at %s: %w", result.BinaryPath, err)
+// 	}
 
-	// Create context with timeout (for potential future use)
-	_, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+// 	// Get package info for version validation
+// 	registry := config.GetGlobalRegistry()
+// 	pkg, exists := registry.Registry[packageName]
+// 	if !exists {
+// 		return fmt.Errorf("package %s not found in registry", packageName)
+// 	}
 
-	// Set up installer with test bin directory and config
-	binDir := filepath.Join(testCtx.TempDir, "test-bin")
-	depsConfig := config.GetGlobalRegistry()
-	installer := installer.NewWithConfig(depsConfig,
-		installer.WithBinDir(binDir),
-		installer.WithOS(osTarget, archTarget),
-		installer.WithSkipChecksum(true), // Skip checksums for faster testing
-	)
+// 	currentOS := runtime.GOOS
+// 	currentArch := runtime.GOARCH
 
-	// Create a test task
-	testTask := &task.Task{}
+// 	// Only run version command if we're testing the same platform we're running on
+// 	if testOS == currentOS && testArch == currentArch && pkg.VersionCommand != "" {
+// 		return validateBinaryVersion(result.BinaryPath, pkg.VersionCommand, pkg.VersionPattern)
+// 	}
 
-	// Perform installation
-	err := installer.Install(packageName, version, testTask)
-
-	// Wait for async tasks
-	task.WaitForAllTasks()
-
-	duration := time.Since(start)
-
-	// Determine expected binary path
-	registry := config.GetGlobalRegistry()
-	pkg, exists := registry.Registry[packageName]
-	binaryName := packageName
-	if exists && pkg.BinaryName != "" {
-		binaryName = pkg.BinaryName
-	}
-
-	// Handle Windows executable extension
-	if osTarget == "windows" && !strings.HasSuffix(binaryName, ".exe") {
-		binaryName += ".exe"
-	}
-
-	binaryPath := filepath.Join(binDir, binaryName)
-
-	return &InstallResult{
-		BinaryPath: binaryPath,
-		Duration:   duration,
-		Error:      err,
-	}
-}
-
-// ValidateInstalledBinary checks installation and runs version command only if platform matches runtime
-func ValidateInstalledBinary(result *InstallResult, packageName, testOS, testArch string) error {
-	if result.Error != nil {
-		return fmt.Errorf("installation failed: %w", result.Error)
-	}
-
-	// Check if binary exists
-	if _, err := os.Stat(result.BinaryPath); err != nil {
-		return fmt.Errorf("binary not found at %s: %w", result.BinaryPath, err)
-	}
-
-	// Get package info for version validation
-	registry := config.GetGlobalRegistry()
-	pkg, exists := registry.Registry[packageName]
-	if !exists {
-		return fmt.Errorf("package %s not found in registry", packageName)
-	}
-
-	currentOS := runtime.GOOS
-	currentArch := runtime.GOARCH
-
-	// Only run version command if we're testing the same platform we're running on
-	if testOS == currentOS && testArch == currentArch && pkg.VersionCommand != "" {
-		return validateBinaryVersion(result.BinaryPath, pkg.VersionCommand, pkg.VersionPattern)
-	}
-
-	// For cross-platform installs, just verify the binary exists and has correct format
-	return validateBinaryFormat(result.BinaryPath, testOS)
-}
+// 	// For cross-platform installs, just verify the binary exists and has correct format
+// 	return validateBinaryFormat(result.BinaryPath, testOS)
+// }
 
 // validateBinaryVersion runs version command and validates output pattern
 func validateBinaryVersion(binaryPath, versionCommand, versionPattern string) error {

@@ -81,7 +81,7 @@ java -jar {{.appDir}}/{{.name}}/{{.name}}-{{.version}}.jar "$@"`,
 
 			// Check that the file has executable permissions
 			mode := info.Mode()
-			Expect(mode & 0111).NotTo(BeZero(), "Script should be executable")
+			Expect(mode&0111).NotTo(BeZero(), "Script should be executable")
 		})
 
 		It("should replace existing wrapper script", func() {

@@ -62,13 +62,15 @@ func matchPlatformPattern(pattern string, platform string) bool {
 	return false
 }
 
-
 // NormalizeURLTemplate ensures that if a URL template ends with "/",
 // it automatically includes the {{.asset}} placeholder.
 // This allows for cleaner configuration where:
-//   url_template: "https://example.com/files/"
+//
+//	url_template: "https://example.com/files/"
+//
 // automatically becomes:
-//   url_template: "https://example.com/files/{{.asset}}"
+//
+//	url_template: "https://example.com/files/{{.asset}}"
 func NormalizeURLTemplate(urlTemplate string) string {
 	if urlTemplate == "" {
 		return urlTemplate

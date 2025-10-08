@@ -297,32 +297,29 @@ func (r InstallResult) Pretty() api.Text {
 
 	// Show error if present
 	if r.Error != nil {
-		text = text.Append("\n  Error: "+r.Error.Error(), "text-red-500")
+		text = text.Append(r.Error.Error(), "text-red-500")
 		return text
 	}
 
 	// Installation path
 	if r.BinDir != "" {
-		text = text.Append("\n  BinDir: " + r.BinDir)
+		text = text.Append(" bin-dir: ", "muted").Append(r.BinDir)
 	}
 	if r.AppDir != "" {
-		text = text.Append("\n  AppDir: " + r.AppDir)
+		text = text.Append(" app-dir: ", "muted").Append(r.AppDir)
 	}
 
 	// Version and verify status
 	if r.VersionStatus != "" {
-		text = text.Append("\n  Version: ").Add(r.VersionStatus.Pretty())
-	}
-	if r.VerifyStatus != "" && r.VerifyStatus != VerifyStatusSkipped {
-		text = text.Append("\n  Checksum: ").Add(r.VerifyStatus.Pretty())
+		text = text.Add(r.VersionStatus.Pretty())
 	}
 
 	// Performance metrics
 	if r.Duration > 0 {
-		text = text.Append("\n  Duration: " + r.Duration.Round(time.Millisecond).String())
+		text = text.Append(" in ", "muted").Printf("%s", r.Duration)
 	}
 	if r.DownloadSize > 0 {
-		text = text.Append(fmt.Sprintf("\n  Downloaded: %s", formatBytes(r.DownloadSize)))
+		text = text.Append(" downloaded: ", "muted").Append(formatBytes(r.DownloadSize))
 	}
 
 	return text

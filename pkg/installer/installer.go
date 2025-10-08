@@ -511,25 +511,18 @@ func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageMana
 	plat := platform.Current()
 
 	// Resolve the package
-	t.Debugf("Fetching download URL for %s@%s using %s", name, resolvedVersion, mgr.Name())
-	t.V(3).Infof("Package details: Name=%s, Repo=%s, Manager=%s", pkg.Name, pkg.Repo, mgr.Name())
-	t.V(3).Infof("Asset patterns: %+v", pkg.AssetPatterns)
-	t.V(3).Infof("Version expr: %s", pkg.VersionExpr)
-	t.V(3).Infof("Platform: %s/%s", plat.OS, plat.Arch)
+	t.V(3).Infof("Resolving URL for %s@%s (%s) using %s", name, resolvedVersion, plat, mgr.Name())
+	t.V(5).Infof("Asset patterns: %+v", pkg.AssetPatterns)
+	t.V(5).Infof("Version expr: %s", pkg.VersionExpr)
 
-	t.Debugf("Calling mgr.Resolve with version=%s, platform=%s/%s", resolvedVersion, plat.OS, plat.Arch)
 	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
 	if err != nil {
-		t.Debugf("mgr.Resolve failed: %v", err)
 		return nil, "", fmt.Errorf("failed to resolve package %s: %w", name, err)
 	}
-	t.Debugf("mgr.Resolve succeeded")
 
 	// Add detailed logging for debugging URL construction
-	t.Debugf("Resolution details: URL=%s, IsArchive=%t, BinaryPath=%s",
+	t.Debugf("Resolved %s, IsArchive=%t, BinaryPath=%s",
 		resolution.DownloadURL, resolution.IsArchive, resolution.BinaryPath)
-	t.V(3).Infof("Package resolution: version=%s, platform=%s/%s",
-		resolvedVersion, plat.OS, plat.Arch)
 
 	t.Infof("Downloading %s@%s (%s/%s) from %s", name, resolvedVersion, plat.OS, plat.Arch, resolution.DownloadURL)
 

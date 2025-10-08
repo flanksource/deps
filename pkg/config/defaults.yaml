@@ -141,7 +141,6 @@ registry:
         repo: genuinetools/reg
         asset_patterns:
             darwin-amd64: reg-darwin-amd64
-            darwin-arm64: reg-darwin-arm64
             linux-amd64: reg-linux-amd64
             linux-arm64: reg-linux-arm64
             windows-amd64: reg-windows-amd64.exe
@@ -159,7 +158,7 @@ registry:
         version_pattern: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
         checksum_file: checksums,checksums_hashes_order
         checksum_expr: |
-            'md5:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
+            'sha256:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
                 checksums_hashes_order.split('\n').indexOf('SHA-256') + 1
             ]
     svu:
@@ -234,14 +233,10 @@ registry:
     # url_template: https://github.com/hashicorp/go-getter/releases/download/v{{.version}}/go-getter_{{.version}}_{{.os}}_{{.arch}}.zip
     expenv:
         name: expenv
-
         repo: TheWolfNL/expenv
         asset_patterns:
             darwin-amd64: expenv_darwin_amd64
-            darwin-arm64: expenv_darwin_arm64
-            linux-amd64: expenv_linux_amd64
             linux-arm64: expenv_linux_arm64
-            windows-amd64: expenv_windows_amd64.exe
     packer:
         repo: hashicorp/packer
         url_template: https://releases.hashicorp.com/packer/{{.version}}/packer_{{.version}}_{{.os}}_{{.arch}}.zip
@@ -316,25 +311,7 @@ registry:
             windows-amd64: caddy_{{.version}}_windows_amd64.zip
         version_command: version
         version_pattern: v(\d+\.\d+\.\d+)
-    cni:
-        name: cni
-        repo: containernetworking/plugins
-        asset_patterns:
-            darwin-amd64: cni-plugins-darwin-amd64-{{.tag}}.tgz
-            darwin-arm64: cni-plugins-darwin-arm64-{{.tag}}.tgz
-            linux-amd64: cni-plugins-linux-amd64-{{.tag}}.tgz
-            linux-arm64: cni-plugins-linux-arm64-{{.tag}}.tgz
-            windows-amd64: cni-plugins-windows-amd64-{{.tag}}.tgz
-    containerd:
-        name: containerd
-        repo: containerd/containerd
-        asset_patterns:
-            darwin-amd64: containerd-{{.version}}-darwin-amd64.tar.gz
-            darwin-arm64: containerd-{{.version}}-darwin-arm64.tar.gz
-            linux-amd64: containerd-{{.version}}-linux-amd64.tar.gz
-            linux-arm64: containerd-{{.version}}-linux-arm64.tar.gz
-        version_command: --version
-        version_pattern: containerd\s+v?(\d+\.\d+\.\d+)
+
     firecracker:
         name: firecracker
         repo: firecracker-microvm/firecracker
@@ -387,8 +364,6 @@ registry:
         name: registry
         repo: distribution/distribution
         asset_patterns:
-            darwin-amd64: registry_{{.version}}_darwin_amd64.tar.gz
-            darwin-arm64: registry_{{.version}}_darwin_arm64.tar.gz
             linux-amd64: registry_{{.version}}_linux_amd64.tar.gz
             linux-arm64: registry_{{.version}}_linux_arm64.tar.gz
     gitlab-runner:

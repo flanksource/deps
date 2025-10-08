@@ -99,12 +99,12 @@ var _ = Describe("Asset Resolution", func() {
 				Expect(result).To(Equal("desktop-os.zip"))
 
 				windowsPlat := platform.Platform{OS: "windows", Arch: "amd64"}
-				result, err = ResolveAssetPattern(patterns,windowsPlat)
+				result, err = ResolveAssetPattern(patterns, windowsPlat)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).To(Equal("desktop-os.zip"))
 
 				linuxPlat := platform.Platform{OS: "linux", Arch: "amd64"}
-				result, err = ResolveAssetPattern(patterns,linuxPlat)
+				result, err = ResolveAssetPattern(patterns, linuxPlat)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).To(Equal("server-os.tar.gz"))
 			})
@@ -147,8 +147,8 @@ var _ = Describe("Asset Resolution", func() {
 
 			It("should return error when no pattern matches", func() {
 				patterns := map[string]string{
-					"linux-amd64":  "linux.tar.gz",
-					"windows-*": "windows.zip",
+					"linux-amd64": "linux.tar.gz",
+					"windows-*":   "windows.zip",
 				}
 
 				_, err := ResolveAssetPattern(patterns, plat)
