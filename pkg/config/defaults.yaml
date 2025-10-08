@@ -544,7 +544,7 @@ registry:
             darwin-arm64: OpenJDK17U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK17U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK17U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: java --version
+        version_command: java -version
         version_pattern: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
@@ -560,7 +560,7 @@ registry:
             darwin-arm64: OpenJDK11U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK11U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK11U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: java --version
+        version_command: java -version
         version_pattern: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
@@ -576,9 +576,9 @@ registry:
             darwin-arm64: OpenJDK8U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: java --version
+        version_command: java -version
         version_pattern: '([\d.]+\+\d+)'
-        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
+        version_expr: 'tag.startsWith("jdk") ? tag.substring(3).replaceAll("-", "") : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
@@ -592,7 +592,7 @@ registry:
             darwin-arm64: OpenJDK21U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK21U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: java --version
+        version_command: java -version
         version_pattern: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
@@ -608,7 +608,7 @@ registry:
             darwin-arm64: OpenJDK21U-jre_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: jdk-{{.version}}-jre/bin/java --version
+        version_command: jdk-{{.version}}-jre/bin/java -version
         version_pattern: '([\d.]+\+\d+)'
         symlinks:
             - e/bin/java
@@ -664,7 +664,7 @@ registry:
     openapi-generator-cli:
         name: openapi-generator-cli
         manager: maven
-        mode: directory
+        mode: file
         extract: false
         extra:
             group_id: org.openapitools

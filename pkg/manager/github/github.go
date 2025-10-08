@@ -14,7 +14,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
-	"github.com/flanksource/deps/pkg/version"
+	versionpkg "github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
 	"golang.org/x/oauth2"
 )
@@ -81,7 +81,7 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 
 		version := types.Version{
 			Tag:        *release.TagName,
-			Version:    version.Normalize(*release.TagName),
+			Version:    versionpkg.Normalize(*release.TagName),
 			Prerelease: release.Prerelease != nil && *release.Prerelease,
 		}
 
@@ -97,7 +97,7 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 
 	// Apply version expression filtering if specified
 	if pkg.VersionExpr != "" {
-		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
+		filteredVersions, err := versionpkg.ApplyVersionExpr(versions, pkg.VersionExpr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
 		}
@@ -136,7 +136,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	// Debug: GitHub resolve: repo=%s/%s, version=%s, platform=%s
 
 	// Find the release by version/tag
-	release, err := m.findReleaseByVersion(ctx, owner, repo, version)
+	release, err := m.findReleaseByVersion(ctx, owner, repo, version, pkg.VersionExpr)
 	if err != nil {
 		// If it's a version not found error, enhance it with available versions
 		if versionErr, ok := err.(*manager.ErrVersionNotFound); ok {
@@ -174,10 +174,24 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		}
 	}
 
+	// Apply version_expr to the tag to get the version for templating
+	versionForTemplate := version
+	if pkg.VersionExpr != "" {
+		testVer := types.Version{
+			Tag:     *release.TagName,
+			Version: versionpkg.Normalize(*release.TagName),
+		}
+		transformed, transformErr := versionpkg.ApplyVersionExpr([]types.Version{testVer}, pkg.VersionExpr)
+		if transformErr == nil && len(transformed) > 0 {
+			versionForTemplate = transformed[0].Version
+			logger.V(4).Infof("Applied version_expr for templating: %s -> %s", *release.TagName, versionForTemplate)
+		}
+	}
+
 	// Template the asset pattern
 	templateData := map[string]string{
 		"name":    pkg.Name,
-		"version": depstemplate.NormalizeVersion(version),
+		"version": versionForTemplate,
 		"tag":     *release.TagName,
 		"os":      plat.OS,
 		"arch":    plat.Arch,
@@ -366,7 +380,7 @@ func (m *GitHubReleaseManager) GetChecksums(ctx context.Context, pkg types.Packa
 	}
 	owner, repo := parts[0], parts[1]
 
-	release, err := m.findReleaseByVersion(ctx, owner, repo, version)
+	release, err := m.findReleaseByVersion(ctx, owner, repo, version, pkg.VersionExpr)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +464,7 @@ func extractRateLimit(response *github.Response) *types.RateLimit {
 
 // Helper methods
 
-func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion string) (*github.RepositoryRelease, error) {
+func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion, versionExpr string) (*github.RepositoryRelease, error) {
 	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
 	releases, _, err := m.client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
@@ -484,10 +498,37 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	}
 
 	// Try version normalization match
-	normalizedTarget := version.Normalize(targetVersion)
+	normalizedTarget := versionpkg.Normalize(targetVersion)
 	for _, release := range releases {
-		if release.TagName != nil && version.Normalize(*release.TagName) == normalizedTarget {
+		if release.TagName != nil && versionpkg.Normalize(*release.TagName) == normalizedTarget {
 			return release, nil
+		}
+	}
+
+	// If version_expr is provided, try applying it to each tag and see if it matches targetVersion
+	if versionExpr != "" {
+		logger.V(4).Infof("Trying version_expr match with expr: %s", versionExpr)
+		for _, release := range releases {
+			if release.TagName == nil {
+				continue
+			}
+
+			// Apply version_expr to this tag
+			testVersion := types.Version{
+				Tag:     *release.TagName,
+				Version: versionpkg.Normalize(*release.TagName),
+			}
+			transformed, err := versionpkg.ApplyVersionExpr([]types.Version{testVersion}, versionExpr)
+			if err != nil {
+				logger.V(4).Infof("Failed to apply version_expr to tag %s: %v", *release.TagName, err)
+				continue
+			}
+
+			// Check if the transformed version matches our target
+			if len(transformed) > 0 && transformed[0].Version == targetVersion {
+				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", *release.TagName, transformed[0].Version)
+				return release, nil
+			}
 		}
 	}
 

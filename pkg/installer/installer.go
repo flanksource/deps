@@ -469,8 +469,23 @@ func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageMana
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
 			return nil, "", err
 		}
+	} else if pkg.WrapperScript != "" {
+		// File with wrapper script - download to app directory
+		appPath := filepath.Join(i.options.AppDir, name)
+		if err := os.MkdirAll(appPath, 0755); err != nil {
+			return nil, "", fmt.Errorf("failed to create app directory: %w", err)
+		}
+
+		// Extract filename from URL and download to app-dir
+		filename := filepath.Base(resolution.DownloadURL)
+		downloadPath = filepath.Join(appPath, filename)
+		t.SetDescription("Downloading")
+
+		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
+			return nil, "", fmt.Errorf("failed to download %s: %w", name, err)
+		}
 	} else {
-		// Direct binary download - download directly to final location
+		// Direct binary download - download directly to bin directory
 		downloadPath = filepath.Join(i.options.BinDir, name)
 		t.SetDescription("Downloading")
 
@@ -669,11 +684,14 @@ func (i *Installer) handleSystemInstaller(installerPath, name string, t *task.Ta
 
 // handleDirectBinaryInstallation handles direct binary downloads (no extraction needed)
 func (i *Installer) handleDirectBinaryInstallation(downloadPath, name string) (string, error) {
-	// For direct binary downloads, downloadPath is already the final path
-	finalPath := filepath.Join(i.options.BinDir, name)
+	// If download path is in app-dir (for wrapper scripts), return that path
+	// Otherwise return bin-dir path
+	if strings.HasPrefix(downloadPath, i.options.AppDir) {
+		return downloadPath, nil
+	}
 
-	// The download method already downloaded to the correct location
-	// Just return the path where it was downloaded
+	// For direct binary downloads to bin-dir, the path is already correct
+	finalPath := filepath.Join(i.options.BinDir, name)
 	return finalPath, nil
 }
 

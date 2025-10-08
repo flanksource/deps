@@ -7,9 +7,10 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # Unit tests run on ubuntu-latest
+  unit-tests:
     runs-on: ubuntu-latest
-    name: Test
+    name: Unit Tests
     steps:
       - uses: actions/checkout@v4
 
@@ -19,10 +20,37 @@ jobs:
           go-version: "1.25"
           cache: true
 
-      - name: Install Task
-        uses: arduino/setup-task@v2
+      - name: Install Ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: ginkgo -v --skip-package=e2e ./...
+
+  # Linux installation tests - full installation and execution
+  test-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - runner: ubuntu-latest
+            os: linux
+            arch: amd64
+          - runner: ubuntu-24.04-arm64
+            os: linux
+            arch: arm64
+    runs-on: ${{ matrix.platform.runner }}
+    name: Install Tests - ${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          version: 3.x
+          go-version: "1.25"
+          cache: true
 
       - name: Install Ginkgo
         run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
@@ -30,4 +58,37 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - run: task test
+      - name: Run installation tests
+        run: ginkgo -v ./e2e -focus="Installation tests.*${{ matrix.platform.os }}-${{ matrix.platform.arch }}"
+
+  # Checksum validation tests for Darwin and Windows
+  test-checksums:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+    name: Checksum Tests - ${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Install Ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run checksum validation tests
+        run: ginkgo -v ./e2e -focus="Checksum validation tests.*${{ matrix.platform.os }}-${{ matrix.platform.arch }}"

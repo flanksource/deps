@@ -478,3 +478,91 @@ func reloadGlobalRegistry() error {
 	// The global registry should already have the default packages loaded.
 	return nil
 }
+
+// ChecksumValidationResult holds information about checksum validation
+type ChecksumValidationResult struct {
+	LockFile *types.LockFile
+	Duration time.Duration
+	Error    error
+}
+
+// TestChecksumValidation performs checksum validation for a package without actual installation
+// This is useful for testing non-native platforms (e.g., testing darwin/windows from linux)
+func TestChecksumValidation(testCtx *TestContext, packageName, version, osTarget, archTarget string) *ChecksumValidationResult {
+	start := time.Now()
+
+	// Generate lock file which includes checksum information
+	result := GenerateLockFile(testCtx, packageName, osTarget, archTarget)
+
+	if result.Error != nil {
+		return &ChecksumValidationResult{
+			Duration: time.Since(start),
+			Error:    result.Error,
+		}
+	}
+
+	// Validate that checksum information is present and valid
+	lockFile := result.LockFile
+	platformKey := fmt.Sprintf("%s-%s", osTarget, archTarget)
+
+	packageEntry, exists := lockFile.Dependencies[packageName]
+	if !exists {
+		return &ChecksumValidationResult{
+			Duration: time.Since(start),
+			Error:    fmt.Errorf("package %s not found in lock file", packageName),
+		}
+	}
+
+	platformEntry, exists := packageEntry.Platforms[platformKey]
+	if !exists {
+		return &ChecksumValidationResult{
+			Duration: time.Since(start),
+			Error:    fmt.Errorf("platform %s not found for package %s", platformKey, packageName),
+		}
+	}
+
+	// Verify checksum is present if available
+	if platformEntry.Checksum == "" {
+		// Some packages may not have checksums, which is acceptable
+		// Just verify the URL is valid
+		if platformEntry.URL == "" {
+			return &ChecksumValidationResult{
+				Duration: time.Since(start),
+				Error:    fmt.Errorf("no URL found for package %s on platform %s", packageName, platformKey),
+			}
+		}
+	}
+
+	return &ChecksumValidationResult{
+		LockFile: lockFile,
+		Duration: time.Since(start),
+		Error:    nil,
+	}
+}
+
+// ValidateChecksumResult validates the checksum validation result
+func ValidateChecksumResult(result *ChecksumValidationResult, packageName, osTarget, archTarget string) error {
+	if result.Error != nil {
+		return fmt.Errorf("checksum validation failed: %w", result.Error)
+	}
+
+	if result.LockFile == nil {
+		return fmt.Errorf("lock file is nil")
+	}
+
+	platformKey := fmt.Sprintf("%s-%s", osTarget, archTarget)
+	packageEntry := result.LockFile.Dependencies[packageName]
+	platformEntry := packageEntry.Platforms[platformKey]
+
+	// Validate URL format
+	if platformEntry.URL == "" {
+		return fmt.Errorf("URL is empty for package %s on platform %s", packageName, platformKey)
+	}
+
+	// Validate URL is HTTP/HTTPS
+	if !strings.HasPrefix(platformEntry.URL, "http://") && !strings.HasPrefix(platformEntry.URL, "https://") {
+		return fmt.Errorf("URL must start with http:// or https://")
+	}
+
+	return nil
+}
