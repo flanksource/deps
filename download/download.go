@@ -289,7 +289,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			var checksumType checksum.HashType
 			if config.checksumType == "" {
 				var err error
-				_, checksumType, err = checksum.ParseChecksumWithType(config.expectedChecksum)
+				config.expectedChecksum, checksumType, err = checksum.ParseChecksumWithType(config.expectedChecksum)
 				if err == nil {
 					config.checksumType = string(checksumType)
 				}
