@@ -68,7 +68,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -78,14 +78,15 @@ jobs:
 
       - name: Build binary
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
-          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          BINARY_NAME="deps"
+          VERSION="${{ needs.version.outputs.version }}"
+          GOOS="${{ matrix.goos }}"
+          GOARCH="${{ matrix.goarch }}"
+
+          BINARY_NAME="deps-${GOOS}-${GOARCH}"
           if [ "$GOOS" = "windows" ]; then
-            BINARY_NAME="deps.exe"
+            BINARY_NAME="$BINARY_NAME.exe"
           fi
 
           go build -ldflags="-s -w -X main.version=$VERSION -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
@@ -103,11 +104,20 @@ jobs:
 
           ARCHIVE_NAME="deps-${GOOS}-${ARCH}"
 
+          BINARY_NAME="deps-${GOOS}-${GOARCH}"
           if [ "$GOOS" = "windows" ]; then
+            BINARY_NAME="$BINARY_NAME.exe"
+          fi
+
+          if [ "$GOOS" = "windows" ]; then
+            cp "$BINARY_NAME" deps.exe
             zip "${ARCHIVE_NAME}.zip" deps.exe
+            rm deps.exe
             sha256sum  "${ARCHIVE_NAME}.zip" >  "${ARCHIVE_NAME}.sha256"
           else
+            cp "$BINARY_NAME" deps
             tar czf "${ARCHIVE_NAME}.tar.gz" deps
+            rm deps
             sha256sum  "${ARCHIVE_NAME}.tar.gz" >  "${ARCHIVE_NAME}.tar.gz.sha256"
           fi
 
@@ -116,7 +126,7 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: deps*
+          file: deps-*
           tag: ${{ github.ref }}
 
   release:
