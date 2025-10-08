@@ -127,7 +127,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
           file: deps-*
-          tag: ${{ github.ref }}
+          tag: ${{ needs.version.outputs.tag }}
 
   release:
     name: Create Release
@@ -138,25 +138,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare release assets
-        run: |
-          mkdir -p release
-          find artifacts -type f -name "*.tar.gz" -o -name "*.zip" -o -name "*.sha256" | while read file; do
-            cp "$file" release/
-          done
-          ls -la release/
-
-      - name: Generate checksums file
-        run: |
-          cd release
-          sha256sum *.tar.gz *.zip > checksums.txt
-          cat checksums.txt
 
       - name: Create GitHub Release
         env:
