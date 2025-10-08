@@ -186,6 +186,8 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			versionForTemplate = transformed[0].Version
 			logger.V(4).Infof("Applied version_expr for templating: %s -> %s", *release.TagName, versionForTemplate)
 		}
+	} else {
+		versionForTemplate = versionpkg.Normalize(version)
 	}
 
 	// Template the asset pattern
@@ -196,14 +198,13 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		"os":      plat.OS,
 		"arch":    plat.Arch,
 	}
-	logger.V(4).Infof("Template data: %+v", templateData)
-	logger.V(4).Infof("Raw asset pattern: %s", assetPattern)
+	logger.V(5).Infof("Template data: %+v", templateData)
 
 	templatedPattern, err := m.templateString(assetPattern, templateData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
-	logger.V(4).Infof("Templated asset pattern: %s", templatedPattern)
+	logger.V(3).Infof("Resolved asset %s", templatedPattern)
 
 	// Debug: GitHub asset pattern templated: %s -> %s
 

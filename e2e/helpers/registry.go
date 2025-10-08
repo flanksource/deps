@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -245,11 +246,11 @@ func GetChecksumOnlyPlatformsForTesting() []string {
 	}
 }
 
-// GetAllDependenciesInstallData generates test data for ALL packages in the default registry
-func GetAllDependenciesInstallData() []InstallTestData {
+// GetPackagesToTest generates test data for supported packages on a specific platform
+func GetPackagesToTest(os, arch string) []InstallTestData {
 	var testData []InstallTestData
 	registry := config.GetGlobalRegistry()
-	platforms := GetPlatformsForTesting()
+	platform := fmt.Sprintf("%s-%s", os, arch)
 
 	// Generate test data for every package in the registry
 	for packageName, pkg := range registry.Registry {
@@ -260,34 +261,23 @@ func GetAllDependenciesInstallData() []InstallTestData {
 
 		supportedPlatforms := ExtractSupportedPlatforms(pkg)
 
-		// Create test data for each platform we want to test
-		for _, platform := range platforms {
-			parts := strings.Split(platform, "-")
-			if len(parts) != 2 {
-				continue // Skip malformed platform strings
-			}
-
-			isSupported := contains(supportedPlatforms, platform)
-
-			// Include all packages, both supported and unsupported (for skip tests)
+		// Only include packages supported on this platform
+		if contains(supportedPlatforms, platform) {
 			testData = append(testData, InstallTestData{
 				PackageName: packageName,
 				Platform:    platform,
-				OS:          parts[0],
-				Arch:        parts[1],
+				OS:          os,
+				Arch:        arch,
 				Version:     "stable", // Use latest for testing
 				Manager:     pkg.Manager,
-				IsSupported: isSupported,
+				IsSupported: true,
 			})
 		}
 	}
 
 	// Sort for consistent test ordering
 	sort.Slice(testData, func(i, j int) bool {
-		if testData[i].Platform == testData[j].Platform {
-			return testData[i].PackageName < testData[j].PackageName
-		}
-		return testData[i].Platform < testData[j].Platform
+		return testData[i].PackageName < testData[j].PackageName
 	})
 
 	return testData

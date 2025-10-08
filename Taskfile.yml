@@ -50,6 +50,13 @@ tasks:
     sources:
       - "**/*.go"
 
+  test:unit:
+    desc: Run all unit tests using Ginkgo
+    cmds:
+      - ginkgo -v  --skip-package ./...
+    sources:
+      - "**/*.go"
+
   test:report:
     desc: Run all tests with Ginkgo JSON and JUnit report generation
     cmds:

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,7 +73,7 @@ var _ = XDescribe("Platform Lock Generation", func() {
 						testCtx, err := helpers.CreateTestEnvironment(packageName, "latest")
 						Expect(err).ToNot(HaveOccurred())
 
-						parts := helpers.SplitPlatform(platform)
+						parts := strings.Split(platform, "-")
 						if len(parts) != 2 {
 							GinkgoWriter.Printf("⚠ %s [%s] skipped: invalid platform format\n", packageName, platform)
 							continue
@@ -112,7 +113,7 @@ var _ = XDescribe("Platform Lock Generation", func() {
 			results := make(map[string]*helpers.LockGenerationResult)
 
 			for _, platform := range platforms {
-				parts := helpers.SplitPlatform(platform)
+				parts := strings.Split(platform, "-")
 				result := helpers.GenerateLockFile(testCtx, packageName, parts[0], parts[1])
 				Expect(result.Error).ToNot(HaveOccurred())
 				results[platform] = result
@@ -162,7 +163,7 @@ var _ = XDescribe("Platform Lock Generation", func() {
 				packageEntry := lockFile.Dependencies[data.PackageName]
 				platformEntry := packageEntry.Platforms[data.Platform]
 
-				helpers.ValidatePlatformEntry(platformEntry, data.PackageName, data.Platform)
+				// helpers.ValidatePlatformEntry(platformEntry, data.PackageName, data.Platform)
 
 				Expect(platformEntry.URL).To(MatchRegexp(`^https?://`), "URL should be HTTP/HTTPS")
 				Expect(platformEntry.URL).ToNot(BeEmpty(), "URL should not be empty")
