@@ -380,6 +380,32 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 	defer resp.Body.Close()
 
+	// Capture final URL after redirects for checksum verification
+	// This ensures we match against the actual filename, not the original URL with query params
+	finalURL := resp.Request.URL.String()
+
+	// Try to get filename from Content-Disposition header if available
+	// This handles cases where the URL has query parameters (e.g., Azure storage)
+	if contentDisp := resp.Header.Get("Content-Disposition"); contentDisp != "" {
+		// Parse filename from Content-Disposition header
+		// Format: attachment; filename="filename.ext" or attachment; filename=filename.ext
+		if idx := strings.Index(contentDisp, "filename="); idx != -1 {
+			filenameStr := contentDisp[idx+9:] // Skip "filename="
+			filenameStr = strings.TrimSpace(filenameStr)
+			filenameStr = strings.Trim(filenameStr, "\"") // Remove quotes if present
+			// Use this filename with the base path of finalURL
+			if filenameStr != "" {
+				// Construct a clean URL with just the path and filename
+				finalURL = filepath.Join(filepath.Dir(finalURL), filenameStr)
+			}
+		}
+	} else {
+		// No Content-Disposition, strip query parameters from URL
+		if idx := strings.Index(finalURL, "?"); idx != -1 {
+			finalURL = finalURL[:idx]
+		}
+	}
+
 	if t != nil && resp.ContentLength > 0 {
 		t.SetDescription(fmt.Sprintf("Downloading (%s)", utils.FormatBytes(resp.ContentLength)))
 	}
@@ -444,7 +470,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 
 	// Fetch checksum from URL if configured (takes precedence over expectedChecksum)
 	if config.checksumURL != "" {
-		checksumValue, checksumType, checksumSources, err := fetchChecksumFromURL(config.checksumURL, url, t)
+		checksumValue, checksumType, checksumSources, err := fetchChecksumFromURL(config.checksumURL, finalURL, t)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
@@ -456,7 +482,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			config.checksumSource = strings.Join(checksumSources, ",")
 		}
 	} else if len(config.checksumURLs) > 0 {
-		checksumValue, checksumType, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, url, t)
+		checksumValue, checksumType, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, finalURL, t)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
