@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/flanksource/clicky/task"
 	flanksourceContext "github.com/flanksource/commons/context"
@@ -98,6 +99,11 @@ func ParseTools(args []string) []ToolSpec {
 // Install installs a single tool with task progress tracking
 func (i *Installer) Install(name, version string, t *task.Task) error {
 	return i.installTool(ToolSpec{Name: name, Version: version}, t)
+}
+
+// InstallWithResult installs a single tool and returns detailed installation result
+func (i *Installer) InstallWithResult(name, version string, t *task.Task) (*types.InstallResult, error) {
+	return i.installToolWithResult(ToolSpec{Name: name, Version: version}, t)
 }
 
 // InstallMultiple installs multiple tools
@@ -276,6 +282,112 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 
 	// Step 4: Finalize installation
 	return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+}
+
+// installWithNewPackageManagerWithResult installs using the new package manager system and populates result
+func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, name, version string, pkg types.Package, t *task.Task, result *types.InstallResult) error {
+	result.Package = pkg
+
+	// First check if there's a plugin that can handle this package
+	if handler := i.plugins.FindHandler(name, pkg); handler != nil {
+		pluginOpts := plugin.InstallOptions{
+			BinDir:       i.options.BinDir,
+			Force:        i.options.Force,
+			SkipChecksum: i.options.SkipChecksum,
+			Debug:        i.options.Debug,
+			OSOverride:   i.options.OSOverride,
+			ArchOverride: i.options.ArchOverride,
+		}
+
+		if err := handler.Install(flanksourceContext.NewContext(ctx), name, version, pkg, pluginOpts, t); err != nil {
+			result.Status = types.InstallStatusFailed
+			return fmt.Errorf("failed to install %s using plugin: %w", name, err)
+		}
+		result.Status = types.InstallStatusInstalled
+		return nil
+	}
+
+	// Get the appropriate manager for this package
+	mgr, err := i.managers.GetForPackage(pkg)
+	if err != nil {
+		result.Status = types.InstallStatusFailed
+		return fmt.Errorf("failed to get package manager for %s: %w", name, err)
+	}
+
+	t.Debugf("Install: selected package manager %s for package %s", mgr.Name(), name)
+
+	// Step 1: Resolve and validate version
+	resolvedVersion, alreadyInstalled, err := i.resolveAndValidateVersion(ctx, mgr, name, version, pkg, t)
+	if err != nil {
+		result.Status = types.InstallStatusFailed
+		return err
+	}
+
+	result.Version = types.Version{Version: resolvedVersion}
+
+	if alreadyInstalled {
+		result.Status = types.InstallStatusAlreadyInstalled
+		return nil
+	}
+
+	// Step 2: Download package
+	resolution, downloadPath, err := i.downloadPackage(ctx, mgr, name, resolvedVersion, pkg, t)
+	if err != nil {
+		result.Status = types.InstallStatusFailed
+		return err
+	}
+
+	// Populate download info
+	result.DownloadURL = resolution.DownloadURL
+	result.ChecksumURL = resolution.ChecksumURL
+	if resolution.Size > 0 {
+		result.DownloadSize = resolution.Size
+	}
+
+	// Step 3: Handle installation based on file type (installer, archive, or direct binary)
+	var finalPath string
+
+	// Check if this is a system installer first
+	if extract.IsSystemInstaller(downloadPath) {
+		finalPath, err = i.handleSystemInstaller(downloadPath, name, t)
+		if err != nil {
+			result.Status = types.InstallStatusFailed
+			return err
+		}
+	} else if resolution.IsArchive {
+		finalPath, err = i.handleArchiveInstallation(downloadPath, name, resolvedVersion, resolution, pkg, t)
+		if err != nil {
+			result.Status = types.InstallStatusFailed
+			return err
+		}
+	} else {
+		finalPath, err = i.handleDirectBinaryInstallation(downloadPath, name)
+		if err != nil {
+			result.Status = types.InstallStatusFailed
+			return err
+		}
+	}
+
+	// Track AppDir for directory mode
+	if resolution.Package.Mode == "directory" {
+		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.Name)
+	}
+
+	// Step 4: Finalize installation
+	err = i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+	if err != nil {
+		result.Status = types.InstallStatusFailed
+		return err
+	}
+
+	// Installation succeeded
+	if i.options.Force {
+		result.Status = types.InstallStatusForcedInstalled
+	} else {
+		result.Status = types.InstallStatusInstalled
+	}
+
+	return nil
 }
 
 // moveExtractedDirectory moves an extracted archive directory to the target location

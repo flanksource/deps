@@ -65,3 +65,8 @@ func PackageExists(name string) bool {
 func ResetGlobalRegistry() {
 	globalRegistry = nil
 }
+
+// SetGlobalRegistry sets the global registry (useful for testing)
+func SetGlobalRegistry(config *types.DepsConfig) {
+	globalRegistry = config
+}
