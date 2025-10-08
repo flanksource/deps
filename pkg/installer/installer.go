@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/flanksource/clicky/task"
 	flanksourceContext "github.com/flanksource/commons/context"
@@ -218,21 +219,42 @@ func (i *Installer) installTool(tool ToolSpec, t *task.Task) error {
 
 // installToolWithResult handles the installation of a single tool and returns detailed result
 func (i *Installer) installToolWithResult(tool ToolSpec, t *task.Task) (*types.InstallResult, error) {
-	result := &types.InstallResult{}
+	result := &types.InstallResult{
+		Platform: platform.Current(),
+		BinDir:   i.options.BinDir,
+	}
+	startTime := time.Now()
 
 	// Check if package is defined in new registry format first
 	if i.depsConfig != nil {
 		if pkg, exists := i.depsConfig.Registry[tool.Name]; exists {
-			if err := i.installWithNewPackageManagerWithResult(context.Background(), tool.Name, tool.Version, pkg, t, result); err != nil {
-				return result, err
-			}
-			return result, nil
+			err := i.installWithNewPackageManagerWithResult(context.Background(), tool.Name, tool.Version, pkg, t, result)
+			result.Duration = time.Since(startTime)
+			result.Error = err
+			return result, err
 		}
+	}
+
+	// Heuristic: Detect owner/repo pattern (GitHub repository)
+	if isGitHubRepoPattern(tool.Name) {
+		pkg := createGitHubPackage(tool.Name)
+		err := i.installWithNewPackageManagerWithResult(context.Background(), pkg.Name, tool.Version, pkg, t, result)
+		result.Duration = time.Since(startTime)
+		result.Error = err
+		return result, err
 	}
 
 	// No fallback - package must be in registry
 	result.Status = types.InstallStatusFailed
 	return result, fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", tool.Name)
+}
+
+// isGitHubRepoPattern checks if a name matches owner/repo pattern
+func isGitHubRepoPattern(name string) bool {
+	// Pattern: owner/repo (contains slash but not :// for URLs)
+	return strings.Contains(name, "/") &&
+		!strings.Contains(name, "://") &&
+		len(strings.Split(name, "/")) == 2
 }
 
 // installWithNewPackageManager installs using the new package manager system
