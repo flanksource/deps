@@ -220,11 +220,28 @@ func getExpectedAsset(pkg types.Package, platform string) string {
 // GetPlatformsForTesting returns test platforms for installation testing
 func GetPlatformsForTesting() []string {
 	return []string{
-		// "darwin-amd64",
-		// "darwin-arm64",
 		"linux-amd64",
-		// "linux-arm64",
-		// "windows-amd64",
+		"linux-arm64",
+		"darwin-amd64",
+		"darwin-arm64",
+		"windows-amd64",
+	}
+}
+
+// GetLinuxPlatformsForTesting returns only Linux platforms for full installation testing
+func GetLinuxPlatformsForTesting() []string {
+	return []string{
+		"linux-amd64",
+		"linux-arm64",
+	}
+}
+
+// GetChecksumOnlyPlatformsForTesting returns platforms for checksum-only testing
+func GetChecksumOnlyPlatformsForTesting() []string {
+	return []string{
+		"darwin-amd64",
+		"darwin-arm64",
+		"windows-amd64",
 	}
 }
 

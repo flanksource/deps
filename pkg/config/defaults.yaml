@@ -615,7 +615,7 @@ registry:
     openapi-generator-cli:
         name: openapi-generator-cli
         manager: maven
-        mode: directory
+        mode: file
         extract: false
         extra:
             group_id: org.openapitools

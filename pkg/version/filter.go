@@ -190,14 +190,16 @@ func isSimpleString(s string) bool {
 	return true
 }
 
-// transformTag creates a new version with a transformed tag
-func transformTag(original types.Version, newTag string) types.Version {
+// transformTag creates a new version with a transformed version string
+// NOTE: This does NOT transform the Tag field - the Tag remains the original
+// GitHub/GitLab tag name and should be used for release lookups
+func transformTag(original types.Version, transformedValue string) types.Version {
 	// Create a copy of the original version
 	modified := original
-	modified.Tag = newTag
 
-	// Update the normalized version to match the new tag
-	modified.Version = Normalize(newTag)
+	// Keep the original tag unchanged - it's needed for looking up releases
+	// Only update the normalized version field
+	modified.Version = transformedValue
 
 	return modified
 }
