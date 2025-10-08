@@ -33,7 +33,7 @@ jobs:
         id: svu
         run: |
           git fetch --tags
-          NEXT_VERSION=$(svu patch)
+          NEXT_VERSION=$(svu patch --tag.pattern "v*)
           echo "version=${NEXT_VERSION#v}" >> $GITHUB_OUTPUT
           echo "tag=$NEXT_VERSION" >> $GITHUB_OUTPUT
           echo "Next version: $NEXT_VERSION"
