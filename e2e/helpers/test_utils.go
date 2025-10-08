@@ -70,7 +70,7 @@ settings:
 	}
 
 	cleanup := func() {
-		os.Chdir(oldWD)
+		_ = os.Chdir(oldWD)
 		os.RemoveAll(tempDir)
 		// Reset global platform overrides
 		platform.SetGlobalOverrides("", "")
@@ -328,7 +328,7 @@ func CreateInstallTestEnvironment() (*TestContext, error) {
 	}
 
 	cleanup := func() {
-		os.Chdir(oldWD)
+		_ = os.Chdir(oldWD)
 		os.RemoveAll(tempDir)
 		// Reset global platform overrides
 		platform.SetGlobalOverrides("", "")

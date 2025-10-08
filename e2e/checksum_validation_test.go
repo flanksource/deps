@@ -46,19 +46,19 @@ var _ = Describe("Checksum Validation", func() {
 			switch r.URL.Path {
 			case "/test-binary-darwin-arm64":
 				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Write(testBinary)
+				_, _ = w.Write(testBinary)
 
 			case "/checksums":
 				// Create checksums file with correct hash
 				checksumContent := fmt.Sprintf("%s  test-binary-darwin-arm64\n", correctHash)
 				w.Header().Set("Content-Type", "text/plain")
-				w.Write([]byte(checksumContent))
+				_, _ = w.Write([]byte(checksumContent))
 
 			case "/checksums_hashes_order":
 				// Create hash order file
 				orderContent := "SHA-256\nMD5\n"
 				w.Header().Set("Content-Type", "text/plain")
-				w.Write([]byte(orderContent))
+				_, _ = w.Write([]byte(orderContent))
 
 			default:
 				http.NotFound(w, r)
@@ -175,7 +175,7 @@ func createSimpleTestEnvironment() (*testContext, error) {
 	}
 
 	cleanup := func() {
-		os.Chdir(oldWD)
+		_ = os.Chdir(oldWD)
 		os.RemoveAll(tempDir)
 	}
 
