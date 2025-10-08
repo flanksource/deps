@@ -1,8 +1,12 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/flanksource/clicky"
+	"github.com/flanksource/clicky/api"
+	"github.com/flanksource/clicky/api/icons"
 	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/utils"
@@ -39,11 +43,11 @@ type Package struct {
 	BinaryPath     string                 `json:"binary_path,omitempty" yaml:"binary_path,omitempty"`         // Path within archive (supports CEL expressions)
 	PreInstalled   []string               `json:"pre_installed,omitempty" yaml:"pre_installed,omitempty"`     // Pre-installed binary names
 	Extract        *bool                  `json:"extract,omitempty" yaml:"extract,omitempty"`                 // Override auto-detection of archive extraction (nil=auto, true=force, false=skip)
-	PostProcess []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"` // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"]). Supports platform prefixes: ["!windows*: rm(glob('*.bat'))"]
-	Mode          string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                   // Installation mode: "binary" (default) or "directory"
-	Symlinks      []string               `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`           // Glob patterns of paths in app-dir to symlink to bin-dir (directory mode only). Supports platform prefixes: ["windows*: bin/tool.bat", "!windows*: bin/tool"]
-	WrapperScript string                 `json:"wrapper_script,omitempty" yaml:"wrapper_script,omitempty"` // Wrapper script template to create in bin-dir. Supports templating with {{.appDir}}, {{.binDir}}, {{.name}}, {{.version}}, {{.os}}, {{.arch}}
-	Extra         map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`                 // Manager-specific config
+	PostProcess    []string               `json:"post_process,omitempty" yaml:"post_process,omitempty"`       // CEL pipeline operations after download (e.g., ["unarchive(glob('*.txz'))", "chdir(glob('*:dir'))"]). Supports platform prefixes: ["!windows*: rm(glob('*.bat'))"]
+	Mode           string                 `json:"mode,omitempty" yaml:"mode,omitempty"`                       // Installation mode: "binary" (default) or "directory"
+	Symlinks       []string               `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`               // Glob patterns of paths in app-dir to symlink to bin-dir (directory mode only). Supports platform prefixes: ["windows*: bin/tool.bat", "!windows*: bin/tool"]
+	WrapperScript  string                 `json:"wrapper_script,omitempty" yaml:"wrapper_script,omitempty"`   // Wrapper script template to create in bin-dir. Supports templating with {{.appDir}}, {{.binDir}}, {{.name}}, {{.version}}, {{.os}}, {{.arch}}
+	Extra          map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`                     // Manager-specific config
 }
 
 func (p Package) TemplateURL(platform platform.Platform, v string) (string, error) {
@@ -179,10 +183,167 @@ type Version struct {
 	SHA        string    `json:"sha,omitempty" yaml:"sha,omitempty"`
 	Published  time.Time `json:"published,omitempty" yaml:"published,omitempty"`
 	Prerelease bool      `json:"prerelease,omitempty" yaml:"prerelease,omitempty"`
+	// Version are running through version_expr / normalize
+	Normalized string `json:"normalized,omitempty" yaml:"normalized,omitempty"` // Normalized semver version
+}
+
+type InstallStatus string
+
+const (
+	InstallStatusInstalled        InstallStatus = "installed"
+	InstallStatusForcedInstalled  InstallStatus = "forced_installed"
+	InstallStatusAlreadyInstalled InstallStatus = "already_installed"
+	InstallStatusFailed           InstallStatus = "failed"
+)
+
+func (s InstallStatus) Pretty() api.Text {
+	switch s {
+	case InstallStatusInstalled:
+		return clicky.Text("").Add(icons.Success).Append(" Installed", "text-green-500")
+	case InstallStatusForcedInstalled:
+		return clicky.Text("").Add(icons.InfoAlt).Append(" Forced Installed", "text-blue-500")
+	case InstallStatusAlreadyInstalled:
+		return clicky.Text("").Add(icons.Skip).Append(" Already Installed", "text-yellow-500")
+	case InstallStatusFailed:
+		return clicky.Text("").Add(icons.Error).Append(" Failed", "text-red-500")
+	default:
+		return clicky.Text(string(s))
+	}
+}
+
+type VerifyStatus string
+
+const (
+	VerifyStatusChecksumMatch    VerifyStatus = "verified"
+	VerifyStatusChecksumMismatch VerifyStatus = "checksum_mismatch"
+	VerifyStatusSkipped          VerifyStatus = "skipped"
+)
+
+func (s VerifyStatus) Pretty() api.Text {
+	switch s {
+	case VerifyStatusChecksumMatch:
+		return clicky.Text("").Add(icons.Success).Append(" Checksum Match", "text-green-500")
+	case VerifyStatusChecksumMismatch:
+		return clicky.Text("").Add(icons.Error).Append(" Checksum Mismatch", "text-red-500")
+	case VerifyStatusSkipped:
+		return clicky.Text("").Add(icons.Skip).Append(" Checksum Skipped", "text-yellow-500")
+	default:
+		return clicky.Text(string(s))
+	}
+}
+
+type VersionStatus string
+
+const (
+	VersionStatusValid   VersionStatus = "up-to-date"
+	VersionStatusInvalid VersionStatus = "outdated"
+	// When installing package for a different os/platform its not possible to verify the version
+	VersionStatusUnsupportedPlatform VersionStatus = "unsupported_platform"
+)
+
+func (s VersionStatus) Pretty() api.Text {
+	switch s {
+	case VersionStatusValid:
+		return clicky.Text("").Add(icons.Success).Append(" Up-to-date", "text-green-500")
+	case VersionStatusInvalid:
+		return clicky.Text("").Add(icons.Warning).Append(" Outdated", "text-yellow-500")
+	case VersionStatusUnsupportedPlatform:
+		return clicky.Text("").Add(icons.Skip).Append(" Unsupported Platform", "text-blue-500")
+	default:
+		return clicky.Text(string(s))
+	}
+}
+
+type InstallResult struct {
+	Package  Package           `json:"package,omitempty"`
+	Options  InstallOptions    `json:"options,omitempty"`
+	Version  Version           `json:"version,omitempty"`
+	Platform platform.Platform `json:"platform,omitempty"`
+	// Absolute path where directory mode package was installed, empty for binary mode
+	AppDir string `json:"app_dir,omitempty"`
+	// Absolute path to the binary directory symlinks/wrappers/binaries are installed into
+	BinDir        string        `json:"bin_dir,omitempty"`
+	VersionOuptut string        `json:"version_ouptut,omitempty"`
+	Status        InstallStatus `json:"status,omitempty"`
+	VersionStatus VersionStatus `json:"version_status,omitempty"`
+	VerifyStatus  VerifyStatus  `json:"verify_status,omitempty"`
+	// Final URL used for download (after redirects)
+	DownloadURL string `json:"download_url,omitempty"`
+	ChecksumURL string `json:"checksum_url,omitempty"`
+	// Time taken for the installation
+	Duration time.Duration `json:"duration,omitempty"`
+	// Any error encountered during installation
+	Error        error `json:"error,omitempty"`
+	DownloadSize int64 `json:"download_size,omitempty"`
+	// Size of the installed binary or directory
+	InstalledSize int64 `json:"installed_size,omitempty"`
+	// Checksum of the download
+	Checksum string `json:"checksum,omitempty"`
+}
+
+func (r InstallResult) Pretty() api.Text {
+	text := clicky.Text("")
+
+	// Status line with package name and version
+	packageInfo := r.Package.Name
+	if r.Version.Version != "" {
+		packageInfo += "@" + r.Version.Version
+	}
+	if r.Platform.OS != "" || r.Platform.Arch != "" {
+		packageInfo += " (" + r.Platform.String() + ")"
+	}
+
+	text = text.Add(r.Status.Pretty()).Append(": " + packageInfo)
+
+	// Show error if present
+	if r.Error != nil {
+		text = text.Append("\n  Error: "+r.Error.Error(), "text-red-500")
+		return text
+	}
+
+	// Installation path
+	if r.BinDir != "" {
+		text = text.Append("\n  BinDir: " + r.BinDir)
+	}
+	if r.AppDir != "" {
+		text = text.Append("\n  AppDir: " + r.AppDir)
+	}
+
+	// Version and verify status
+	if r.VersionStatus != "" {
+		text = text.Append("\n  Version: ").Add(r.VersionStatus.Pretty())
+	}
+	if r.VerifyStatus != "" && r.VerifyStatus != VerifyStatusSkipped {
+		text = text.Append("\n  Checksum: ").Add(r.VerifyStatus.Pretty())
+	}
+
+	// Performance metrics
+	if r.Duration > 0 {
+		text = text.Append("\n  Duration: " + r.Duration.Round(time.Millisecond).String())
+	}
+	if r.DownloadSize > 0 {
+		text = text.Append(fmt.Sprintf("\n  Downloaded: %s", formatBytes(r.DownloadSize)))
+	}
+
+	return text
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // InstalledInfo represents information about an installed binary
 type InstalledInfo struct {
+	// Final resolved version after applying constraints
 	Version  string            `json:"version" yaml:"version"`
 	Path     string            `json:"path" yaml:"path"`
 	Platform platform.Platform `json:"platform" yaml:"platform"`
