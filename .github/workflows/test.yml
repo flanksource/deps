@@ -41,6 +41,16 @@ jobs:
           - runner: ubuntu-24.04-arm64
             os: linux
             arch: arm64
+
+          - runner: ubuntu-latest
+            os: darwin
+            arch: amd64
+          - runner: ubuntu-latest
+            os: darwin
+            arch: arm64
+          - runner: ubuntu-latest
+            os: windows
+            arch: amd64
     runs-on: ${{ matrix.platform.runner }}
     name: Install Tests - ${{ matrix.platform.os }}-${{ matrix.platform.arch }}
     steps:
@@ -59,7 +69,7 @@ jobs:
         run: go mod download
 
       - name: Run unit tests
-        run: task test:e2e
+        run: task test
 
   # Checksum validation tests for Darwin and Windows
   test-install-only:
@@ -68,12 +78,7 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - os: darwin
-            arch: amd64
-          - os: darwin
-            arch: arm64
-          - os: windows
-            arch: amd64
+
     name: Checksum Tests - ${{ matrix.platform.os }}-${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@v4
