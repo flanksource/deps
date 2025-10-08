@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Install svu
         run: |
-          curl -sL https://github.com/caarlos0/svu/releases/download/v2.2.0/svu_2.2.0_linux_amd64.tar.gz | tar xz
+          curl -sL https://github.com/caarlos0/svu/releases/download/v3.2.4/svu_3.2.4_linux_amd64.tar.gz | tar xz
           sudo mv svu /usr/local/bin/
 
       - name: Get next version
