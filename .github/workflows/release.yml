@@ -24,9 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Install svu
         run: |
           curl -sL https://github.com/caarlos0/svu/releases/download/v2.2.0/svu_2.2.0_linux_amd64.tar.gz | tar xz
@@ -35,6 +32,7 @@ jobs:
       - name: Get next version
         id: svu
         run: |
+          git fetch --tags
           NEXT_VERSION=$(svu patch)
           echo "version=${NEXT_VERSION#v}" >> $GITHUB_OUTPUT
           echo "tag=$NEXT_VERSION" >> $GITHUB_OUTPUT
