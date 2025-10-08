@@ -11,6 +11,13 @@ tasks:
     cmds:
       - task --list
 
+  install-ginkgo:
+    desc: Install Ginkgo test framework
+    status:
+      - which ginkgo
+    cmds:
+      - go install github.com/onsi/ginkgo/v2/ginkgo@latest
+
   build:
     desc: Build the deps binary
     vars:
@@ -45,6 +52,9 @@ tasks:
 
   test:
     desc: Run all tests using Ginkgo
+    deps:
+      - install-ginkgo
+
     cmds:
       - ginkgo -v ./...
     sources:
@@ -52,6 +62,8 @@ tasks:
 
   test:unit:
     desc: Run all unit tests using Ginkgo
+    deps:
+      - install-ginkgo
     cmds:
       - ginkgo -v  --skip-package ./...
     sources:
@@ -59,6 +71,9 @@ tasks:
 
   test:report:
     desc: Run all tests with Ginkgo JSON and JUnit report generation
+    deps:
+      - install-ginkgo
+
     cmds:
       - mkdir -p test-results
       - ginkgo -v --json-report test-results/test-results.json --junit-report test-results/test-junit.xml ./... || true
@@ -184,6 +199,12 @@ tasks:
       - "test-results/failed-tests.txt"
       - "test-results/failed-focus.txt"
 
+  install-golangci-lint:
+    desc: Install golangci-lint
+    status:
+      - which golangci-lint
+    cmds:
+      - curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.4.0
   lint:
     desc: Run golangci-lint
     cmds:
