@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/flanksource/clicky/task"
 	flanksourceContext "github.com/flanksource/commons/context"
@@ -215,6 +214,25 @@ func (i *Installer) installTool(tool ToolSpec, t *task.Task) error {
 
 	// No fallback - package must be in registry
 	return fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", tool.Name)
+}
+
+// installToolWithResult handles the installation of a single tool and returns detailed result
+func (i *Installer) installToolWithResult(tool ToolSpec, t *task.Task) (*types.InstallResult, error) {
+	result := &types.InstallResult{}
+
+	// Check if package is defined in new registry format first
+	if i.depsConfig != nil {
+		if pkg, exists := i.depsConfig.Registry[tool.Name]; exists {
+			if err := i.installWithNewPackageManagerWithResult(context.Background(), tool.Name, tool.Version, pkg, t, result); err != nil {
+				return result, err
+			}
+			return result, nil
+		}
+	}
+
+	// No fallback - package must be in registry
+	result.Status = types.InstallStatusFailed
+	return result, fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", tool.Name)
 }
 
 // installWithNewPackageManager installs using the new package manager system
