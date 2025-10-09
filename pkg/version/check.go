@@ -293,14 +293,46 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		}
 	}
 
-	// Determine binary path
-	binaryPath := filepath.Join(binDir, targetName)
+	// Determine binary path and handle symlink-based version checking
+	var binaryPath string
+	var versionCommand string
+	var mode string
 
-	// Handle directory mode packages
-	if pkg.Mode == "directory" {
+	// For directory mode packages with symlinks, use the symlink for version checking
+	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 && pkg.VersionCommand != "" {
+		if t != nil {
+			t.V(4).Infof("Directory mode with symlinks detected, using symlink for version check")
+		}
+
+		// Parse version command to extract binary path
+		cmdParts := strings.Fields(pkg.VersionCommand)
+		if len(cmdParts) > 0 {
+			// Extract basename from first command part (e.g., "ant" from "bin/ant")
+			symlinkName := filepath.Base(cmdParts[0])
+			binaryPath = filepath.Join(binDir, symlinkName)
+
+			// Rebuild version command with remaining args
+			if len(cmdParts) > 1 {
+				versionCommand = strings.Join(cmdParts[1:], " ")
+			}
+
+			// Use binary mode (not directory mode) since we're using symlink
+			mode = ""
+
+			if t != nil {
+				t.V(4).Infof("Using symlink path: %s with command: %s", utils.LogPath(binaryPath), versionCommand)
+			}
+		}
+	} else if pkg.Mode == "directory" {
+		// Directory mode without symlinks
+		binaryPath = filepath.Join(binDir, targetName)
+		versionCommand = pkg.VersionCommand
+		mode = "directory"
+
 		if t != nil {
 			t.V(4).Infof("Using directory mode for %s at %s", targetName, utils.LogPath(binaryPath))
 		}
+
 		// For directory mode, binaryPath should be the package directory
 		if stat, err := os.Stat(binaryPath); err == nil && stat.IsDir() {
 			// binaryPath is already correct for directory mode
@@ -316,6 +348,11 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 			return result
 		}
 	} else {
+		// Binary mode (default)
+		binaryPath = filepath.Join(binDir, targetName)
+		versionCommand = pkg.VersionCommand
+		mode = ""
+
 		// Handle Windows executables for binary mode
 		if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 			binaryPath = binaryPath + ".exe"
@@ -373,7 +410,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	}
 
 	// Get installed version
-	installedVersion, err := GetInstalledVersionWithMode(t, binaryPath, pkg.VersionCommand, pkg.VersionPattern, pkg.Mode)
+	installedVersion, err := GetInstalledVersionWithMode(t, binaryPath, versionCommand, pkg.VersionPattern, mode)
 	if err != nil {
 		result.Status = types.CheckStatusError
 		result.Error = fmt.Sprintf("Failed to get version: %v", err)
@@ -496,10 +533,46 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		t.V(3).Infof("Checking existing installation of %s (requested: %s)", name, requestedVersion)
 	}
 
-	// Determine binary path - handle directory mode
+	// Determine binary path and handle symlink-based version checking
 	var binaryPath string
+	var versionCommand string
+	var mode string
 
-	if pkg.Mode == "directory" {
+	// For directory mode packages with symlinks, use the symlink for version checking
+	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 && pkg.VersionCommand != "" {
+		if t != nil {
+			t.V(4).Infof("Directory mode with symlinks detected, using symlink for version check")
+		}
+
+		// Parse version command to extract binary path
+		cmdParts := strings.Fields(pkg.VersionCommand)
+		if len(cmdParts) > 0 {
+			// Extract basename from first command part (e.g., "ant" from "bin/ant")
+			symlinkName := filepath.Base(cmdParts[0])
+			binaryPath = filepath.Join(binDir, symlinkName)
+
+			// Rebuild version command with remaining args
+			if len(cmdParts) > 1 {
+				versionCommand = strings.Join(cmdParts[1:], " ")
+			}
+
+			// Use binary mode (not directory mode) since we're using symlink
+			mode = ""
+
+			if t != nil {
+				t.V(4).Infof("Using symlink path: %s with command: %s", utils.LogPath(binaryPath), versionCommand)
+			}
+
+			// Check if symlink exists
+			if _, err := os.Lstat(binaryPath); os.IsNotExist(err) {
+				if t != nil {
+					t.V(4).Infof("Symlink not found: %s", utils.LogPath(binaryPath))
+				}
+				return ""
+			}
+		}
+	} else if pkg.Mode == "directory" {
+		// Directory mode without symlinks
 		// For directory mode, determine directory name with same logic as installer
 		dirName := name
 		if pkg.Name != "" {
@@ -510,6 +583,9 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		}
 
 		binaryPath = filepath.Join(binDir, dirName)
+		versionCommand = pkg.VersionCommand
+		mode = "directory"
+
 		if t != nil {
 			t.V(4).Infof("Directory mode: checking %s", utils.LogPath(binaryPath))
 		}
@@ -521,6 +597,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 			return ""
 		}
 	} else {
+		// Binary mode (default)
 		// Determine binary name - prioritize pkg.Name, then pkg.BinaryName
 		binaryName := name
 		if pkg.Name != "" {
@@ -545,6 +622,9 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		}
 
 		binaryPath = filepath.Join(binDir, binaryName)
+		versionCommand = pkg.VersionCommand
+		mode = ""
+
 		if t != nil {
 			t.V(4).Infof("Binary mode: checking %s", utils.LogPath(binaryPath))
 		}
@@ -559,7 +639,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	}
 
 	// Try to get the installed version
-	installedVersion, err := GetInstalledVersionWithMode(t, binaryPath, pkg.VersionCommand, pkg.VersionPattern, pkg.Mode)
+	installedVersion, err := GetInstalledVersionWithMode(t, binaryPath, versionCommand, pkg.VersionPattern, mode)
 	if err != nil {
 		if t != nil {
 			t.V(4).Infof("Failed to get installed version: %v", err)

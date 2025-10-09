@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -254,10 +255,22 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 
 		var matchedAsset *github.ReleaseAsset
 		for _, asset := range release.Assets {
-			if asset.Name != nil && *asset.Name == templatedPattern {
-				logger.V(3).Infof("Found matching asset: %s", *asset.Name)
+			if asset.Name == nil {
+				continue
+			}
+			// Try exact match first
+			if *asset.Name == templatedPattern {
+				logger.V(3).Infof("Found exact matching asset: %s", *asset.Name)
 				matchedAsset = asset
 				break
+			}
+			// Try glob pattern match if exact match fails and pattern contains wildcards
+			if matchedAsset == nil && strings.Contains(templatedPattern, "*") {
+				if matched, _ := filepath.Match(templatedPattern, *asset.Name); matched {
+					logger.V(3).Infof("Found glob matching asset: %s (pattern: %s)", *asset.Name, templatedPattern)
+					matchedAsset = asset
+					// Don't break - continue to find best match
+				}
 			}
 		}
 

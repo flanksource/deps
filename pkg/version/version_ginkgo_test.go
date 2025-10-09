@@ -55,6 +55,33 @@ var _ = Describe("Version", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("1.28.2"))
 			})
+
+			It("should extract OpenJDK version with build number from java output", func() {
+				javaOutput := `openjdk 11.0.28 2024-07-16
+OpenJDK Runtime Environment Temurin-11.0.28+6 (build 11.0.28+6)
+OpenJDK 64-Bit Server VM Temurin-11.0.28+6 (build 11.0.28+6, mixed mode)`
+				result, err := ExtractFromOutput(javaOutput, `([\d.]+\+\d+)`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("11.0.28+6"))
+			})
+
+			It("should extract OpenJDK 17 version with build number", func() {
+				javaOutput := `openjdk 17.0.15 2024-10-15
+OpenJDK Runtime Environment Temurin-17.0.15+10 (build 17.0.15+10)
+OpenJDK 64-Bit Server VM Temurin-17.0.15+10 (build 17.0.15+10, mixed mode, sharing)`
+				result, err := ExtractFromOutput(javaOutput, `([\d.]+\+\d+)`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("17.0.15+10"))
+			})
+
+			It("should extract OpenJDK 21 version with build number", func() {
+				javaOutput := `openjdk 21.0.5 2024-10-15
+OpenJDK Runtime Environment Temurin-21.0.5+11 (build 21.0.5+11)
+OpenJDK 64-Bit Server VM Temurin-21.0.5+11 (build 21.0.5+11, mixed mode, sharing)`
+				result, err := ExtractFromOutput(javaOutput, `([\d.]+\+\d+)`)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("21.0.5+11"))
+			})
 		})
 
 		Context("when extraction fails", func() {

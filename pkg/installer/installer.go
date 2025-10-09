@@ -213,6 +213,12 @@ func (i *Installer) installTool(tool ToolSpec, t *task.Task) error {
 		}
 	}
 
+	// Heuristic: Detect owner/repo pattern (GitHub repository)
+	if isGitHubRepoPattern(tool.Name) {
+		pkg := createGitHubPackage(tool.Name)
+		return i.installWithNewPackageManager(context.Background(), pkg.Name, tool.Version, pkg, t)
+	}
+
 	// No fallback - package must be in registry
 	return fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", tool.Name)
 }
@@ -255,6 +261,21 @@ func isGitHubRepoPattern(name string) bool {
 	return strings.Contains(name, "/") &&
 		!strings.Contains(name, "://") &&
 		len(strings.Split(name, "/")) == 2
+}
+
+// createGitHubPackage creates a Package for a GitHub repo
+func createGitHubPackage(repo string) types.Package {
+	parts := strings.Split(repo, "/")
+	name := parts[1]
+	return types.Package{
+		Name:    name, // repo name (e.g., "xq")
+		Repo:    repo, // full owner/repo (e.g., "sibprogrammer/xq")
+		Manager: "github_release",
+		// Use multiple common asset patterns as fallbacks
+		AssetPatterns: map[string]string{
+			"*": fmt.Sprintf("*%s*{{.os}}*{{.arch}}*", name),
+		},
+	}
 }
 
 // installWithNewPackageManager installs using the new package manager system
