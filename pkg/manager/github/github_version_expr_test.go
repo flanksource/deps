@@ -20,7 +20,7 @@ var _ = Describe("GitHub Managers with VersionExpr", func() {
 		var manager *GitHubReleaseManager
 
 		BeforeEach(func() {
-			manager = NewGitHubReleaseManager("", "")
+			manager = NewGitHubReleaseManager()
 		})
 
 		Context("filtering prereleases", func() {
@@ -104,7 +104,7 @@ var _ = Describe("GitHub Managers with VersionExpr", func() {
 		var manager *GitHubTagsManager
 
 		BeforeEach(func() {
-			manager = NewGitHubTagsManager("", "")
+			manager = NewGitHubTagsManager()
 		})
 
 		Context("filtering prereleases", func() {
@@ -171,7 +171,7 @@ var _ = Describe("GitHub Managers with VersionExpr", func() {
 		var manager *GitHubReleaseManager
 
 		BeforeEach(func() {
-			manager = NewGitHubReleaseManager("", "")
+			manager = NewGitHubReleaseManager()
 		})
 
 		It("should maintain version ordering after filtering", func() {

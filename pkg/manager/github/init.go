@@ -5,7 +5,10 @@ import (
 )
 
 func init() {
-	// Register GitHub managers with token sources that will be expanded via os.ExpandEnv
-	manager.Register(NewGitHubReleaseManager("${GITHUB_TOKEN}", "${GH_TOKEN}", "${GITHUB_ACCESS_TOKEN}"))
-	manager.Register(NewGitHubTagsManager("${GITHUB_TOKEN}", "${GH_TOKEN}", "${GITHUB_ACCESS_TOKEN}"))
+	// Initialize singleton client with default token sources
+	_ = GetClient()
+
+	// Register GitHub managers (they use the shared singleton client)
+	manager.Register(NewGitHubReleaseManager())
+	manager.Register(NewGitHubTagsManager())
 }
