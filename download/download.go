@@ -308,10 +308,6 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 						actualChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
 
 						if actualChecksum == config.expectedChecksum {
-							// Valid cached file, copy to destination
-							if t != nil {
-								t.Infof("Using cached download: %s", filename)
-							}
 							if err := cache.CopyFromCache(cachePath, dest); err != nil {
 								if t != nil {
 									t.V(3).Infof("Failed to copy from cache, will re-download: %v", err)
@@ -331,10 +327,6 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 				}
 			}
 		} else {
-			// No checksum to validate, use cached file as-is
-			if t != nil {
-				t.Infof("Using cached download: %s", filename)
-			}
 			if err := cache.CopyFromCache(cachePath, dest); err != nil {
 				if t != nil {
 					t.V(3).Infof("Failed to copy from cache, will re-download: %v", err)

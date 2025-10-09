@@ -41,15 +41,16 @@ var _ = Describe("Apache Manager", func() {
 		Context("with default URL template", func() {
 			It("should build correct download URL", func() {
 				pkg := types.Package{
-					Name: "maven",
+					Name:        "maven",
+					URLTemplate: "https://archive.apache.org/dist/{{.name}}/binaries/{{.asset}}",
 					AssetPatterns: map[string]string{
 						"*": "apache-maven-{{.version}}-bin.tar.gz",
 					},
 				}
 
-				resolution, err := apacheManager.Resolve(ctx, pkg, "3.9.0", plat)
+				resolution, err := apacheManager.Resolve(ctx, pkg, "3.2.2", plat)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resolution.DownloadURL).To(Equal("https://archive.apache.org/dist/maven/binaries/apache-maven-3.9.0-bin.tar.gz"))
+				Expect(resolution.DownloadURL).To(Equal("https://archive.apache.org/dist/maven/binaries/apache-maven-3.2.2-bin.tar.gz"))
 				Expect(resolution.IsArchive).To(BeTrue())
 			})
 		})
@@ -73,32 +74,33 @@ var _ = Describe("Apache Manager", func() {
 		Context("with platform-specific patterns", func() {
 			It("should resolve platform-specific asset", func() {
 				pkg := types.Package{
-					Name: "test",
+					Name: "ant",
 					AssetPatterns: map[string]string{
-						"linux-amd64": "test-{{.version}}-linux-x64.tar.gz",
-						"*":           "test-{{.version}}.tar.gz",
+						"linux-amd64": "apache-ant-{{.version}}-bin.tar.gz",
+						"*":           "apache-ant-{{.version}}-bin.zip",
 					},
 				}
 
-				resolution, err := apacheManager.Resolve(ctx, pkg, "1.0.0", plat)
+				resolution, err := apacheManager.Resolve(ctx, pkg, "1.10.12", plat)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resolution.DownloadURL).To(ContainSubstring("test-1.0.0-linux-x64.tar.gz"))
+				Expect(resolution.DownloadURL).To(ContainSubstring("apache-ant-1.10.12-bin.tar.gz"))
 			})
 		})
 
 		Context("with checksum file", func() {
 			It("should build checksum URL", func() {
 				pkg := types.Package{
-					Name: "maven",
+					Name:         "maven",
+					URLTemplate:  "https://archive.apache.org/dist/{{.name}}/binaries/{{.asset}}",
 					AssetPatterns: map[string]string{
 						"*": "apache-maven-{{.version}}-bin.tar.gz",
 					},
 					ChecksumFile: "apache-maven-{{.version}}-bin.tar.gz.sha256",
 				}
 
-				resolution, err := apacheManager.Resolve(ctx, pkg, "3.9.0", plat)
+				resolution, err := apacheManager.Resolve(ctx, pkg, "3.2.2", plat)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resolution.ChecksumURL).To(Equal("https://archive.apache.org/dist/maven/binaries/apache-maven-3.9.0-bin.tar.gz.sha256"))
+				Expect(resolution.ChecksumURL).To(Equal("https://archive.apache.org/dist/maven/binaries/apache-maven-3.2.2-bin.tar.gz.sha256"))
 			})
 		})
 
@@ -108,7 +110,7 @@ var _ = Describe("Apache Manager", func() {
 					Name: "maven",
 				}
 
-				_, err := apacheManager.Resolve(ctx, pkg, "3.9.0", plat)
+				_, err := apacheManager.Resolve(ctx, pkg, "3.2.2", plat)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("no asset patterns defined"))
 			})
@@ -307,20 +309,20 @@ var _ = Describe("Apache Manager", func() {
 				},
 			}
 
-			resolution, err := apacheManager.Resolve(ctx, pkg, "3.9.0", plat)
+			resolution, err := apacheManager.Resolve(ctx, pkg, "3.2.2", plat)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resolution.IsArchive).To(BeTrue())
 		})
 
 		It("should handle non-archive files", func() {
 			pkg := types.Package{
-				Name: "test",
+				Name: "ant",
 				AssetPatterns: map[string]string{
-					"*": "test-{{.version}}-binary",
+					"*": "apache-ant-{{.version}}-binary",
 				},
 			}
 
-			resolution, err := apacheManager.Resolve(ctx, pkg, "1.0.0", plat)
+			resolution, err := apacheManager.Resolve(ctx, pkg, "1.10.12", plat)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resolution.IsArchive).To(BeFalse())
 		})

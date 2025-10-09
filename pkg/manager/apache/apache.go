@@ -360,7 +360,7 @@ func (m *ApacheManager) ParseVersionsFromHTML(pkg types.Package, htmlContent str
 		}
 	}
 
-	log.V(2).Infof("Parsed %d versions from HTML", len(versions))
+	log.V(4).Infof("Parsed %d versions from HTML", len(versions))
 	if len(versions) == 0 {
 		log.V(2).Infof("No versions found in HTML, trying fallback parser")
 		return m.parseVersionsFromHTMLFallback(htmlContent)

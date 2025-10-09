@@ -483,11 +483,9 @@ func (i *Installer) moveExtractedDirectory(workDir, targetDir string, t *task.Ta
 
 // moveSingleDirectory moves a single extracted directory to the target location (existing behavior)
 func (i *Installer) moveSingleDirectory(extractedDir, targetDir string, t *task.Task) error {
-	t.V(3).Infof("Moving single extracted directory from %s to %s", extractedDir, targetDir)
-
 	// Remove target if it exists (for updates)
 	if _, err := os.Stat(targetDir); err == nil {
-		t.V(3).Infof("Removing existing directory: %s", targetDir)
+		t.V(2).Infof("Removing existing directory: %s", targetDir)
 		if err := os.RemoveAll(targetDir); err != nil {
 			return fmt.Errorf("failed to remove existing directory: %w", err)
 		}
