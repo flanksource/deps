@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/flanksource/clicky/task"
 )
@@ -42,10 +43,6 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 		return nil // Empty workDir is not an error for pipeline operations
 	}
 
-	if e.task != nil {
-		e.task.V(3).Infof("Pipeline: working directly in %s (no copy needed)", e.workDir)
-	}
-
 	// Create pipeline context - work directly in workDir
 	ctx := NewPipelineContext(e.task, e.workDir, e.binDir, e.tmpDir, e.debug)
 
@@ -56,11 +53,8 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 	}
 
 	// Execute each CEL expression in sequence
-	for i, expr := range pipeline.Expressions {
-		if e.task != nil {
-			e.task.V(4).Infof("Pipeline: evaluating expression %d: %s", i+1, expr)
-		}
-
+	for _, expr := range pipeline.Expressions {
+		start := time.Now()
 		// Check if pipeline failed from previous expression
 		if ctx.CheckFailed() {
 			return errors.New(ctx.GetFailureMessage())
@@ -73,7 +67,7 @@ func (e *CELPipelineEvaluator) Execute(pipeline *CELPipeline) error {
 
 		// Log result if not nil
 		if result != nil && e.task != nil {
-			e.task.V(4).Infof("Expression result: %v", result)
+			e.task.V(4).Infof("Evaluated %s => %s (in %s)", expr, result, time.Since(start))
 		}
 	}
 

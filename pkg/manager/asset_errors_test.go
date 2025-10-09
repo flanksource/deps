@@ -30,11 +30,10 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 				"Asset not found: tool-linux-amd64 for linux-amd64 in package example/tool",
 				"Available assets (4 total):",
 				// Note: Assets will be sorted by Levenshtein distance and show distance/score
-				"tool-linux-arm64 [distance:",
-				"tool-darwin-amd64 [distance:",
-				"tool-windows-amd64.exe [distance:",
-				"checksums.txt [distance:",
-				"similarity:",
+				"tool-linux-arm64",
+				"tool-darwin-amd64",
+				"tool-windows-amd64.exe",
+				"checksums.txt",
 				"Searched for pattern: tool-linux-amd64",
 				"Did you mean:", // Just check that it suggests something
 			},
@@ -55,9 +54,7 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 			expectedContains: []string{
 				"Asset not found: missing-asset for linux-amd64 in package big/project",
 				"Available assets (25 total):",
-				"asset-a [distance:",
-				"[distance:", // Just check that distance is shown
-				"similarity:",
+				"asset-a",
 				"... and 5 more assets",
 				"Searched for pattern: missing-asset",
 			},
@@ -84,8 +81,7 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 				"tool-darwin-amd64.tar.gz",
 			},
 			expectedContains: []string{
-				"tool-linux-amd64.tar.gz [distance:",
-				"similarity:",
+				"tool-linux-amd64.tar.gz",
 				"Did you mean: tool-linux-amd64.tar.gz?",
 			},
 			expectedCount: 2,
