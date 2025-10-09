@@ -11,6 +11,8 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     name: Unit Tests
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +55,8 @@ jobs:
             arch: amd64
     runs-on: ${{ matrix.platform.runner }}
     name: Install Tests - ${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
