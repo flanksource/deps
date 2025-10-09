@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/bzip2"
 	"compress/gzip"
 	"crypto/rand"
 	"encoding/hex"
@@ -243,11 +244,20 @@ func Unarchive(src, dest string, options ...UnarchiveOption) (*Archive, error) {
 	logger.Debugf("Unarchiving %s to %s (overwrite=%v)", src, dest, opts.Overwrite)
 	if strings.HasSuffix(src, ".zip") || strings.HasSuffix(src, ".jar") {
 		return unzipWithResult(src, dest, opts)
-	} else if strings.HasSuffix(src, ".tar") || strings.HasSuffix(src, ".tgz") || strings.HasSuffix(src, ".tar.gz") || strings.HasSuffix(src, ".tar.xz") || strings.HasSuffix(src, ".txz") {
+	} else if IsTar(src) {
 		return UntarWithFilterAndResult(src, dest, nil, opts)
 	}
 
 	return nil, fmt.Errorf("unknown format type %s", src)
+}
+
+func IsTar(path string) bool {
+	for _, ext := range []string{".tar", ".tgz", ".tar.gz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2"} {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // UnarchiveWithResult is deprecated, use Unarchive instead
@@ -260,7 +270,7 @@ func UnarchiveExecutables(src, dest string) error {
 	logger.Debugf("Unarchiving %s to %s", src, dest)
 	if strings.HasSuffix(src, ".zip") {
 		return Unzip(src, dest)
-	} else if strings.HasSuffix(src, ".tar") || strings.HasSuffix(src, ".tgz") || strings.HasSuffix(src, ".tar.gz") || strings.HasSuffix(src, ".tar.xz") || strings.HasSuffix(src, ".txz") {
+	} else if IsTar(src) {
 		return UntarWithFilter(src, dest, func(header os.FileInfo) string {
 			if fmt.Sprintf("%v", header.Mode()&0100) != "---x------" {
 				return ""
@@ -557,6 +567,8 @@ func UntarWithFilterAndResult(tarball, target string, filter FileFilter, opts *U
 		if err != nil {
 			return archive, fmt.Errorf("failed to create xz reader: %w", err)
 		}
+	} else if strings.HasSuffix(tarball, ".tar.bz2") || strings.HasSuffix(tarball, ".tbz2") {
+		reader = bzip2.NewReader(reader)
 	}
 
 	tarReader := tar.NewReader(reader)

@@ -102,7 +102,7 @@ jobs:
           GOARCH="${{ matrix.goarch }}"
 
 
-          ARCHIVE_NAME="deps-${GOOS}-${ARCH}"
+          ARCHIVE_NAME="deps-${GOOS}-${GOARCH}"
 
           BINARY_NAME="deps-${GOOS}-${GOARCH}"
           if [ "$GOOS" = "windows" ]; then

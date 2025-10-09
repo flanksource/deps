@@ -13,6 +13,68 @@ import (
 	"github.com/flanksource/deps/pkg/utils"
 )
 
+// ContainsShellOperators checks if a command contains shell-specific operators
+// that require wrapping in a shell (bash -c or sh -c)
+func ContainsShellOperators(cmd string) bool {
+	shellOps := []string{"|", ">", "<", "2>", "&&", "||", ";", "`", "$("}
+	for _, op := range shellOps {
+		if strings.Contains(cmd, op) {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveVersionCommandBinary resolves the binary path from a version command
+// Returns the resolved path and whether it was found
+func ResolveVersionCommandBinary(versionCommand, binaryPath, binDir, mode string) (string, bool) {
+	// Extract the first token (the binary name/path)
+	cmdParts := strings.Fields(versionCommand)
+	if len(cmdParts) == 0 {
+		return "", false
+	}
+
+	firstToken := cmdParts[0]
+
+	// Check if it's a relative path (contains / or starts with ./)
+	if strings.Contains(firstToken, "/") {
+		// Resolve relative to the appropriate directory
+		var resolvedPath string
+		if mode == "directory" {
+			// For directory mode, resolve relative to the package directory
+			resolvedPath = filepath.Join(binaryPath, firstToken)
+		} else {
+			// For binary mode, resolve relative to binDir
+			resolvedPath = filepath.Join(binDir, firstToken)
+		}
+
+		// Check if the resolved path exists and is executable
+		if info, err := os.Stat(resolvedPath); err == nil {
+			if mode != "directory" && info.Mode()&0111 == 0 {
+				// Not executable in binary mode
+				return "", false
+			}
+			return resolvedPath, true
+		}
+		return "", false
+	}
+
+	// Try to find on PATH
+	if pathBinary, err := exec.LookPath(firstToken); err == nil {
+		return pathBinary, true
+	}
+
+	// Try in binDir as a fallback
+	binDirPath := filepath.Join(binDir, firstToken)
+	if info, err := os.Stat(binDirPath); err == nil {
+		if info.Mode()&0111 != 0 {
+			return binDirPath, true
+		}
+	}
+
+	return "", false
+}
+
 // GetInstalledVersion executes a binary with its version command and extracts the version
 func GetInstalledVersion(t *task.Task, binaryPath, versionCommand, versionPattern string) (string, error) {
 	return GetInstalledVersionWithMode(t, binaryPath, versionCommand, versionPattern, "")
@@ -52,6 +114,17 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 		if t != nil {
 			t.V(4).Infof("Using default version command: %s", versionCommand)
 		}
+	}
+
+	// Check if version command contains shell operators (pipes, redirects, etc.)
+	isShellCommand := ContainsShellOperators(versionCommand)
+
+	// Determine binDir for path resolution
+	binDir := filepath.Dir(binaryPath)
+	if mode == "directory" {
+		// For directory mode, binaryPath is the package directory
+		// binDir should be the parent directory
+		binDir = filepath.Dir(binaryPath)
 	}
 
 	// Split command into parts
@@ -110,41 +183,98 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 
 		var cmd *exec.Cmd
 
-		// Handle directory mode packages
-		if mode == "directory" {
+		// Check if this is a shell command that needs special handling
+		if isShellCommand && wasCustomCommand && i == 0 {
+			// Shell command with pipes/redirects - wrap in bash -c
+			if t != nil {
+				t.V(4).Infof("Detected shell operators, wrapping in bash -c")
+			}
+
+			// Reconstruct the full command from cmdArgs or use original versionCommand
+			fullCommand := versionCommand
+
+			// Set working directory based on mode
+			workingDir := ""
+			if mode == "directory" {
+				workingDir = binaryPath
+				if t != nil {
+					t.V(4).Infof("Setting working directory to %s for shell command", utils.LogPath(binaryPath))
+				}
+			}
+
+			// Try bash first, fall back to sh if bash not available
+			shellBin := "bash"
+			if _, err := exec.LookPath("bash"); err != nil {
+				shellBin = "sh"
+				if t != nil {
+					t.V(4).Infof("bash not found, using sh instead")
+				}
+			}
+
+			cmd = exec.Command(shellBin, "-c", fullCommand)
+			if workingDir != "" {
+				cmd.Dir = workingDir
+			}
+
+			if t != nil {
+				t.V(4).Infof("Executing shell command: %s -c %q in %s", shellBin, fullCommand, workingDir)
+			}
+		} else if mode == "directory" {
+			// Handle directory mode packages
 			if t != nil {
 				t.V(4).Infof("Using directory mode for %s", utils.LogPath(binaryPath))
 			}
-			// For directory mode, check if there's exactly one item in the directory
-			entries, err := os.ReadDir(binaryPath)
-			if err != nil {
-				lastErr = fmt.Errorf("failed to read directory %s: %w", binaryPath, err)
-				if t != nil {
-					t.V(4).Infof("Failed to read directory %s: %v", utils.LogPath(binaryPath), err)
-				}
-				continue
-			}
 
-			// Filter out hidden files (starting with '.')
-			var visibleEntries []os.DirEntry
-			for _, entry := range entries {
-				if !strings.HasPrefix(entry.Name(), ".") {
-					visibleEntries = append(visibleEntries, entry)
+			// Try to resolve the binary path if it's a relative path
+			resolvedBinary := ""
+			if len(cmdArgs) > 0 && strings.Contains(cmdArgs[0], "/") {
+				if resolved, found := ResolveVersionCommandBinary(strings.Join(cmdArgs, " "), binaryPath, binDir, mode); found {
+					resolvedBinary = resolved
+					if t != nil {
+						t.V(4).Infof("Resolved binary path: %s", utils.LogPath(resolvedBinary))
+					}
 				}
 			}
 
-			if len(visibleEntries) == 1 {
-				// Single item: cd into it and execute command
-				singleItem := filepath.Join(binaryPath, visibleEntries[0].Name())
-				cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
-				cmd.Dir = singleItem
+			if resolvedBinary != "" {
+				// Use the resolved binary path
+				cmd = exec.Command(resolvedBinary, cmdArgs[1:]...)
+				cmd.Dir = binaryPath
 				if t != nil {
-					t.V(4).Infof("Single directory entry: executing in %s", utils.LogPath(singleItem))
+					t.V(4).Infof("Executing resolved binary: %s %v", utils.LogPath(resolvedBinary), cmdArgs[1:])
 				}
 			} else {
-				// Multiple items: stay in package directory and execute command
-				cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
-				cmd.Dir = binaryPath
+				// Original logic: check if there's exactly one item in the directory
+				entries, err := os.ReadDir(binaryPath)
+				if err != nil {
+					lastErr = fmt.Errorf("failed to read directory %s: %w", binaryPath, err)
+					if t != nil {
+						t.V(4).Infof("Failed to read directory %s: %v", utils.LogPath(binaryPath), err)
+					}
+					continue
+				}
+
+				// Filter out hidden files (starting with '.')
+				var visibleEntries []os.DirEntry
+				for _, entry := range entries {
+					if !strings.HasPrefix(entry.Name(), ".") {
+						visibleEntries = append(visibleEntries, entry)
+					}
+				}
+
+				if len(visibleEntries) == 1 {
+					// Single item: cd into it and execute command
+					singleItem := filepath.Join(binaryPath, visibleEntries[0].Name())
+					cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+					cmd.Dir = singleItem
+					if t != nil {
+						t.V(4).Infof("Single directory entry: executing in %s", utils.LogPath(singleItem))
+					}
+				} else {
+					// Multiple items: stay in package directory and execute command
+					cmd = exec.Command(cmdArgs[0], cmdArgs[1:]...)
+					cmd.Dir = binaryPath
+				}
 			}
 		} else {
 			// For binary mode, execute the binary directly

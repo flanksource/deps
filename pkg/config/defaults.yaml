@@ -587,6 +587,14 @@ registry:
         symlinks:
             - bin/java
 
+    sqlcmd:
+        repo: microsoft/go-sqlcmd
+        version_command: --version
+        asset_patterns:
+            linux-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
+            darwin-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
+            windows-*: sqlcmd-{{.os}}-{{.arch}}.zip
+
     tomee:
         name: tomee
         manager: apache
@@ -595,13 +603,13 @@ registry:
         asset_patterns:
             "*": tomee-{{.version}}/apache-tomee-{{.version}}-plume.zip
         checksum_file: "{{.asset}}.sha512"
-        version_command: bin/version.sh
-        version_pattern: 'Server version:\\s+Apache Tomcat/\\S+\\s+Apache TomEE/([\\d\\.]+)'
+        version_command: bash -c 'bin/tomee version 2>/dev/null | grep TomEE'
+        version_pattern: 'Server version:.*TomEE/([\\d\\.]+)'
         symlinks:
             - tomee->bin/catalina.sh
         post_process:
             - delete("webapps/docs/")
-            - delete("*.bat")
+            - delete("bin/*.bat")
 
     activemq:
         name: activemq

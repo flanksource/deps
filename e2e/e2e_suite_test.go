@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	// Import package managers to register them
+	_ "github.com/flanksource/deps/pkg/manager/apache"
 	_ "github.com/flanksource/deps/pkg/manager/direct"
 	_ "github.com/flanksource/deps/pkg/manager/github"
 	_ "github.com/flanksource/deps/pkg/manager/gitlab"
