@@ -14,7 +14,7 @@ var _ = Describe("GitHubTagsManager", func() {
 	var ctx context.Context
 
 	BeforeEach(func() {
-		manager = NewGitHubTagsManager("", "")
+		manager = NewGitHubTagsManager("${GITHUB_TOKEN}", "${GH_TOKEN}", "${GITHUB_ACCESS_TOKEN}")
 		ctx = context.Background()
 	})
 
