@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -17,51 +16,16 @@ import (
 	"github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
 	"github.com/shurcooL/githubv4"
-	"golang.org/x/oauth2"
 )
 
 // GitHubTagsManager implements the PackageManager interface for GitHub tags
 type GitHubTagsManager struct {
-	client      *github.Client
-	graphql     *githubv4.Client
-	tokenSource string
+	// Uses shared singleton GitHub client
 }
 
 // NewGitHubTagsManager creates a new GitHub tags manager.
-// Takes variadic tokenSources like "${GITHUB_TOKEN}", "${GH_TOKEN}" which are expanded via os.ExpandEnv.
-// Uses the first non-empty token found.
-func NewGitHubTagsManager(tokenSources ...string) *GitHubTagsManager {
-	var client *github.Client
-	var graphqlClient *githubv4.Client
-	var token string
-	var tokenSource string
-
-	// Try each token source pattern and use the first non-empty one
-	for _, pattern := range tokenSources {
-		expanded := os.ExpandEnv(pattern)
-		if expanded != "" && expanded != pattern {
-			token = expanded
-			// Extract env var name from pattern like "${GITHUB_TOKEN}" -> "GITHUB_TOKEN"
-			tokenSource = strings.TrimSuffix(strings.TrimPrefix(pattern, "${"), "}")
-			break
-		}
-	}
-
-	if token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		tc := oauth2.NewClient(context.Background(), ts)
-		client = github.NewClient(tc)
-		graphqlClient = githubv4.NewClient(tc)
-	} else {
-		client = github.NewClient(nil)
-		graphqlClient = githubv4.NewClient(nil)
-	}
-
-	return &GitHubTagsManager{
-		client:      client,
-		graphql:     graphqlClient,
-		tokenSource: tokenSource,
-	}
+func NewGitHubTagsManager() *GitHubTagsManager {
+	return &GitHubTagsManager{}
 }
 
 // GraphQL query structs for tags with commit dates
@@ -117,6 +81,7 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 	}
 
 	// Execute GraphQL query for tags sorted by commit date
+	graphql := GetClient().GraphQL()
 	var query tagsQuery
 	variables := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -125,7 +90,7 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 		"after": (*githubv4.String)(nil),
 	}
 
-	err := m.graphql.Query(ctx, &query, variables)
+	err := graphql.Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to query tags for %s: %w", pkg.Repo, err)
@@ -333,13 +298,14 @@ func (m *GitHubTagsManager) Verify(ctx context.Context, binaryPath string, pkg t
 
 // WhoAmI returns authentication status and user information for GitHub
 func (m *GitHubTagsManager) WhoAmI(ctx context.Context) *types.AuthStatus {
+	client := GetClient().Client()
 	status := &types.AuthStatus{
 		Service:     "GitHub",
-		TokenSource: m.tokenSource,
+		TokenSource: GetClient().TokenSource(),
 	}
 
 	// Get authenticated user information
-	user, response, err := m.client.Users.Get(ctx, "")
+	user, response, err := client.Users.Get(ctx, "")
 	if err != nil {
 		status.Authenticated = false
 		status.Error = fmt.Sprintf("Failed to get user info: %v", err)
@@ -453,6 +419,7 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 	logger.V(4).Infof("GitHub Tags: Tag search GraphQL query - owner: %s, repo: %s, first: 100", owner, repo)
 
 	// Execute GraphQL query for tags (we need to search through them)
+	graphql := GetClient().GraphQL()
 	var query tagsQuery
 	variables := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -461,7 +428,7 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 		"after": (*githubv4.String)(nil),
 	}
 
-	err := m.graphql.Query(ctx, &query, variables)
+	err := graphql.Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to query tags: %w", err)

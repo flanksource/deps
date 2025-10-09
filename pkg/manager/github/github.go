@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -19,46 +18,16 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 	versionpkg "github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
-	"golang.org/x/oauth2"
 )
 
 // GitHubReleaseManager implements the PackageManager interface for GitHub releases
 type GitHubReleaseManager struct {
-	client      *github.Client
-	tokenSource string
+	// Uses shared singleton GitHub client
 }
 
 // NewGitHubReleaseManager creates a new GitHub release manager.
-// Takes variadic tokenSources like "${GITHUB_TOKEN}", "${GH_TOKEN}" which are expanded via os.ExpandEnv.
-// Uses the first non-empty token found.
-func NewGitHubReleaseManager(tokenSources ...string) *GitHubReleaseManager {
-	var client *github.Client
-	var token string
-	var tokenSource string
-
-	// Try each token source pattern and use the first non-empty one
-	for _, pattern := range tokenSources {
-		expanded := os.ExpandEnv(pattern)
-		if expanded != "" && expanded != pattern {
-			token = expanded
-			// Extract env var name from pattern like "${GITHUB_TOKEN}" -> "GITHUB_TOKEN"
-			tokenSource = strings.TrimSuffix(strings.TrimPrefix(pattern, "${"), "}")
-			break
-		}
-	}
-
-	if token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		tc := oauth2.NewClient(context.Background(), ts)
-		client = github.NewClient(tc)
-	} else {
-		client = github.NewClient(nil)
-	}
-
-	return &GitHubReleaseManager{
-		client:      client,
-		tokenSource: tokenSource,
-	}
+func NewGitHubReleaseManager() *GitHubReleaseManager {
+	return &GitHubReleaseManager{}
 }
 
 // Name returns the manager identifier
@@ -84,7 +53,8 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		perPage = 100
 	}
 
-	releases, _, err := m.client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
+	client := GetClient().Client()
+	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
 		PerPage: perPage,
 	})
 	if err != nil {
@@ -422,13 +392,14 @@ func (m *GitHubReleaseManager) Verify(ctx context.Context, binaryPath string, pk
 
 // WhoAmI returns authentication status and user information for GitHub
 func (m *GitHubReleaseManager) WhoAmI(ctx context.Context) *types.AuthStatus {
+	client := GetClient().Client()
 	status := &types.AuthStatus{
 		Service:     "GitHub",
-		TokenSource: m.tokenSource,
+		TokenSource: GetClient().TokenSource(),
 	}
 
 	// Get authenticated user information
-	user, response, err := m.client.Users.Get(ctx, "")
+	user, response, err := client.Users.Get(ctx, "")
 	if err != nil {
 		status.Authenticated = false
 		status.Error = fmt.Sprintf("Failed to get user info: %v", err)
@@ -590,7 +561,8 @@ func formatDuration(d time.Duration) string {
 func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion, versionExpr string) (*github.RepositoryRelease, error) {
 	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
-	releases, _, err := m.client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
+	client := GetClient().Client()
+	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
 		PerPage: 100,
 	})
 	if err != nil {
