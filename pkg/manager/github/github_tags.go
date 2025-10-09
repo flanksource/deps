@@ -2,7 +2,9 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -25,10 +27,25 @@ type GitHubTagsManager struct {
 	tokenSource string
 }
 
-// NewGitHubTagsManager creates a new GitHub tags manager
-func NewGitHubTagsManager(token, tokenSource string) *GitHubTagsManager {
+// NewGitHubTagsManager creates a new GitHub tags manager.
+// Takes variadic tokenSources like "${GITHUB_TOKEN}", "${GH_TOKEN}" which are expanded via os.ExpandEnv.
+// Uses the first non-empty token found.
+func NewGitHubTagsManager(tokenSources ...string) *GitHubTagsManager {
 	var client *github.Client
 	var graphqlClient *githubv4.Client
+	var token string
+	var tokenSource string
+
+	// Try each token source pattern and use the first non-empty one
+	for _, pattern := range tokenSources {
+		expanded := os.ExpandEnv(pattern)
+		if expanded != "" && expanded != pattern {
+			token = expanded
+			// Extract env var name from pattern like "${GITHUB_TOKEN}" -> "GITHUB_TOKEN"
+			tokenSource = strings.TrimSuffix(strings.TrimPrefix(pattern, "${"), "}")
+			break
+		}
+	}
 
 	if token != "" {
 		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
@@ -110,6 +127,7 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 
 	err := m.graphql.Query(ctx, &query, variables)
 	if err != nil {
+		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to query tags for %s: %w", pkg.Repo, err)
 	}
 
@@ -361,6 +379,61 @@ func (m *GitHubTagsManager) WhoAmI(ctx context.Context) *types.AuthStatus {
 	return status
 }
 
+// enhanceRateLimitError wraps a rate limit error with current rate limit status
+func (m *GitHubTagsManager) enhanceRateLimitError(ctx context.Context, originalErr error) error {
+	if originalErr == nil || !isRateLimitError(originalErr) {
+		return originalErr
+	}
+
+	// Get current rate limit status via WhoAmI
+	status := m.WhoAmI(ctx)
+
+	// Build compact error message
+	var msg strings.Builder
+	msg.WriteString(originalErr.Error())
+
+	// Get rate limit details
+	var remaining, total int
+	var resetTime *time.Time
+
+	// Try to get from structured error first
+	var rateLimitErr *github.RateLimitError
+	if errors.As(originalErr, &rateLimitErr) {
+		remaining = rateLimitErr.Rate.Remaining
+		total = rateLimitErr.Rate.Limit
+		if !rateLimitErr.Rate.Reset.IsZero() {
+			t := rateLimitErr.Rate.Reset.Time
+			resetTime = &t
+		}
+	} else if status.RateLimit != nil {
+		// Fall back to WhoAmI rate limit
+		remaining = status.RateLimit.Remaining
+		total = status.RateLimit.Total
+		resetTime = status.RateLimit.ResetTime
+	}
+
+	// Build compact single-line message
+	msg.WriteString(". GitHub API rate limit")
+	if total > 0 {
+		msg.WriteString(fmt.Sprintf(": %d/%d remaining", remaining, total))
+	} else {
+		msg.WriteString(" exceeded")
+	}
+
+	if resetTime != nil {
+		timeUntilReset := time.Until(*resetTime)
+		msg.WriteString(fmt.Sprintf(", resets in %s", formatDuration(timeUntilReset)))
+	}
+
+	if status.TokenSource != "" {
+		msg.WriteString(fmt.Sprintf(" (using %s)", status.TokenSource))
+	} else {
+		msg.WriteString(". Set GITHUB_TOKEN for 5000/hour limit")
+	}
+
+	return fmt.Errorf("%s", msg.String())
+}
+
 // Helper methods
 
 // TagInfo represents tag information from GraphQL query
@@ -390,6 +463,7 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 
 	err := m.graphql.Query(ctx, &query, variables)
 	if err != nil {
+		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to query tags: %w", err)
 	}
 
