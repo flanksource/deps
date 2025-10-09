@@ -241,4 +241,3 @@ func TestCalculateAssetSimilarity(t *testing.T) {
 		})
 	}
 }
-

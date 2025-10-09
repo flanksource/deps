@@ -191,7 +191,7 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 	}
 
 	for _, asset := range displayAssets {
-		errorMsg.WriteString(fmt.Sprintf("  %s [distance: %d, similarity: %d%%]\n", asset.name, asset.distance, asset.score))
+		errorMsg.WriteString(fmt.Sprintf("  %s\n", asset.name))
 	}
 
 	if len(assetsWithDist) > maxAssets {
