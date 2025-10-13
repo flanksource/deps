@@ -901,18 +901,42 @@ func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t 
 				}
 			}
 
-			// Create symlink
-			if err := os.Symlink(match, linkPath); err != nil {
-				t.Warnf("Failed to create symlink %s -> %s: %v", linkPath, match, err)
+			// Ensure match is absolute
+			absMatch := match
+			if !filepath.IsAbs(match) {
+				var err error
+				absMatch, err = filepath.Abs(match)
+				if err != nil {
+					t.Warnf("Failed to get absolute path for %s: %v", match, err)
+					continue
+				}
+			}
+
+			// Ensure binDir is absolute
+			absBinDir := binDir
+			if !filepath.IsAbs(binDir) {
+				var err error
+				absBinDir, err = filepath.Abs(binDir)
+				if err != nil {
+					t.Warnf("Failed to get absolute path for bin directory %s: %v", binDir, err)
+					continue
+				}
+			}
+
+			// Calculate relative path from bin directory to target
+			relTarget, err := filepath.Rel(absBinDir, absMatch)
+			if err != nil {
+				t.Warnf("Failed to calculate relative path from %s to %s: %v", absBinDir, absMatch, err)
 				continue
 			}
 
-			// Make symlink executable
-			if err := os.Chmod(linkPath, 0755); err != nil {
-				t.Warnf("Failed to chmod symlink %s: %v", linkPath, err)
+			// Create symlink with relative path
+			if err := os.Symlink(relTarget, linkPath); err != nil {
+				t.Warnf("Failed to create symlink %s -> %s: %v", linkPath, relTarget, err)
+				continue
 			}
 
-			t.V(3).Infof("Created symlink: %s -> %s", linkPath, match)
+			t.V(3).Infof("Created symlink: %s -> %s", linkPath, relTarget)
 		}
 	}
 
@@ -972,6 +996,16 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 
 // resolveVersionConstraint resolves a version constraint to a specific version
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
+	// Check if manager provides custom version resolution
+	type customResolver interface {
+		ResolveVersionConstraint(context.Context, types.Package, string, platform.Platform) (string, error)
+	}
+
+	if customMgr, ok := mgr.(customResolver); ok {
+		t.V(3).Infof("Using custom version resolver for %s", mgr.Name())
+		return customMgr.ResolveVersionConstraint(ctx, pkg, constraint, platform.Current())
+	}
+
 	// Use the centralized version resolver
 	resolver := versionpkg.NewResolver(mgr)
 	return resolver.ResolveConstraint(ctx, pkg, constraint, platform.Current())
