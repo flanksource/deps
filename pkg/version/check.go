@@ -110,8 +110,8 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 
 		var cmd *exec.Cmd
 
-		// Handle directory mode packages
 		if mode == "directory" {
+			// Handle directory mode packages
 			if t != nil {
 				t.V(4).Infof("Using directory mode for %s", utils.LogPath(binaryPath))
 			}

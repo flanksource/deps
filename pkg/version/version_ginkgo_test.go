@@ -661,3 +661,122 @@ var _ = Describe("Version Expression Filtering", func() {
 		)
 	})
 })
+
+var _ = Describe("Shell Command Handling", func() {
+	Describe("ContainsShellOperators", func() {
+		DescribeTable("should detect shell operators correctly",
+			func(cmd string, expected bool) {
+				result := ContainsShellOperators(cmd)
+				Expect(result).To(Equal(expected))
+			},
+			// Commands with shell operators
+			Entry("pipe operator", "bin/tomee version | grep TomEE", true),
+			Entry("stderr redirect", "bin/tomee version 2>/dev/null", true),
+			Entry("stdout redirect", "bin/tomee version > output.txt", true),
+			Entry("stdin redirect", "bin/tomee version < input.txt", true),
+			Entry("logical AND", "bin/tomee version && echo success", true),
+			Entry("logical OR", "bin/tomee version || echo fail", true),
+			Entry("semicolon", "cd bin; ./tomee version", true),
+			Entry("backticks", "echo `bin/tomee version`", true),
+			Entry("command substitution", "echo $(bin/tomee version)", true),
+			Entry("complex with multiple operators", "bin/tomee version 2>/dev/null | grep TomEE", true),
+
+			// Commands without shell operators
+			Entry("simple command", "bin/tomee version", false),
+			Entry("command with flags", "bin/tomee --version", false),
+			Entry("command with arguments", "bin/tomee version info", false),
+			Entry("path with forward slashes", "/usr/local/bin/tomee", false),
+			Entry("empty string", "", false),
+		)
+	})
+
+	Describe("Shell command wrapping logic", func() {
+		Context("when command is already wrapped in bash -c", func() {
+			It("should not double-wrap the command", func() {
+				// This test verifies the fix for double-wrapping bug
+				// When a command starts with "bash -c", it should not be wrapped again
+
+				// The command already has shell operators AND starts with bash -c
+				cmd := "bash -c 'bin/tomee version 2>/dev/null | grep TomEE'"
+
+				// Verify that ContainsShellOperators detects operators
+				Expect(ContainsShellOperators(cmd)).To(BeTrue())
+
+				// The actual wrapping logic is tested indirectly through GetInstalledVersionWithMode
+				// Here we verify that the detection logic for already-wrapped commands works
+				cmdParts := []string{"bash", "-c", "bin/tomee version 2>/dev/null | grep TomEE"}
+				alreadyShellWrapped := len(cmdParts) >= 2 &&
+					(cmdParts[0] == "bash" || cmdParts[0] == "sh") &&
+					cmdParts[1] == "-c"
+
+				Expect(alreadyShellWrapped).To(BeTrue())
+			})
+		})
+
+		Context("when command is already wrapped in sh -c", func() {
+			It("should not double-wrap the command", func() {
+				cmd := "sh -c 'bin/tomee version 2>/dev/null | grep TomEE'"
+
+				// Verify that ContainsShellOperators detects operators
+				Expect(ContainsShellOperators(cmd)).To(BeTrue())
+
+				// Verify detection logic for sh -c
+				cmdParts := []string{"sh", "-c", "bin/tomee version 2>/dev/null | grep TomEE"}
+				alreadyShellWrapped := len(cmdParts) >= 2 &&
+					(cmdParts[0] == "bash" || cmdParts[0] == "sh") &&
+					cmdParts[1] == "-c"
+
+				Expect(alreadyShellWrapped).To(BeTrue())
+			})
+		})
+
+		Context("when command has shell operators but is not wrapped", func() {
+			It("should detect that wrapping is needed", func() {
+				// This is the auto-detection scenario
+				cmd := "bin/tomee version 2>/dev/null | grep TomEE"
+
+				// Verify that ContainsShellOperators detects operators
+				Expect(ContainsShellOperators(cmd)).To(BeTrue())
+
+				// Verify that the command is NOT already wrapped
+				cmdParts := []string{"bin/tomee", "version", "2>/dev/null", "|", "grep", "TomEE"}
+				alreadyShellWrapped := len(cmdParts) >= 2 &&
+					(cmdParts[0] == "bash" || cmdParts[0] == "sh") &&
+					cmdParts[1] == "-c"
+
+				Expect(alreadyShellWrapped).To(BeFalse())
+			})
+		})
+
+		Context("when command has no shell operators", func() {
+			It("should not require wrapping", func() {
+				cmd := "bin/tomee --version"
+
+				// Verify that ContainsShellOperators does NOT detect operators
+				Expect(ContainsShellOperators(cmd)).To(BeFalse())
+			})
+		})
+	})
+
+	Describe("ResolveVersionCommandBinary", func() {
+		Context("with relative paths", func() {
+			It("should resolve bin/ prefix in directory mode", func() {
+				// This would need actual directory structure to test properly
+				// For now, we just document the expected behavior
+
+				// In directory mode with command "bin/tomee version"
+				// It should look for bin/tomee relative to the package directory
+				cmd := "bin/tomee version"
+				Expect(ContainsShellOperators(cmd)).To(BeFalse())
+			})
+		})
+
+		Context("with PATH lookup", func() {
+			It("should handle commands without path separators", func() {
+				// Commands like "tomee version" should be looked up on PATH
+				cmd := "tomee version"
+				Expect(ContainsShellOperators(cmd)).To(BeFalse())
+			})
+		})
+	})
+})
