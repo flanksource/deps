@@ -415,12 +415,12 @@ registry:
         repo: golang/go
         manager: github_tags
         mode: directory
-        url_template: https://go.dev/dl/go{{.version}}.{{.os}}-{{.arch}}.tar.gz
+        url_template: https://go.dev/dl/{{.asset}}
         asset_patterns:
-            darwin-amd64: go{{.version}}.darwin-amd64.tar.gz
-            darwin-arm64: go{{.version}}.darwin-arm64.tar.gz
-            linux-amd64: go{{.version}}.linux-amd64.tar.gz
-            linux-arm64: go{{.version}}.linux-arm64.tar.gz
+            darwin-amd64: "{{.version}}.darwin-amd64.tar.gz"
+            darwin-arm64: "{{.version}}.darwin-arm64.tar.gz"
+            linux-amd64: "{{.version}}.linux-amd64.tar.gz"
+            linux-arm64: "{{.version}}.linux-arm64.tar.gz"
         version_command: bin/go version
         version_pattern: go version go(\d+\.\d+\.\d+)
         version_expr: 'tag.startsWith("go") ? tag.substring(2) : tag'
@@ -493,7 +493,7 @@ registry:
             - bin/gsutil
             - bin/bq
 
-    python:
+    python-installer:
         name: python
         repo: python/cpython
         mode: directory
@@ -586,6 +586,14 @@ registry:
         version_pattern: '([\d.]+\+\d+)'
         symlinks:
             - bin/java
+
+    sqlcmd:
+        repo: microsoft/go-sqlcmd
+        version_command: --version
+        asset_patterns:
+            linux-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
+            darwin-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
+            windows-*: sqlcmd-{{.os}}-{{.arch}}.zip
 
     sqlcmd:
         repo: microsoft/go-sqlcmd
