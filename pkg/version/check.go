@@ -183,8 +183,13 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 
 		var cmd *exec.Cmd
 
+		// Check if command is already wrapped in bash/sh -c
+		alreadyShellWrapped := len(cmdParts) >= 2 &&
+			(cmdParts[0] == "bash" || cmdParts[0] == "sh") &&
+			cmdParts[1] == "-c"
+
 		// Check if this is a shell command that needs special handling
-		if isShellCommand && wasCustomCommand && i == 0 {
+		if isShellCommand && wasCustomCommand && i == 0 && !alreadyShellWrapped {
 			// Shell command with pipes/redirects - wrap in bash -c
 			if t != nil {
 				t.V(4).Infof("Detected shell operators, wrapping in bash -c")
