@@ -15,7 +15,7 @@ var _ = Describe("GitHubBuildManager", func() {
 	var ctx context.Context
 
 	BeforeEach(func() {
-		manager = NewGitHubBuildManager("", "")
+		manager = NewGitHubBuildManager()
 		ctx = context.Background()
 	})
 
