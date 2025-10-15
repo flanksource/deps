@@ -2,7 +2,6 @@
 # This file contains built-in dependency definitions that can be overridden
 # by user's local deps.yaml
 # envsubst
-# powershell
 #firebase-cli
 # supabase
 # vercel CLI
@@ -530,11 +529,60 @@ registry:
             darwin-arm64: OpenJDK17U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK17U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK17U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: jdk-{{.version}}/bin/java --version
-        version_pattern: 'openjdk (\d+\.\d+\.\d+)'
+        version_command: java -version
+        version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
-            - "linux-*: jdk-{{.version}}/bin/*"
+            - "linux-*: bin/*"
+
+    openjdk11:
+        name: openjdk
+        repo: adoptium/temurin11-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK11U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK11U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK11U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK11U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+        version_command: java -version
+        version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
+
+    openjdk8:
+        name: openjdk
+        repo: adoptium/temurin8-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK8U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK8U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+        version_command: java -version
+        version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk") ? tag.substring(3).replaceAll("-", "") : tag'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
+
+    openjdk21:
+        name: openjdk
+        repo: adoptium/temurin21-binaries
+        mode: directory
+        asset_patterns:
+            darwin-amd64: OpenJDK21U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-arm64: OpenJDK21U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-amd64: OpenJDK21U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+        version_command: java -version
+        version_pattern: '([\d.]+\+\d+)'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
 
     openjre:
         name: openjre
@@ -545,10 +593,18 @@ registry:
             darwin-arm64: OpenJDK21U-jre_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-        version_command: jdk-{{.version}}-jre/bin/java --version
-        version_pattern: 'openjdk (\d+\.\d+\.\d+)'
+        version_command: bin/java -version
+        version_pattern: '([\d.]+\+\d+)'
         symlinks:
-            - jdk-{{.version}}-jre/bin/java
+            - bin/java
+
+    sqlcmd:
+        repo: microsoft/go-sqlcmd
+        version_command: --version
+        asset_patterns:
+            linux-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
+            darwin-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
+            windows-*: sqlcmd-{{.os}}-{{.arch}}.zip
 
     tomee:
         name: tomee
@@ -558,13 +614,13 @@ registry:
         asset_patterns:
             "*": tomee-{{.version}}/apache-tomee-{{.version}}-plume.zip
         checksum_file: "{{.asset}}.sha512"
-        version_command: bin/version.sh
-        version_pattern: 'Server version:\\s+Apache Tomcat/\\S+\\s+Apache TomEE/([\\d\\.]+)'
+        version_command: bash -c 'bin/tomee version 2>/dev/null | grep TomEE'
+        version_pattern: 'Server version:.*TomEE/([\\d\\.]+)'
         symlinks:
             - tomee->bin/catalina.sh
         post_process:
             - delete("webapps/docs/")
-            - delete("*.bat")
+            - delete("bin/*.bat")
 
     activemq:
         name: activemq

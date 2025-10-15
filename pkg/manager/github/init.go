@@ -1,8 +1,6 @@
 package github
 
 import (
-	"os"
-
 	"github.com/flanksource/deps/pkg/manager"
 )
 

@@ -2,9 +2,12 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/flanksource/commons/logger"
@@ -15,31 +18,16 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 	versionpkg "github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
-	"golang.org/x/oauth2"
 )
 
 // GitHubReleaseManager implements the PackageManager interface for GitHub releases
 type GitHubReleaseManager struct {
-	client      *github.Client
-	tokenSource string
+	// Uses shared singleton GitHub client
 }
 
-// NewGitHubReleaseManager creates a new GitHub release manager
-func NewGitHubReleaseManager(token, tokenSource string) *GitHubReleaseManager {
-	var client *github.Client
-
-	if token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		tc := oauth2.NewClient(context.Background(), ts)
-		client = github.NewClient(tc)
-	} else {
-		client = github.NewClient(nil)
-	}
-
-	return &GitHubReleaseManager{
-		client:      client,
-		tokenSource: tokenSource,
-	}
+// NewGitHubReleaseManager creates a new GitHub release manager.
+func NewGitHubReleaseManager() *GitHubReleaseManager {
+	return &GitHubReleaseManager{}
 }
 
 // Name returns the manager identifier
@@ -65,10 +53,12 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		perPage = 100
 	}
 
-	releases, _, err := m.client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
+	client := GetClient().Client()
+	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
 		PerPage: perPage,
 	})
 	if err != nil {
+		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to list releases for %s: %w", pkg.Repo, err)
 	}
 
@@ -254,10 +244,22 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 
 		var matchedAsset *github.ReleaseAsset
 		for _, asset := range release.Assets {
-			if asset.Name != nil && *asset.Name == templatedPattern {
-				logger.V(3).Infof("Found matching asset: %s", *asset.Name)
+			if asset.Name == nil {
+				continue
+			}
+			// Try exact match first
+			if *asset.Name == templatedPattern {
+				logger.V(3).Infof("Found exact matching asset: %s", *asset.Name)
 				matchedAsset = asset
 				break
+			}
+			// Try glob pattern match if exact match fails and pattern contains wildcards
+			if matchedAsset == nil && strings.Contains(templatedPattern, "*") {
+				if matched, _ := filepath.Match(templatedPattern, *asset.Name); matched {
+					logger.V(3).Infof("Found glob matching asset: %s (pattern: %s)", *asset.Name, templatedPattern)
+					matchedAsset = asset
+					// Don't break - continue to find best match
+				}
 			}
 		}
 
@@ -390,13 +392,14 @@ func (m *GitHubReleaseManager) Verify(ctx context.Context, binaryPath string, pk
 
 // WhoAmI returns authentication status and user information for GitHub
 func (m *GitHubReleaseManager) WhoAmI(ctx context.Context) *types.AuthStatus {
+	client := GetClient().Client()
 	status := &types.AuthStatus{
 		Service:     "GitHub",
-		TokenSource: m.tokenSource,
+		TokenSource: GetClient().TokenSource(),
 	}
 
 	// Get authenticated user information
-	user, response, err := m.client.Users.Get(ctx, "")
+	user, response, err := client.Users.Get(ctx, "")
 	if err != nil {
 		status.Authenticated = false
 		status.Error = fmt.Sprintf("Failed to get user info: %v", err)
@@ -450,15 +453,120 @@ func extractRateLimit(response *github.Response) *types.RateLimit {
 	}
 }
 
+// isRateLimitError checks if an error is a GitHub rate limit error
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for primary rate limit error
+	var rateLimitErr *github.RateLimitError
+	if errors.As(err, &rateLimitErr) {
+		return true
+	}
+
+	// Check for secondary/abuse rate limit error
+	var abuseErr *github.AbuseRateLimitError
+	if errors.As(err, &abuseErr) {
+		return true
+	}
+
+	// Check for rate limit in error message (for GraphQL and other wrapped errors)
+	errMsg := err.Error()
+	if strings.Contains(errMsg, "API rate limit exceeded") ||
+		strings.Contains(errMsg, "403 Forbidden") ||
+		strings.Contains(errMsg, "rate limit") {
+		return true
+	}
+
+	return false
+}
+
+// enhanceRateLimitError wraps a rate limit error with current rate limit status
+func (m *GitHubReleaseManager) enhanceRateLimitError(ctx context.Context, originalErr error) error {
+	if originalErr == nil || !isRateLimitError(originalErr) {
+		return originalErr
+	}
+
+	// Get current rate limit status via WhoAmI
+	status := m.WhoAmI(ctx)
+
+	// Build compact error message
+	var msg strings.Builder
+	msg.WriteString(originalErr.Error())
+
+	// Get rate limit details
+	var remaining, total int
+	var resetTime *time.Time
+
+	// Try to get from structured error first
+	var rateLimitErr *github.RateLimitError
+	if errors.As(originalErr, &rateLimitErr) {
+		remaining = rateLimitErr.Rate.Remaining
+		total = rateLimitErr.Rate.Limit
+		if !rateLimitErr.Rate.Reset.IsZero() {
+			t := rateLimitErr.Rate.Reset.Time
+			resetTime = &t
+		}
+	} else if status.RateLimit != nil {
+		// Fall back to WhoAmI rate limit
+		remaining = status.RateLimit.Remaining
+		total = status.RateLimit.Total
+		resetTime = status.RateLimit.ResetTime
+	}
+
+	// Build compact single-line message
+	msg.WriteString(". GitHub API rate limit")
+	if total > 0 {
+		msg.WriteString(fmt.Sprintf(": %d/%d remaining", remaining, total))
+	} else {
+		msg.WriteString(" exceeded")
+	}
+
+	if resetTime != nil {
+		timeUntilReset := time.Until(*resetTime)
+		msg.WriteString(fmt.Sprintf(", resets in %s", formatDuration(timeUntilReset)))
+	}
+
+	if status.TokenSource != "" {
+		msg.WriteString(fmt.Sprintf(" (using %s)", status.TokenSource))
+	} else {
+		msg.WriteString(". Set GITHUB_TOKEN for 5000/hour limit")
+	}
+
+	return fmt.Errorf("%s", msg.String())
+}
+
+// formatDuration formats a duration in a human-readable way
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		return "expired"
+	}
+
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
+	} else if minutes > 0 {
+		return fmt.Sprintf("%dm %ds", minutes, seconds)
+	} else {
+		return fmt.Sprintf("%ds", seconds)
+	}
+}
+
 // Helper methods
 
 func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion, versionExpr string) (*github.RepositoryRelease, error) {
 	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
-	releases, _, err := m.client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
+	client := GetClient().Client()
+	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
 		PerPage: 100,
 	})
 	if err != nil {
+		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to list releases: %w", err)
 	}
 

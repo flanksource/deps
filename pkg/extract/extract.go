@@ -34,23 +34,6 @@ func WithFullExtract() ExtractOption {
 	}
 }
 
-// detectFileType determines if a file is an archive or system installer
-func detectFileType(filePath string) string {
-	ext := strings.ToLower(filepath.Ext(filePath))
-	switch ext {
-	case ".pkg":
-		return "macos_installer"
-	case ".msi":
-		return "windows_installer"
-	case ".zip", ".jar":
-		return "zip_archive"
-	case ".tar", ".tgz", ".tar.gz", ".tar.xz", ".txz":
-		return "tar_archive"
-	default:
-		return "unknown"
-	}
-}
-
 // IsSystemInstaller returns true if the file is a system installer
 func IsSystemInstaller(filePath string) bool {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -255,11 +238,6 @@ func verifyExtraction(extractDir string, t *task.Task) error {
 				totalSize += info.Size()
 			}
 		}
-	}
-
-	if t != nil {
-		t.Debugf("Verified extraction: %d files, %d directories (%s total)",
-			fileCount, dirCount, utils.FormatBytes(totalSize))
 	}
 
 	return nil

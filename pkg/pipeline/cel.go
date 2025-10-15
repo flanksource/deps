@@ -595,9 +595,6 @@ func (f *functions) chmod(pattern, modeStr string) ([]string, error) {
 		f.ctx.FailPipeline(chmodErr.Error())
 		return nil, chmodErr
 	}
-
-	f.ctx.LogDebug(fmt.Sprintf("Parsed mode %s as octal %o", modeStr, mode))
-
 	searchPath := filepath.Join(f.ctx.SandboxDir, pattern)
 	absSearchPath, _ := filepath.Abs(searchPath)
 	f.ctx.LogDebug(fmt.Sprintf("Searching for files at absolute path: %s", absSearchPath))
@@ -640,9 +637,6 @@ func (f *functions) chmod(pattern, modeStr string) ([]string, error) {
 		f.ctx.LogDebug(fmt.Sprintf("Failed to change permissions for %d files: %v", len(failed), failed))
 	}
 
-	f.ctx.LogInfo(fmt.Sprintf("Successfully changed permissions on %d/%d files to %s",
-		len(changed), len(matches), modeStr))
-
 	f.logFunctionSuccess("chmod", start, changed)
 	return changed, nil
 }
@@ -650,17 +644,13 @@ func (f *functions) chmod(pattern, modeStr string) ([]string, error) {
 // deleteFiles performs the actual deletion of files/directories
 func (f *functions) deleteFiles(matches []string, context string) ([]string, error) {
 	if len(matches) == 0 {
-		f.ctx.LogDebug(fmt.Sprintf("No files to delete for %s", context))
 		return []string{}, nil
 	}
-
-	f.ctx.LogInfo(fmt.Sprintf("Deleting %d items for %s", len(matches), context))
-
 	var deleted []string
 	var failed []string
 	var totalSize int64
 
-	for i, match := range matches {
+	for _, match := range matches {
 		// Ensure path is absolute and within sandbox
 		var absMatch string
 		if filepath.IsAbs(match) {
@@ -670,32 +660,28 @@ func (f *functions) deleteFiles(matches []string, context string) ([]string, err
 		}
 
 		itemName := filepath.Base(absMatch)
-		f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting item %d/%d: %s", i+1, len(matches), itemName))
 
 		// Get size info before deletion for logging
 		if info, err := os.Stat(absMatch); err == nil {
 			if info.IsDir() {
 				if entries, err := os.ReadDir(absMatch); err == nil {
-					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting directory %s with %d entries", itemName, len(entries)))
+					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting directory '%s'  (%d entries)", itemName, len(entries)))
 				}
 			} else {
 				totalSize += info.Size()
-				f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting file %s (%d bytes)", itemName, info.Size()))
+				f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting '%s' (%d bytes)", itemName, info.Size()))
 			}
 		}
 
-		deleteStart := time.Now()
 		if err := os.RemoveAll(absMatch); err != nil {
 			failed = append(failed, itemName)
 			f.ctx.LogDebug(fmt.Sprintf("Failed to delete %s: %v", itemName, err))
 		} else {
-			deleteDuration := time.Since(deleteStart)
 			rel, err := filepath.Rel(f.ctx.SandboxDir, absMatch)
 			if err != nil {
 				rel = itemName // fallback
 			}
 			deleted = append(deleted, rel)
-			f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleted %s in %v", rel, deleteDuration))
 		}
 	}
 
