@@ -35,8 +35,25 @@ func (m *DirectURLManager) Resolve(ctx context.Context, pkg types.Package, versi
 		return nil, fmt.Errorf("url_template is required for direct URLs")
 	}
 
-	// Template the URL
-	downloadURL, err := m.templateURL(pkg.URLTemplate, version, plat)
+	// Resolve asset pattern if specified
+	asset := ""
+	if len(pkg.AssetPatterns) > 0 {
+		platformKey := plat.OS + "-" + plat.Arch
+		assetPattern, exists := pkg.AssetPatterns[platformKey]
+		if !exists {
+			return nil, fmt.Errorf("no asset pattern found for platform %s", platformKey)
+		}
+
+		// Template the asset pattern to get the actual asset name
+		var err error
+		asset, err = depstemplate.TemplateURL(assetPattern, version, plat.OS, plat.Arch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to template asset pattern: %w", err)
+		}
+	}
+
+	// Template the URL with asset variable
+	downloadURL, err := m.templateURLWithAsset(pkg.URLTemplate, version, plat, asset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to template URL: %w", err)
 	}
@@ -56,11 +73,11 @@ func (m *DirectURLManager) Resolve(ctx context.Context, pkg types.Package, versi
 
 		if strings.HasPrefix(pkg.ChecksumFile, "http://") || strings.HasPrefix(pkg.ChecksumFile, "https://") {
 			// Full URL template
-			checksumURL, err = m.templateURL(pkg.ChecksumFile, version, plat)
+			checksumURL, err = m.templateURLWithAsset(pkg.ChecksumFile, version, plat, asset)
 		} else {
 			// Relative path - construct from download URL directory
 			baseURL := filepath.Dir(downloadURL)
-			checksumPath, templateErr := m.templateURL(pkg.ChecksumFile, version, plat)
+			checksumPath, templateErr := m.templateURLWithAsset(pkg.ChecksumFile, version, plat, asset)
 			if templateErr != nil {
 				err = templateErr
 			} else {
@@ -105,6 +122,11 @@ func (m *DirectURLManager) Verify(ctx context.Context, binaryPath string, pkg ty
 // templateURL templates a URL with version and platform variables using flanksource/gomplate
 func (m *DirectURLManager) templateURL(urlTemplate, version string, plat platform.Platform) (string, error) {
 	return depstemplate.TemplateURL(urlTemplate, version, plat.OS, plat.Arch)
+}
+
+// templateURLWithAsset templates a URL with version, platform, and asset variables
+func (m *DirectURLManager) templateURLWithAsset(urlTemplate, version string, plat platform.Platform, asset string) (string, error) {
+	return depstemplate.TemplateURLWithAsset(urlTemplate, version, plat.OS, plat.Arch, asset)
 }
 
 // isArchiveURL checks if a URL points to an archive file

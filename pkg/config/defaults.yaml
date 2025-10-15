@@ -550,14 +550,6 @@ registry:
         symlinks:
             - jdk-{{.version}}-jre/bin/java
 
-    sqlcmd:
-        repo: microsoft/go-sqlcmd
-        version_command: --version
-        asset_patterns:
-            linux-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
-            darwin-*: sqlcmd-{{.os}}-{{.arch}}.tar.bz2
-            windows-*: sqlcmd-{{.os}}-{{.arch}}.zip
-
     tomee:
         name: tomee
         manager: apache
@@ -642,6 +634,55 @@ registry:
             "*": xmlstarlet-{{.version}}.tar.gz
         version_command: --version
         version_pattern: 'compiled against libxml2 (\d+\.\d+\.\d+)'
+
+    opensearch:
+        name: opensearch
+        manager: direct
+        mode: directory
+        url_template: https://artifacts.opensearch.org/releases/bundle/opensearch/{{.version}}/{{.asset}}
+        asset_patterns:
+            darwin-amd64: opensearch-{{.version}}-darwin-x64.tar.gz
+            darwin-arm64: opensearch-{{.version}}-darwin-arm64.tar.gz
+            linux-amd64: opensearch-{{.version}}-linux-x64.tar.gz
+            linux-arm64: opensearch-{{.version}}-linux-arm64.tar.gz
+        symlinks:
+            - bin/opensearch
+            - bin/opensearch-plugin
+        version_command: bin/opensearch --version
+        version_pattern: 'Version: (\d+\.\d+\.\d+)'
+
+    loki:
+        name: loki
+        repo: grafana/loki
+        asset_patterns:
+            darwin-amd64: loki-darwin-amd64.zip
+            darwin-arm64: loki-darwin-arm64.zip
+            linux-amd64: loki-linux-amd64.zip
+            linux-arm64: loki-linux-arm64.zip
+            windows-amd64: loki-windows-amd64.exe.zip
+        version_command: --version
+        version_pattern: 'loki, version (\d+\.\d+\.\d+)'
+
+    localstack:
+        name: localstack
+        repo: localstack/localstack-cli
+        asset_patterns:
+            darwin-amd64: localstack-cli-{{.version}}-darwin-amd64-onefile.tar.gz
+            darwin-arm64: localstack-cli-{{.version}}-darwin-arm64-onefile.tar.gz
+            linux-amd64: localstack-cli-{{.version}}-linux-amd64-onefile.tar.gz
+            linux-arm64: localstack-cli-{{.version}}-linux-arm64-onefile.tar.gz
+            windows-amd64: localstack-cli-{{.version}}-windows-amd64-onefile.zip
+        version_command: --version
+        version_pattern: 'localstack (\d+\.\d+\.\d+)'
+
+    ginkgo:
+        name: ginkgo
+        manager: go
+        repo: onsi/ginkgo
+        extra:
+            import_path: github.com/onsi/ginkgo/v2/ginkgo
+        version_command: version
+        version_pattern: 'Ginkgo Version (\d+\.\d+\.\d+)'
 
 settings:
     bin_dir: ./bin
