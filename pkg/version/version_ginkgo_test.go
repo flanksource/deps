@@ -3,6 +3,7 @@ package version
 import (
 	"time"
 
+	clickyExec "github.com/flanksource/clicky/exec"
 	"github.com/flanksource/deps/pkg/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -693,7 +694,7 @@ var _ = Describe("Shell Command Handling", func() {
 	Describe("ContainsShellOperators", func() {
 		DescribeTable("should detect shell operators correctly",
 			func(cmd string, expected bool) {
-				result := ContainsShellOperators(cmd)
+				result := clickyExec.ContainsShellOperators(cmd)
 				Expect(result).To(Equal(expected))
 			},
 			// Commands with shell operators
@@ -727,7 +728,7 @@ var _ = Describe("Shell Command Handling", func() {
 				cmd := "bash -c 'bin/tomee version 2>/dev/null | grep TomEE'"
 
 				// Verify that ContainsShellOperators detects operators
-				Expect(ContainsShellOperators(cmd)).To(BeTrue())
+				Expect(clickyExec.ContainsShellOperators(cmd)).To(BeTrue())
 
 				// The actual wrapping logic is tested indirectly through GetInstalledVersionWithMode
 				// Here we verify that the detection logic for already-wrapped commands works
@@ -745,7 +746,7 @@ var _ = Describe("Shell Command Handling", func() {
 				cmd := "sh -c 'bin/tomee version 2>/dev/null | grep TomEE'"
 
 				// Verify that ContainsShellOperators detects operators
-				Expect(ContainsShellOperators(cmd)).To(BeTrue())
+				Expect(clickyExec.ContainsShellOperators(cmd)).To(BeTrue())
 
 				// Verify detection logic for sh -c
 				cmdParts := []string{"sh", "-c", "bin/tomee version 2>/dev/null | grep TomEE"}
@@ -763,7 +764,7 @@ var _ = Describe("Shell Command Handling", func() {
 				cmd := "bin/tomee version 2>/dev/null | grep TomEE"
 
 				// Verify that ContainsShellOperators detects operators
-				Expect(ContainsShellOperators(cmd)).To(BeTrue())
+				Expect(clickyExec.ContainsShellOperators(cmd)).To(BeTrue())
 
 				// Verify that the command is NOT already wrapped
 				cmdParts := []string{"bin/tomee", "version", "2>/dev/null", "|", "grep", "TomEE"}
@@ -780,7 +781,7 @@ var _ = Describe("Shell Command Handling", func() {
 				cmd := "bin/tomee --version"
 
 				// Verify that ContainsShellOperators does NOT detect operators
-				Expect(ContainsShellOperators(cmd)).To(BeFalse())
+				Expect(clickyExec.ContainsShellOperators(cmd)).To(BeFalse())
 			})
 		})
 	})
@@ -794,7 +795,7 @@ var _ = Describe("Shell Command Handling", func() {
 				// In directory mode with command "bin/tomee version"
 				// It should look for bin/tomee relative to the package directory
 				cmd := "bin/tomee version"
-				Expect(ContainsShellOperators(cmd)).To(BeFalse())
+				Expect(clickyExec.ContainsShellOperators(cmd)).To(BeFalse())
 			})
 		})
 
@@ -802,7 +803,7 @@ var _ = Describe("Shell Command Handling", func() {
 			It("should handle commands without path separators", func() {
 				// Commands like "tomee version" should be looked up on PATH
 				cmd := "tomee version"
-				Expect(ContainsShellOperators(cmd)).To(BeFalse())
+				Expect(clickyExec.ContainsShellOperators(cmd)).To(BeFalse())
 			})
 		})
 	})
