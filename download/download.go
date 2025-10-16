@@ -314,7 +314,13 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 									t.V(3).Infof("Failed to copy from cache, will re-download: %v", err)
 								}
 							} else {
+								// Log successful checksum verification for cached file
 								if t != nil {
+									checksumDisplay := actualChecksum
+									if len(checksumDisplay) > 16 {
+										checksumDisplay = checksumDisplay[:16] + "..."
+									}
+									t.Infof("✓ Checksum verified: %s:%s (cached)", config.checksumType, checksumDisplay)
 									t.SetDescription(fmt.Sprintf("Copied from cache (%s)", utils.FormatBytes(0)))
 								}
 								return nil
@@ -333,7 +339,10 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 					t.V(3).Infof("Failed to copy from cache, will re-download: %v", err)
 				}
 			} else {
+				// Log no checksum warning for cached file
 				if t != nil {
+					msg := api.Text{Content: "✗ No checksum available - copied from cache without validation", Style: "text-red-500"}
+					t.Infof(msg.ANSI())
 					t.SetDescription(fmt.Sprintf("Copied from cache (%s)", utils.FormatBytes(0)))
 				}
 				return nil
