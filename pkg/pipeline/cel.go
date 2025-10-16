@@ -89,13 +89,18 @@ func (env *CELPipelineEnvironment) Evaluate(expression string) (interface{}, err
 	// Plan the expression
 	program, err := env.env.Program(checked)
 	if err != nil {
-		return nil, issues.Err()
+		return nil, err
 	}
 
 	// Evaluate the expression with empty input
 	result, _, err := program.Eval(map[string]interface{}{})
 	if err != nil {
-		return nil, issues.Err()
+		return nil, err
+	}
+
+	// Check if pipeline failed during this expression evaluation
+	if env.ctx.CheckFailed() {
+		return nil, fmt.Errorf("%s", env.ctx.GetFailureMessage())
 	}
 
 	// Convert CEL result to Go value
@@ -141,15 +146,18 @@ type functions struct {
 func (f *functions) logFunctionEntry(funcName string, args ...interface{}) time.Time {
 	start := time.Now()
 	f.args = args
-	f.ctx.Task.V(3).Infof(fmt.Sprintf("%s(%v)", funcName, args))
+	if f.ctx.Task != nil {
+		f.ctx.Task.V(3).Infof(fmt.Sprintf("%s(%v)", funcName, args))
+	}
 	return start
 }
 
 // logFunctionSuccess logs successful completion of a CEL function
 func (f *functions) logFunctionSuccess(funcName string, start time.Time, result interface{}) {
 	duration := time.Since(start)
-	f.ctx.Task.V(2).Infof(fmt.Sprintf("%s(%v) => %v (%s) ", funcName, f.args, f.formatResult(result), duration))
-
+	if f.ctx.Task != nil {
+		f.ctx.Task.V(2).Infof(fmt.Sprintf("%s(%v) => %v (%s) ", funcName, f.args, f.formatResult(result), duration))
+	}
 }
 
 // logFunctionError logs failed execution of a CEL function
@@ -298,13 +306,17 @@ func (f *functions) unarchive(filename string) (int, error) {
 	extractDuration := time.Since(extractStart)
 	f.ctx.LogInfo(fmt.Sprintf("Extracted %s to destination %s in %v (%d files extracted)",
 		filename, absSandboxDir, extractDuration, len(extractedFiles.Files)))
-	f.ctx.Task.V(4).Infof(fmt.Sprintf("Extracted files from %s to destination %s: %v", filename, absSandboxDir, extractedFiles.Files))
+	if f.ctx.Task != nil {
+		f.ctx.Task.V(4).Infof(fmt.Sprintf("Extracted files from %s to destination %s: %v", filename, absSandboxDir, extractedFiles.Files))
+	}
 
 	// Remove the archive after extraction
 	if err := os.Remove(fullPath); err != nil {
 		f.ctx.LogDebug(fmt.Sprintf("Failed to remove archive %s after extraction: %v", filename, err))
 	} else {
-		f.ctx.Task.V(3).Infof(fmt.Sprintf("Removed archive %s after extraction", filename))
+		if f.ctx.Task != nil {
+			f.ctx.Task.V(3).Infof(fmt.Sprintf("Removed archive %s after extraction", filename))
+		}
 	}
 
 	// Calculate directory stats for enhanced success message

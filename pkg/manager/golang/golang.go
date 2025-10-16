@@ -44,9 +44,9 @@ func (m *GoManager) DiscoverVersions(ctx context.Context, pkg types.Package, pla
 // Resolve gets the installation metadata for a specific version
 func (m *GoManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
 	resolution := &types.Resolution{
-		Package:     pkg,
-		Version:     version,
-		Platform:    plat,
+		Package:  pkg,
+		Version:  version,
+		Platform: plat,
 		// For Go packages, we don't download anything - Install handles everything
 		DownloadURL: "",
 		ChecksumURL: "",

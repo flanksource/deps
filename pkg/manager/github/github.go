@@ -762,7 +762,6 @@ func (m *GitHubReleaseManager) enhanceErrorWithVersions(ctx context.Context, pkg
 	return manager.EnhanceErrorWithVersions(pkg.Name, requestedVersion, versions, originalErr)
 }
 
-
 func (m *GitHubReleaseManager) guessBinaryPath(pkg types.Package, assetName string, plat platform.Platform) string {
 	// First check if BinaryPath is specified (supports CEL expressions)
 	if pkg.BinaryPath != "" {
