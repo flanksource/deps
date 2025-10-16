@@ -72,5 +72,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run unit tests
+      - name: Run tests
         run: task test
+        env:
+          TEST_OS: ${{ matrix.platform.os }}
+          TEST_ARCH: ${{ matrix.platform.arch }}
