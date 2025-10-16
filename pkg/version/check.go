@@ -88,11 +88,8 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 		return "", fmt.Errorf("binary path is empty")
 	}
 
-	t.V(4).Infof("Getting version for %s (mode: %s)", utils.LogPath(binaryPath), mode)
-
 	// Check if binary exists
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		t.V(4).Infof("Binary not found at %s", utils.LogPath(binaryPath))
 		return "", fmt.Errorf("binary not found: %s", binaryPath)
 	}
 
@@ -102,7 +99,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	// Default version command if not specified
 	if versionCommand == "" {
 		versionCommand = "--version"
-		t.V(5).Infof("Using default version command: %s", versionCommand)
 	}
 
 	// Check if version command contains shell operators (pipes, redirects, etc.)
@@ -124,7 +120,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	if wasCustomCommand {
 		// Custom command specified - only try that exact command
 		versionCommands = [][]string{cmdParts}
-		t.V(3).Infof("Using custom version command only: %s", versionCommand)
 	} else {
 		// No custom command - try variations as fallback
 		versionCommands = [][]string{
@@ -135,7 +130,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 			{"-version"},
 			{"--help"}, // Some tools only show version in help
 		}
-		t.V(3).Infof("Attempting version detection with %d command variations", len(versionCommands))
 	}
 
 	// Set timeout to avoid hanging on interactive tools
@@ -155,7 +149,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 				}
 			}
 			if allMatch {
-				t.V(4).Infof("Skipping duplicate command: %v", cmdArgs)
 				continue
 			}
 		}
@@ -282,8 +275,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 		// Get combined output (stdout + stderr)
 		output = []byte(result.Out())
 		if len(output) > 0 {
-			// Success! Break out of the loop
-			t.V(4).Infof("Command succeeded, got %d bytes of output", len(output))
 			lastErr = nil
 			goto parseOutput
 		}
@@ -297,37 +288,23 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	}
 
 parseOutput:
-	t.V(3).Infof("Parsing version output for %s: %s", utils.LogPath(binaryPath), strings.TrimSpace(string(output)))
-
 	// Extract version from output
 	outputStr := strings.TrimSpace(string(output))
 	if outputStr == "" {
-		t.V(4).Infof("No output from version command")
 		return "", fmt.Errorf("no output from version command")
-	}
-
-	// Limit output logging to first few lines to avoid spam
-	lines := strings.Split(outputStr, "\n")
-	if len(lines) > 3 {
-		t.V(4).Infof("Version output (first 3 lines): %s...", strings.Join(lines[:3], " | "))
-	} else {
-		t.V(4).Infof("Version output: %s", strings.ReplaceAll(outputStr, "\n", " | "))
 	}
 
 	// Extract version using pattern
 	version, err := ExtractFromOutput(outputStr, versionPattern)
 	if err != nil {
-		t.V(4).Infof("Initial pattern extraction failed, trying permissive approach")
 		// If pattern extraction fails, try with a more permissive approach
 		// Look for common version patterns in the output
 		lines := strings.Split(outputStr, "\n")
-		for lineNum, line := range lines {
+		for _, line := range lines {
 			if version, err := ExtractFromOutput(line, ""); err == nil {
-				t.V(4).Infof("Found version on line %d: %s", lineNum+1, version)
 				return version, nil
 			}
 		}
-		t.V(3).Infof("Failed to extract version from any output line")
 		return "", fmt.Errorf("failed to extract version from output: %w\nOutput: %s", err, outputStr)
 	}
 
@@ -343,13 +320,10 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		RequestedVersion: requestedVersion,
 	}
 
-	t.V(3).Infof("Checking version for %s (expected: %s, requested: %s)", tool, expectedVersion, requestedVersion)
-
 	// Determine binary/directory name - prioritize pkg.Name over tool parameter
 	targetName := tool
 	if pkg.Name != "" {
 		targetName = pkg.Name
-		t.V(4).Infof("Using package name: %s (instead of %s)", targetName, tool)
 	}
 
 	// Determine binary path and handle symlink-based version checking
@@ -393,10 +367,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		}
 
 		// For directory mode, binaryPath should be the package directory
-		if stat, err := os.Stat(binaryPath); err == nil && stat.IsDir() {
-			// binaryPath is already correct for directory mode
-			t.V(4).Infof("Directory found: %s", utils.LogPath(binaryPath))
-		} else {
+		if stat, err := os.Stat(binaryPath); err != nil || !stat.IsDir() {
 			result.Status = types.CheckStatusMissing
 			result.Error = fmt.Sprintf("Package directory not found: %s", binaryPath)
 			t.V(3).Infof("Package directory not found: %s", utils.LogPath(binaryPath))
@@ -411,7 +382,6 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		// Handle Windows executables for binary mode
 		if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 			binaryPath = binaryPath + ".exe"
-			t.V(4).Infof("Trying Windows executable: %s", utils.LogPath(binaryPath))
 		}
 	}
 
@@ -445,7 +415,6 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	// If no expected version, we can only report what's installed
 	if expectedVersion == "" && requestedVersion == "" {
 		result.Status = types.CheckStatusUnknown
-		t.V(4).Infof("No expected version to compare against")
 		return result
 	}
 
@@ -455,13 +424,9 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		compareVersion = requestedVersion
 	}
 
-	t.V(3).Infof("Comparing versions: installed=%s vs expected=%s", installedVersion, compareVersion)
-
 	// Normalize versions for comparison
 	normalizedInstalled := Normalize(installedVersion)
 	normalizedExpected := Normalize(compareVersion)
-
-	t.V(4).Infof("Normalized versions: installed=%s vs expected=%s", normalizedInstalled, normalizedExpected)
 
 	if normalizedInstalled == normalizedExpected {
 		result.Status = types.CheckStatusOK
@@ -472,7 +437,6 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	// Try semantic version comparison
 	cmp, err := Compare(installedVersion, compareVersion)
 	if err != nil {
-		t.V(4).Infof("Semantic version comparison failed: %v, falling back to string comparison", err)
 		// If semantic comparison fails, use string comparison
 		if normalizedInstalled != normalizedExpected {
 			result.Status = types.CheckStatusOutdated
@@ -575,7 +539,6 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		dirName := name
 		if pkg.Name != "" {
 			dirName = pkg.Name
-			t.V(4).Infof("Using package name for directory: %s", dirName)
 		}
 
 		binaryPath = filepath.Join(binDir, dirName)
@@ -587,7 +550,6 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		}
 		// Check if directory exists
 		if stat, err := os.Stat(binaryPath); os.IsNotExist(err) || !stat.IsDir() {
-			t.V(4).Infof("Directory not found or not a directory: %s", utils.LogPath(binaryPath))
 			return ""
 		}
 	} else {
@@ -596,17 +558,14 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		binaryName := name
 		if pkg.Name != "" {
 			binaryName = pkg.Name
-			t.V(4).Infof("Using package name: %s", binaryName)
 		}
 		if pkg.BinaryName != "" {
 			binaryName = pkg.BinaryName
-			t.V(4).Infof("Using custom binary name: %s", binaryName)
 		}
 
 		// For Windows, add .exe extension if not present
 		if filepath.Ext(binaryName) == "" && (osOverride == "windows") {
 			binaryName += ".exe"
-			t.V(4).Infof("Windows OS: using %s", binaryName)
 		}
 
 		binaryPath = filepath.Join(binDir, binaryName)
@@ -619,7 +578,6 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 
 		// Check if binary exists
 		if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-			t.V(4).Infof("Binary not found: %s", utils.LogPath(binaryPath))
 			return ""
 		}
 	}
@@ -627,16 +585,12 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	// Try to get the installed version
 	installedVersion, err := GetInstalledVersionWithMode(t, binaryPath, versionCommand, pkg.VersionPattern, mode)
 	if err != nil {
-		t.V(4).Infof("Failed to get installed version: %v", err)
 		return ""
 	}
 
 	// Normalize both versions for comparison
 	normalizedInstalled := Normalize(installedVersion)
 	normalizedRequested := Normalize(requestedVersion)
-
-	t.V(4).Infof("Version comparison: installed=%s (%s) vs requested=%s (%s)",
-		installedVersion, normalizedInstalled, requestedVersion, normalizedRequested)
 
 	if normalizedInstalled == normalizedRequested {
 		t.V(3).Infof("Existing installation matches requested version: %s", installedVersion)
