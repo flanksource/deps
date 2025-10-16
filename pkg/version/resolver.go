@@ -39,6 +39,12 @@ func (r *VersionResolver) ResolveConstraint(ctx context.Context, pkg types.Packa
 		return "", fmt.Errorf("empty version constraint")
 	}
 
+	// For exact versions, skip version discovery and return the version directly
+	// This allows managers that don't support version discovery (like direct) to work
+	if LooksLikeExactVersion(constraint) {
+		return constraint, nil
+	}
+
 	// Determine optimal limit based on constraint type
 	limit := r.getOptimalLimit(constraint)
 

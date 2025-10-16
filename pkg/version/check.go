@@ -183,7 +183,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 
 		var cmd *exec.Cmd
 
-		// Check if this is a shell command that needs special handling
 		if isShellCommand && wasCustomCommand && i == 0 {
 			// Shell command with pipes/redirects - wrap in bash -c
 			if t != nil {

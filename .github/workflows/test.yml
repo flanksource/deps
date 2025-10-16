@@ -40,7 +40,7 @@ jobs:
           - runner: ubuntu-latest
             os: linux
             arch: amd64
-          - runner: ubuntu-24.04-arm64
+          - runner: ubuntu-24.04-arm
             os: linux
             arch: arm64
 
@@ -72,5 +72,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run unit tests
+      - name: Run tests
         run: task test
+        env:
+          TEST_OS: ${{ matrix.platform.os }}
+          TEST_ARCH: ${{ matrix.platform.arch }}
