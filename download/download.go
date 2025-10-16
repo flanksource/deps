@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/clicky/api"
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/cache"
 	"github.com/flanksource/deps/pkg/checksum"
@@ -527,8 +528,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		// Log successful verification with prominent message
 		if t != nil {
 			checksumDisplay := actualChecksum
-			if len(checksumDisplay) > 8 {
-				checksumDisplay = checksumDisplay[:8] + "..."
+			if len(checksumDisplay) > 16 {
+				checksumDisplay = checksumDisplay[:16] + "..."
 			}
 
 			displayType := config.checksumType
@@ -543,6 +544,12 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 				t.Infof("✓ Checksum verified: %s:%s",
 					displayType, checksumDisplay)
 			}
+		}
+	} else {
+		// No checksum available - log warning at Info level with red color
+		if t != nil {
+			msg := api.Text{Content: "✗ No checksum available - downloaded without validation", Style: "text-red-500"}
+			t.Infof(msg.ANSI())
 		}
 	}
 
