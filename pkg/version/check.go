@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	clickyExec "github.com/flanksource/clicky/exec"
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/utils"
@@ -88,13 +89,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	}
 
 	if t != nil {
-		t.V(3).Infof("Getting version for %s (mode: %s)", utils.LogPath(binaryPath), mode)
-		if versionCommand != "" {
-			t.V(4).Infof("Using custom version command: %s", versionCommand)
-		}
-		if versionPattern != "" {
-			t.V(4).Infof("Using version pattern: %s", versionPattern)
-		}
+		t.V(4).Infof("Getting version for %s (mode: %s)", utils.LogPath(binaryPath), mode)
 	}
 
 	// Check if binary exists
@@ -112,7 +107,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	if versionCommand == "" {
 		versionCommand = "--version"
 		if t != nil {
-			t.V(4).Infof("Using default version command: %s", versionCommand)
+			t.V(5).Infof("Using default version command: %s", versionCommand)
 		}
 	}
 
@@ -177,9 +172,9 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 			}
 		}
 
-		if t != nil {
-			t.V(4).Infof("Trying version command: %v", cmdArgs)
-		}
+		// Prepare the clicky/exec Process
+		var p clickyExec.Process
+		var workingDir string
 
 		var cmd *exec.Cmd
 
@@ -278,47 +273,61 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 			}
 		} else {
 			// For binary mode, execute the binary directly
-			cmd = exec.Command(binaryPath, cmdArgs...)
-			if t != nil {
-				t.V(4).Infof("Binary mode: executing %s %v", utils.LogPath(binaryPath), cmdArgs)
-			}
+			p.Cmd = binaryPath
+			p.Args = cmdArgs
 		}
 
-		done := make(chan error, 1)
+		// Configure process with task logger and working directory
+		if t != nil {
+			p = p.WithTask(t)
+		}
+		if workingDir != "" {
+			p = p.WithCwd(workingDir)
+		}
+
+		// Use pointer to process so we can access it for timeout handling
+		procPtr := &p
+		resultChan := make(chan clickyExec.Process, 1)
 
 		go func() {
-			// Try combined output first (captures both stdout and stderr)
-			out, err := cmd.CombinedOutput()
-			if err != nil {
+			// Run the command with logging
+			result := procPtr.RunWithLogging()
+			resultChan <- result
+		}()
+
+		select {
+		case result := <-resultChan:
+			if result.Err != nil {
 				// Check for fork/exec permission errors and provide better error messages
-				if strings.Contains(err.Error(), "fork/exec") && strings.Contains(err.Error(), "permission denied") {
+				if strings.Contains(result.Err.Error(), "fork/exec") && strings.Contains(result.Err.Error(), "permission denied") {
 					// Determine the actual binary path for permission checking
 					var checkPath string
 					if mode == "directory" {
-						// For directory mode, the binary path might be different
-						checkPath = cmd.Path
+						checkPath = result.Cmd
 					} else {
 						checkPath = binaryPath
 					}
 
 					// Check if file exists and get permissions
 					if info, statErr := os.Stat(checkPath); statErr == nil {
-						enhancedErr := fmt.Errorf("binary %s exists but is not executable (permissions: %s). Try: chmod +x %s",
+						lastErr = fmt.Errorf("binary %s exists but is not executable (permissions: %s). Try: chmod +x %s",
 							utils.LogPath(checkPath), info.Mode().String(), checkPath)
-						done <- enhancedErr
-						return
+						if t != nil {
+							t.V(4).Infof("Command failed: %v", lastErr)
+						}
+						continue
 					}
 				}
-				done <- err
-				return
+				if t != nil {
+					t.V(4).Infof("Command failed: %v", result.Err)
+				}
+				lastErr = result.Err
+				continue
 			}
-			output = out
-			done <- nil
-		}()
 
-		select {
-		case err := <-done:
-			if err == nil && len(output) > 0 {
+			// Get combined output (stdout + stderr)
+			output = []byte(result.Out())
+			if len(output) > 0 {
 				// Success! Break out of the loop
 				if t != nil {
 					t.V(4).Infof("Command succeeded, got %d bytes of output", len(output))
@@ -326,14 +335,10 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 				lastErr = nil
 				goto parseOutput
 			}
-			if t != nil {
-				t.V(4).Infof("Command failed: %v", err)
-			}
-			lastErr = err
+			lastErr = fmt.Errorf("no output from command")
 		case <-time.After(timeout):
-			if cmd.Process != nil {
-				cmd.Process.Kill()
-			}
+			// Try to kill the running process
+			_ = procPtr.Kill()
 			lastErr = fmt.Errorf("version command timed out after %v", timeout)
 			if t != nil {
 				t.V(4).Infof("Command timed out after %v", timeout)
