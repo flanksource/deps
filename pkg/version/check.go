@@ -88,15 +88,11 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 		return "", fmt.Errorf("binary path is empty")
 	}
 
-	if t != nil {
-		t.V(4).Infof("Getting version for %s (mode: %s)", utils.LogPath(binaryPath), mode)
-	}
+	t.V(4).Infof("Getting version for %s (mode: %s)", utils.LogPath(binaryPath), mode)
 
 	// Check if binary exists
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		if t != nil {
-			t.V(4).Infof("Binary not found at %s", utils.LogPath(binaryPath))
-		}
+		t.V(4).Infof("Binary not found at %s", utils.LogPath(binaryPath))
 		return "", fmt.Errorf("binary not found: %s", binaryPath)
 	}
 
@@ -106,9 +102,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	// Default version command if not specified
 	if versionCommand == "" {
 		versionCommand = "--version"
-		if t != nil {
-			t.V(5).Infof("Using default version command: %s", versionCommand)
-		}
+		t.V(5).Infof("Using default version command: %s", versionCommand)
 	}
 
 	// Check if version command contains shell operators (pipes, redirects, etc.)
@@ -130,9 +124,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	if wasCustomCommand {
 		// Custom command specified - only try that exact command
 		versionCommands = [][]string{cmdParts}
-		if t != nil {
-			t.V(3).Infof("Using custom version command only: %s", versionCommand)
-		}
+		t.V(3).Infof("Using custom version command only: %s", versionCommand)
 	} else {
 		// No custom command - try variations as fallback
 		versionCommands = [][]string{
@@ -143,9 +135,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 			{"-version"},
 			{"--help"}, // Some tools only show version in help
 		}
-		if t != nil {
-			t.V(3).Infof("Attempting version detection with %d command variations", len(versionCommands))
-		}
+		t.V(3).Infof("Attempting version detection with %d command variations", len(versionCommands))
 	}
 
 	// Set timeout to avoid hanging on interactive tools
@@ -165,9 +155,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 				}
 			}
 			if allMatch {
-				if t != nil {
-					t.V(4).Infof("Skipping duplicate command: %v", cmdArgs)
-				}
+				t.V(4).Infof("Skipping duplicate command: %v", cmdArgs)
 				continue
 			}
 		}
@@ -277,133 +265,73 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 			p.Args = cmdArgs
 		}
 
-		// Configure process with task logger and working directory
-		if t != nil {
-			p = p.WithTask(t)
-		}
+		// Configure process with task logger, working directory, and timeout
+		p = p.WithTask(t)
 		if workingDir != "" {
 			p = p.WithCwd(workingDir)
 		}
 
-		// Use pointer to process so we can access it for timeout handling
-		procPtr := &p
-		resultChan := make(chan clickyExec.Process, 1)
+		// Run with timeout - clicky/exec handles timeout, logging, and permission errors
+		result := p.WithTimeout(timeout).Run()
 
-		go func() {
-			// Run the command with logging
-			result := procPtr.RunWithLogging()
-			resultChan <- result
-		}()
-
-		select {
-		case result := <-resultChan:
-			if result.Err != nil {
-				// Check for fork/exec permission errors and provide better error messages
-				if strings.Contains(result.Err.Error(), "fork/exec") && strings.Contains(result.Err.Error(), "permission denied") {
-					// Determine the actual binary path for permission checking
-					var checkPath string
-					if mode == "directory" {
-						checkPath = result.Cmd
-					} else {
-						checkPath = binaryPath
-					}
-
-					// Check if file exists and get permissions
-					if info, statErr := os.Stat(checkPath); statErr == nil {
-						lastErr = fmt.Errorf("binary %s exists but is not executable (permissions: %s). Try: chmod +x %s",
-							utils.LogPath(checkPath), info.Mode().String(), checkPath)
-						if t != nil {
-							t.V(4).Infof("Command failed: %v", lastErr)
-						}
-						continue
-					}
-				}
-				if t != nil {
-					t.V(4).Infof("Command failed: %v", result.Err)
-				}
-				lastErr = result.Err
-				continue
-			}
-
-			// Get combined output (stdout + stderr)
-			output = []byte(result.Out())
-			if len(output) > 0 {
-				// Success! Break out of the loop
-				if t != nil {
-					t.V(4).Infof("Command succeeded, got %d bytes of output", len(output))
-				}
-				lastErr = nil
-				goto parseOutput
-			}
-			lastErr = fmt.Errorf("no output from command")
-		case <-time.After(timeout):
-			// Try to kill the running process
-			_ = procPtr.Kill()
-			lastErr = fmt.Errorf("version command timed out after %v", timeout)
-			if t != nil {
-				t.V(4).Infof("Command timed out after %v", timeout)
-			}
+		if result.Err != nil {
+			lastErr = result.Err
+			continue
 		}
+
+		// Get combined output (stdout + stderr)
+		output = []byte(result.Out())
+		if len(output) > 0 {
+			// Success! Break out of the loop
+			t.V(4).Infof("Command succeeded, got %d bytes of output", len(output))
+			lastErr = nil
+			goto parseOutput
+		}
+		lastErr = fmt.Errorf("no output from command")
 	}
 
 	// If we get here, all version commands failed
 	if lastErr != nil {
-		if t != nil {
-			t.V(3).Infof("All version commands failed for %s", utils.LogPath(binaryPath))
-		}
+		t.V(3).Infof("All version commands failed for %s", utils.LogPath(binaryPath))
 		return "", fmt.Errorf("all version commands failed, last error: %v", lastErr)
 	}
 
 parseOutput:
-	if t != nil {
-		t.V(3).Infof("Parsing version output for %s: %s", utils.LogPath(binaryPath), strings.TrimSpace(string(output)))
-	}
+	t.V(3).Infof("Parsing version output for %s: %s", utils.LogPath(binaryPath), strings.TrimSpace(string(output)))
 
 	// Extract version from output
 	outputStr := strings.TrimSpace(string(output))
 	if outputStr == "" {
-		if t != nil {
-			t.V(4).Infof("No output from version command")
-		}
+		t.V(4).Infof("No output from version command")
 		return "", fmt.Errorf("no output from version command")
 	}
 
-	if t != nil {
-		// Limit output logging to first few lines to avoid spam
-		lines := strings.Split(outputStr, "\n")
-		if len(lines) > 3 {
-			t.V(4).Infof("Version output (first 3 lines): %s...", strings.Join(lines[:3], " | "))
-		} else {
-			t.V(4).Infof("Version output: %s", strings.ReplaceAll(outputStr, "\n", " | "))
-		}
+	// Limit output logging to first few lines to avoid spam
+	lines := strings.Split(outputStr, "\n")
+	if len(lines) > 3 {
+		t.V(4).Infof("Version output (first 3 lines): %s...", strings.Join(lines[:3], " | "))
+	} else {
+		t.V(4).Infof("Version output: %s", strings.ReplaceAll(outputStr, "\n", " | "))
 	}
 
 	// Extract version using pattern
 	version, err := ExtractFromOutput(outputStr, versionPattern)
 	if err != nil {
-		if t != nil {
-			t.V(4).Infof("Initial pattern extraction failed, trying permissive approach")
-		}
+		t.V(4).Infof("Initial pattern extraction failed, trying permissive approach")
 		// If pattern extraction fails, try with a more permissive approach
 		// Look for common version patterns in the output
 		lines := strings.Split(outputStr, "\n")
 		for lineNum, line := range lines {
 			if version, err := ExtractFromOutput(line, ""); err == nil {
-				if t != nil {
-					t.V(4).Infof("Found version on line %d: %s", lineNum+1, version)
-				}
+				t.V(4).Infof("Found version on line %d: %s", lineNum+1, version)
 				return version, nil
 			}
 		}
-		if t != nil {
-			t.V(3).Infof("Failed to extract version from any output line")
-		}
+		t.V(3).Infof("Failed to extract version from any output line")
 		return "", fmt.Errorf("failed to extract version from output: %w\nOutput: %s", err, outputStr)
 	}
 
-	if t != nil {
-		t.V(3).Infof("Successfully extracted version: %s", version)
-	}
+	t.V(3).Infof("Successfully extracted version: %s", version)
 	return version, nil
 }
 
@@ -415,17 +343,13 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		RequestedVersion: requestedVersion,
 	}
 
-	if t != nil {
-		t.V(3).Infof("Checking version for %s (expected: %s, requested: %s)", tool, expectedVersion, requestedVersion)
-	}
+	t.V(3).Infof("Checking version for %s (expected: %s, requested: %s)", tool, expectedVersion, requestedVersion)
 
 	// Determine binary/directory name - prioritize pkg.Name over tool parameter
 	targetName := tool
 	if pkg.Name != "" {
 		targetName = pkg.Name
-		if t != nil {
-			t.V(4).Infof("Using package name: %s (instead of %s)", targetName, tool)
-		}
+		t.V(4).Infof("Using package name: %s (instead of %s)", targetName, tool)
 	}
 
 	// Determine binary path and handle symlink-based version checking
@@ -471,15 +395,11 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		// For directory mode, binaryPath should be the package directory
 		if stat, err := os.Stat(binaryPath); err == nil && stat.IsDir() {
 			// binaryPath is already correct for directory mode
-			if t != nil {
-				t.V(4).Infof("Directory found: %s", utils.LogPath(binaryPath))
-			}
+			t.V(4).Infof("Directory found: %s", utils.LogPath(binaryPath))
 		} else {
 			result.Status = types.CheckStatusMissing
 			result.Error = fmt.Sprintf("Package directory not found: %s", binaryPath)
-			if t != nil {
-				t.V(3).Infof("Package directory not found: %s", utils.LogPath(binaryPath))
-			}
+			t.V(3).Infof("Package directory not found: %s", utils.LogPath(binaryPath))
 			return result
 		}
 	} else {
@@ -491,40 +411,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		// Handle Windows executables for binary mode
 		if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
 			binaryPath = binaryPath + ".exe"
-			if t != nil {
-				t.V(4).Infof("Trying Windows executable: %s", utils.LogPath(binaryPath))
-			}
-		}
-	}
-
-	// Special handling for postgres (directory structure)
-	if strings.ToLower(tool) == "postgres" || strings.Contains(strings.ToLower(tool), "postgres") {
-		if t != nil {
-			t.V(4).Infof("Special postgres handling for %s", tool)
-		}
-		postgresDir := filepath.Join(binDir, tool)
-		if stat, err := os.Stat(postgresDir); err == nil && stat.IsDir() {
-			// Look for postgres binary inside the directory
-			possiblePaths := []string{
-				filepath.Join(postgresDir, "bin", "postgres"),
-				filepath.Join(postgresDir, "bin", "postgres.exe"),
-				filepath.Join(postgresDir, "postgres"),
-				filepath.Join(postgresDir, "postgres.exe"),
-			}
-
-			if t != nil {
-				t.V(4).Infof("Looking for postgres binary in %d possible locations", len(possiblePaths))
-			}
-
-			for _, path := range possiblePaths {
-				if _, err := os.Stat(path); err == nil {
-					binaryPath = path
-					if t != nil {
-						t.V(4).Infof("Found postgres binary at %s", utils.LogPath(path))
-					}
-					break
-				}
-			}
+			t.V(4).Infof("Trying Windows executable: %s", utils.LogPath(binaryPath))
 		}
 	}
 
@@ -538,9 +425,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		} else {
 			result.Error = fmt.Sprintf("Binary not found: %s", binaryPath)
 		}
-		if t != nil {
-			t.V(3).Infof("Binary/directory not found: %s", utils.LogPath(binaryPath))
-		}
+		t.V(3).Infof("Binary/directory not found: %s", utils.LogPath(binaryPath))
 		return result
 	}
 
@@ -549,24 +434,18 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	if err != nil {
 		result.Status = types.CheckStatusError
 		result.Error = fmt.Sprintf("Failed to get version: %v", err)
-		if t != nil {
-			t.V(3).Infof("Failed to get version for %s: %v", tool, err)
-		}
+		t.V(3).Infof("Failed to get version for %s: %v", tool, err)
 		return result
 	}
 
 	result.InstalledVersion = installedVersion
 
-	if t != nil {
-		t.V(3).Infof("Found installed version %s for %s", installedVersion, tool)
-	}
+	t.V(3).Infof("Found installed version %s for %s", installedVersion, tool)
 
 	// If no expected version, we can only report what's installed
 	if expectedVersion == "" && requestedVersion == "" {
 		result.Status = types.CheckStatusUnknown
-		if t != nil {
-			t.V(4).Infof("No expected version to compare against")
-		}
+		t.V(4).Infof("No expected version to compare against")
 		return result
 	}
 
@@ -576,32 +455,24 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		compareVersion = requestedVersion
 	}
 
-	if t != nil {
-		t.V(3).Infof("Comparing versions: installed=%s vs expected=%s", installedVersion, compareVersion)
-	}
+	t.V(3).Infof("Comparing versions: installed=%s vs expected=%s", installedVersion, compareVersion)
 
 	// Normalize versions for comparison
 	normalizedInstalled := Normalize(installedVersion)
 	normalizedExpected := Normalize(compareVersion)
 
-	if t != nil {
-		t.V(4).Infof("Normalized versions: installed=%s vs expected=%s", normalizedInstalled, normalizedExpected)
-	}
+	t.V(4).Infof("Normalized versions: installed=%s vs expected=%s", normalizedInstalled, normalizedExpected)
 
 	if normalizedInstalled == normalizedExpected {
 		result.Status = types.CheckStatusOK
-		if t != nil {
-			t.V(3).Infof("Version match: %s == %s (normalized)", installedVersion, compareVersion)
-		}
+		t.V(3).Infof("Version match: %s == %s (normalized)", installedVersion, compareVersion)
 		return result
 	}
 
 	// Try semantic version comparison
 	cmp, err := Compare(installedVersion, compareVersion)
 	if err != nil {
-		if t != nil {
-			t.V(4).Infof("Semantic version comparison failed: %v, falling back to string comparison", err)
-		}
+		t.V(4).Infof("Semantic version comparison failed: %v, falling back to string comparison", err)
 		// If semantic comparison fails, use string comparison
 		if normalizedInstalled != normalizedExpected {
 			result.Status = types.CheckStatusOutdated
@@ -614,21 +485,15 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	switch {
 	case cmp == 0:
 		result.Status = types.CheckStatusOK
-		if t != nil {
-			t.V(3).Infof("Version match: %s == %s (semantic)", installedVersion, compareVersion)
-		}
+		t.V(3).Infof("Version match: %s == %s (semantic)", installedVersion, compareVersion)
 	case cmp > 0:
 		// Installed version is newer than expected - this is usually OK
 		result.Status = types.CheckStatusNewer
-		if t != nil {
-			t.V(3).Infof("Newer version installed: %s > %s", installedVersion, compareVersion)
-		}
+		t.V(3).Infof("Newer version installed: %s > %s", installedVersion, compareVersion)
 	case cmp < 0:
 		// Installed version is older than expected
 		result.Status = types.CheckStatusOutdated
-		if t != nil {
-			t.V(3).Infof("Outdated version: %s < %s", installedVersion, compareVersion)
-		}
+		t.V(3).Infof("Outdated version: %s < %s", installedVersion, compareVersion)
 	}
 
 	return result
@@ -664,9 +529,7 @@ func ScanBinDirectory(binDir string) ([]string, error) {
 // CheckExistingInstallation checks if a binary exists and matches the requested version
 // Returns the existing version if it matches, empty string otherwise
 func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, requestedVersion, binDir string, osOverride string) string {
-	if t != nil {
-		t.V(3).Infof("Checking existing installation of %s (requested: %s)", name, requestedVersion)
-	}
+	t.V(3).Infof("Checking existing installation of %s (requested: %s)", name, requestedVersion)
 
 	// Determine binary path and handle symlink-based version checking
 	var binaryPath string
@@ -712,9 +575,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		dirName := name
 		if pkg.Name != "" {
 			dirName = pkg.Name
-			if t != nil {
-				t.V(4).Infof("Using package name for directory: %s", dirName)
-			}
+			t.V(4).Infof("Using package name for directory: %s", dirName)
 		}
 
 		binaryPath = filepath.Join(binDir, dirName)
@@ -726,9 +587,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		}
 		// Check if directory exists
 		if stat, err := os.Stat(binaryPath); os.IsNotExist(err) || !stat.IsDir() {
-			if t != nil {
-				t.V(4).Infof("Directory not found or not a directory: %s", utils.LogPath(binaryPath))
-			}
+			t.V(4).Infof("Directory not found or not a directory: %s", utils.LogPath(binaryPath))
 			return ""
 		}
 	} else {
@@ -737,23 +596,17 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 		binaryName := name
 		if pkg.Name != "" {
 			binaryName = pkg.Name
-			if t != nil {
-				t.V(4).Infof("Using package name: %s", binaryName)
-			}
+			t.V(4).Infof("Using package name: %s", binaryName)
 		}
 		if pkg.BinaryName != "" {
 			binaryName = pkg.BinaryName
-			if t != nil {
-				t.V(4).Infof("Using custom binary name: %s", binaryName)
-			}
+			t.V(4).Infof("Using custom binary name: %s", binaryName)
 		}
 
 		// For Windows, add .exe extension if not present
 		if filepath.Ext(binaryName) == "" && (osOverride == "windows") {
 			binaryName += ".exe"
-			if t != nil {
-				t.V(4).Infof("Windows OS: using %s", binaryName)
-			}
+			t.V(4).Infof("Windows OS: using %s", binaryName)
 		}
 
 		binaryPath = filepath.Join(binDir, binaryName)
@@ -766,9 +619,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 
 		// Check if binary exists
 		if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-			if t != nil {
-				t.V(4).Infof("Binary not found: %s", utils.LogPath(binaryPath))
-			}
+			t.V(4).Infof("Binary not found: %s", utils.LogPath(binaryPath))
 			return ""
 		}
 	}
@@ -776,9 +627,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	// Try to get the installed version
 	installedVersion, err := GetInstalledVersionWithMode(t, binaryPath, versionCommand, pkg.VersionPattern, mode)
 	if err != nil {
-		if t != nil {
-			t.V(4).Infof("Failed to get installed version: %v", err)
-		}
+		t.V(4).Infof("Failed to get installed version: %v", err)
 		return ""
 	}
 
@@ -786,20 +635,14 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	normalizedInstalled := Normalize(installedVersion)
 	normalizedRequested := Normalize(requestedVersion)
 
-	if t != nil {
-		t.V(4).Infof("Version comparison: installed=%s (%s) vs requested=%s (%s)",
-			installedVersion, normalizedInstalled, requestedVersion, normalizedRequested)
-	}
+	t.V(4).Infof("Version comparison: installed=%s (%s) vs requested=%s (%s)",
+		installedVersion, normalizedInstalled, requestedVersion, normalizedRequested)
 
 	if normalizedInstalled == normalizedRequested {
-		if t != nil {
-			t.V(3).Infof("Existing installation matches requested version: %s", installedVersion)
-		}
+		t.V(3).Infof("Existing installation matches requested version: %s", installedVersion)
 		return installedVersion
 	}
 
-	if t != nil {
-		t.V(3).Infof("Existing installation version mismatch: %s != %s", installedVersion, requestedVersion)
-	}
+	t.V(3).Infof("Existing installation version mismatch: %s != %s", installedVersion, requestedVersion)
 	return ""
 }
