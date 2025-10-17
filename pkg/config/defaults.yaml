@@ -707,6 +707,17 @@ registry:
         version_command: version
         version_pattern: 'Ginkgo Version (\d+\.\d+\.\d+)'
 
+    python:
+        name: python
+        repo: astral-sh/python-build-standalone
+        manager: github_build
+        mode: directory
+        version_command: bin/python3 --version
+        version_pattern: 'Python (\d+\.\d+\.\d+)'
+        symlinks:
+            - bin/python3
+            - bin/pip3
+
 settings:
     bin_dir: ./bin
     platform:

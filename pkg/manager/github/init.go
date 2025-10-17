@@ -11,4 +11,5 @@ func init() {
 	// Register GitHub managers (they use the shared singleton client)
 	manager.Register(NewGitHubReleaseManager())
 	manager.Register(NewGitHubTagsManager())
+	manager.Register(NewGitHubBuildManager())
 }

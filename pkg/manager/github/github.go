@@ -91,9 +91,9 @@ type releaseAssetsQuery struct {
 type releaseAllAssetsQuery struct {
 	Repository struct {
 		Release struct {
-			TagName      string
-			PublishedAt  time.Time
-			IsPrerelease bool
+			TagName       string
+			PublishedAt   time.Time
+			IsPrerelease  bool
 			ReleaseAssets struct {
 				Nodes []struct {
 					Name        string
@@ -390,8 +390,8 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	// Set checksum from asset digest - this should always be available from GraphQL
 	if assetSHA256 != "" {
 		logger.V(3).Infof("Using SHA256 digest from GitHub asset: %s", assetSHA256)
-		// The GraphQL Digest field already includes the "sha256:" prefix
-		resolution.Checksum = assetSHA256
+		// The GraphQL Digest field is a raw hex string, add the sha256: prefix
+		resolution.Checksum = "sha256:" + assetSHA256
 	} else if githubAsset != nil {
 		// Older releases may not have digest field populated in GraphQL - log warning
 		logger.Infof("\033[31mNo digest available from GraphQL for asset %s (repo: %s, tag: %s) - will try checksum files\033[0m",
