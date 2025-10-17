@@ -676,12 +676,14 @@ func (f *functions) deleteFiles(matches []string, context string) ([]string, err
 		// Get size info before deletion for logging
 		if info, err := os.Stat(absMatch); err == nil {
 			if info.IsDir() {
-				if entries, err := os.ReadDir(absMatch); err == nil {
+				if entries, err := os.ReadDir(absMatch); err == nil && f.ctx.Task != nil {
 					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting directory '%s'  (%d entries)", itemName, len(entries)))
 				}
 			} else {
 				totalSize += info.Size()
-				f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting '%s' (%d bytes)", itemName, info.Size()))
+				if f.ctx.Task != nil {
+					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting '%s' (%d bytes)", itemName, info.Size()))
+				}
 			}
 		}
 
