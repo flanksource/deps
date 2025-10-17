@@ -314,13 +314,39 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return nil
 	}
 
-	// Step 2: Download package
+	// Step 2: Get resolution
+	plat := platform.Current()
+	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
+	if err != nil {
+		return fmt.Errorf("failed to resolve package %s: %w", name, err)
+	}
+
+	// Check if this manager handles installation without downloading (e.g., go install)
+	if resolution.DownloadURL == "" {
+		t.Infof("Installing %s@%s using %s", name, resolvedVersion, mgr.Name())
+
+		// Call manager's Install method directly
+		installOpts := types.InstallOptions{
+			BinDir: i.options.BinDir,
+			Force:  i.options.Force,
+		}
+
+		if err := mgr.Install(ctx, resolution, installOpts); err != nil {
+			return fmt.Errorf("installation failed: %w", err)
+		}
+
+		// Finalize installation (for wrapper scripts, symlinks, etc.)
+		finalPath := filepath.Join(i.options.BinDir, name)
+		return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+	}
+
+	// Step 3: Download package
 	resolution, downloadPath, err := i.downloadPackage(ctx, mgr, name, resolvedVersion, pkg, t)
 	if err != nil {
 		return err
 	}
 
-	// Step 3: Handle installation based on file type (installer, archive, or direct binary)
+	// Step 4: Handle installation based on file type (installer, archive, or direct binary)
 	var finalPath string
 
 	// Check if this is a system installer first
@@ -341,7 +367,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		}
 	}
 
-	// Step 4: Finalize installation
+	// Step 5: Finalize installation
 	return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
 }
 
@@ -391,7 +417,47 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		return nil
 	}
 
-	// Step 2: Download package
+	// Step 2: Get resolution
+	plat := platform.Current()
+	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
+	if err != nil {
+		result.Status = types.InstallStatusFailed
+		return fmt.Errorf("failed to resolve package %s: %w", name, err)
+	}
+
+	// Check if this manager handles installation without downloading (e.g., go install)
+	if resolution.DownloadURL == "" {
+		t.Infof("Installing %s@%s using %s", name, resolvedVersion, mgr.Name())
+
+		// Call manager's Install method directly
+		installOpts := types.InstallOptions{
+			BinDir: i.options.BinDir,
+			Force:  i.options.Force,
+		}
+
+		if err := mgr.Install(ctx, resolution, installOpts); err != nil {
+			result.Status = types.InstallStatusFailed
+			return fmt.Errorf("installation failed: %w", err)
+		}
+
+		// Finalize installation (for wrapper scripts, symlinks, etc.)
+		finalPath := filepath.Join(i.options.BinDir, name)
+		err = i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+		if err != nil {
+			result.Status = types.InstallStatusFailed
+			return err
+		}
+
+		// Installation succeeded
+		if i.options.Force {
+			result.Status = types.InstallStatusForcedInstalled
+		} else {
+			result.Status = types.InstallStatusInstalled
+		}
+		return nil
+	}
+
+	// Step 3: Download package
 	resolution, downloadPath, err := i.downloadPackage(ctx, mgr, name, resolvedVersion, pkg, t)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
@@ -405,7 +471,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		result.DownloadSize = resolution.Size
 	}
 
-	// Step 3: Handle installation based on file type (installer, archive, or direct binary)
+	// Step 4: Handle installation based on file type (installer, archive, or direct binary)
 	var finalPath string
 
 	// Check if this is a system installer first
@@ -434,7 +500,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.Name)
 	}
 
-	// Step 4: Finalize installation
+	// Step 5: Finalize installation
 	err = i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
@@ -901,18 +967,42 @@ func (i *Installer) createSymlinks(appPath, binDir string, patterns []string, t 
 				}
 			}
 
-			// Create symlink
-			if err := os.Symlink(match, linkPath); err != nil {
-				t.Warnf("Failed to create symlink %s -> %s: %v", linkPath, match, err)
+			// Ensure match is absolute
+			absMatch := match
+			if !filepath.IsAbs(match) {
+				var err error
+				absMatch, err = filepath.Abs(match)
+				if err != nil {
+					t.Warnf("Failed to get absolute path for %s: %v", match, err)
+					continue
+				}
+			}
+
+			// Ensure binDir is absolute
+			absBinDir := binDir
+			if !filepath.IsAbs(binDir) {
+				var err error
+				absBinDir, err = filepath.Abs(binDir)
+				if err != nil {
+					t.Warnf("Failed to get absolute path for bin directory %s: %v", binDir, err)
+					continue
+				}
+			}
+
+			// Calculate relative path from bin directory to target
+			relTarget, err := filepath.Rel(absBinDir, absMatch)
+			if err != nil {
+				t.Warnf("Failed to calculate relative path from %s to %s: %v", absBinDir, absMatch, err)
 				continue
 			}
 
-			// Make symlink executable
-			if err := os.Chmod(linkPath, 0755); err != nil {
-				t.Warnf("Failed to chmod symlink %s: %v", linkPath, err)
+			// Create symlink with relative path
+			if err := os.Symlink(relTarget, linkPath); err != nil {
+				t.Warnf("Failed to create symlink %s -> %s: %v", linkPath, relTarget, err)
+				continue
 			}
 
-			t.V(3).Infof("Created symlink: %s -> %s", linkPath, match)
+			t.V(3).Infof("Created symlink: %s -> %s", linkPath, relTarget)
 		}
 	}
 
@@ -972,6 +1062,16 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 
 // resolveVersionConstraint resolves a version constraint to a specific version
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
+	// Check if manager provides custom version resolution
+	type customResolver interface {
+		ResolveVersionConstraint(context.Context, types.Package, string, platform.Platform) (string, error)
+	}
+
+	if customMgr, ok := mgr.(customResolver); ok {
+		t.V(3).Infof("Using custom version resolver for %s", mgr.Name())
+		return customMgr.ResolveVersionConstraint(ctx, pkg, constraint, platform.Current())
+	}
+
 	// Use the centralized version resolver
 	resolver := versionpkg.NewResolver(mgr)
 	return resolver.ResolveConstraint(ctx, pkg, constraint, platform.Current())
@@ -986,7 +1086,13 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 		return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
 	}
 
-	// Try the provided checksum URL if configured
+	// Priority 1: Use checksum from resolution if available (e.g., from GitHub GraphQL digest)
+	if resolution.Checksum != "" {
+		t.V(3).Infof("Using checksum from resolution: %s", resolution.Checksum)
+		return download.Download(url, dest, t, download.WithChecksum(resolution.Checksum), download.WithCacheDir(i.options.CacheDir))
+	}
+
+	// Priority 2: Try the provided checksum URL if configured
 	if checksumURL != "" {
 		t.V(3).Infof("Using configured checksum URL: %s", checksumURL)
 

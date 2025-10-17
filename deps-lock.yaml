@@ -1,48 +1,30 @@
 version: "1.0"
 dependencies:
-    kube-apiserver:
-        version: v1.34.1
+    jq:
+        version: 1.8.0
         version_command: --version
-        version_pattern: GitVersion:"v(\d+\.\d+\.\d+)"
+        version_pattern: jq-(\d+\.\d+)
         platforms:
-            darwin-amd64:
-                url: https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.34.1/envtest-v1.34.1-darwin-amd64.tar.gz
-                checksum: sha256:84d47d6c3a2fa4d14571249b4cccfafad1eb77087bb680693553b438b8ec8c43
-                size: 53017836
-                archive: true
-                binary_path: controller-tools/envtest/kube-apiserver
             darwin-arm64:
-                url: https://github.com/kubernetes-sigs/controller-tools/releases/download/envtest-v1.34.1/envtest-v1.34.1-darwin-arm64.tar.gz
-                checksum: sha256:f25c213bc88582750935b370fa2c6108f0259b9c8f59ece5a82345d48858fc7d
-                size: 49268801
-                archive: true
-                binary_path: controller-tools/envtest/kube-apiserver
+                url: https://github.com/jqlang/jq/releases/download/jq-1.8.0/jq-macos-arm64
+                checksum: sha256:sha256:aaf1efbb376d6e3eaf61f63807c32c1df519f5857dfc4f581826fa2df4b715ae
         github:
-            repo: kubernetes/kubernetes
-            tag: v1.34.1
-            checksum_file: |
-                os == "linux" ? "{{.asset}}.sha256" : "https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/master/envtest-releases.yaml"
-    svu:
-        version: v3.2.4
+            repo: jqlang/jq
+            tag: 1.8.0
+    yq:
+        version: v4.16.2
         version_command: --version
-        version_pattern: svu\s+version\s+v?(\d+\.\d+\.\d+)
+        version_pattern: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
         platforms:
-            darwin-amd64:
-                url: https://github.com/caarlos0/svu/releases/download/v3.2.4/svu_3.2.4_darwin_all.tar.gz
-                checksum: sha256:e5664b4de41c6696358bd456f5283e86f0bd30e65ab65faad349293d804f088e
-                size: 6218859
-                archive: true
-                binary_path: svu
             darwin-arm64:
-                url: https://github.com/caarlos0/svu/releases/download/v3.2.4/svu_3.2.4_darwin_all.tar.gz
-                checksum: sha256:e5664b4de41c6696358bd456f5283e86f0bd30e65ab65faad349293d804f088e
-                size: 6218859
-                archive: true
-                binary_path: svu
+                url: https://github.com/mikefarah/yq/releases/download/v4.16.2/yq_darwin_arm64
+                checksum: sha256:18cf1bb7c0afd8d4d2d2de277b0f71fc6234f481b147f5ce06464e2ab863a7c5
+                size: 8240450
         github:
-            repo: caarlos0/svu
-            tag: v3.2.4
-generated: 2025-09-30T12:21:37.314175+03:00
+            repo: mikefarah/yq
+            tag: v4.16.2
+            checksum_file: checksums,checksums_hashes_order
+generated: 2025-10-16T13:34:13.024452+03:00
 current_platform:
     os: darwin
     arch: arm64

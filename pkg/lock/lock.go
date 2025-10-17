@@ -424,8 +424,13 @@ func (g *Generator) resolvePlatform(ctx context.Context, mgr manager.PackageMana
 		BinaryPath: resolution.BinaryPath,
 	}
 
-	// Get checksum
-	if !opts.VerifyOnly && resolution.Checksum == "" {
+	// Get checksum - prioritize resolution.Checksum from manager (e.g., GitHub asset digest)
+	if resolution.Checksum != "" {
+		// Checksum already provided by manager (e.g., from GitHub asset digest)
+		entry.Checksum = resolution.Checksum
+		entry.Size = resolution.Size
+	} else if !opts.VerifyOnly {
+		// No checksum available from manager - try to discover or calculate it
 		if resolution.ChecksumURL != "" {
 			// Try to get checksum from checksum file
 			checksums, err := g.discovery.FindChecksums(ctx, resolution)
@@ -447,9 +452,6 @@ func (g *Generator) resolvePlatform(ctx context.Context, mgr manager.PackageMana
 			entry.Checksum = checksum
 			entry.Size = size
 		}
-	} else if resolution.Checksum != "" {
-		entry.Checksum = resolution.Checksum
-		entry.Size = resolution.Size
 	}
 
 	return entry, nil

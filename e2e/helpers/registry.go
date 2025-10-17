@@ -54,8 +54,9 @@ func GetTestablePackages() map[string][]string {
 // isExcludedPackage checks if a package should be excluded from testing
 func isExcludedPackage(packageName string) bool {
 	excludedPackages := []string{
-		"ketall", // Binary extraction/validation issues
-		"go",     // Direct URL manager requires explicit version
+		"ketall",     // Binary extraction/validation issues
+		"go",         // Direct URL manager requires explicit version
+		"gcloud-cli", // Direct URL manager requires explicit version
 	}
 	return contains(excludedPackages, packageName)
 }

@@ -35,6 +35,7 @@ tasks:
       - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
     sources:
       - "**/*.go"
+      - pkg/**/*.yaml
       - go.mod
       - go.sum
     generates:

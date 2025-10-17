@@ -15,6 +15,7 @@ import (
 	_ "github.com/flanksource/deps/pkg/manager/github"
 	_ "github.com/flanksource/deps/pkg/manager/gitlab"
 	_ "github.com/flanksource/deps/pkg/manager/maven"
+	_ "github.com/flanksource/deps/pkg/manager/url"
 )
 
 var _ = Describe("End-to-End Pipeline Error Propagation", func() {

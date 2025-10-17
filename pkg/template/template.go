@@ -73,6 +73,18 @@ func TemplateURL(urlTemplate, version, os, arch string) (string, error) {
 	return RenderTemplate(urlTemplate, data)
 }
 
+// TemplateURLWithAsset templates a URL with version, platform, and asset variables
+func TemplateURLWithAsset(urlTemplate, version, os, arch, asset string) (string, error) {
+	data := map[string]interface{}{
+		"version": depsversion.Normalize(version), // normalized without "v" prefix
+		"tag":     version,                        // original tag format
+		"os":      os,
+		"arch":    arch,
+		"asset":   asset, // resolved asset name
+	}
+	return RenderTemplate(urlTemplate, data)
+}
+
 // TemplateStringWithCEL provides CEL-based templating for backwards compatibility
 func TemplateStringWithCEL(celExpression string, data map[string]string) (string, error) {
 	// Convert map[string]string to map[string]interface{}
