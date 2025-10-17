@@ -143,17 +143,15 @@ var _ = Describe("GitHubTagsManager", func() {
 	})
 
 	Describe("GetChecksums", func() {
-		Context("without checksum file", func() {
-			It("should return error when checksum file is not specified", func() {
-				pkg := types.Package{
-					Name: "test",
-					Repo: "owner/repo",
-				}
+		It("should return nil as checksums are handled externally", func() {
+			pkg := types.Package{
+				Name: "test",
+				Repo: "owner/repo",
+			}
 
-				_, err := manager.GetChecksums(ctx, pkg, "v1.0.0")
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("no checksum file pattern specified"))
-			})
+			checksums, err := manager.GetChecksums(ctx, pkg, "v1.0.0")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(checksums).To(BeNil())
 		})
 	})
 

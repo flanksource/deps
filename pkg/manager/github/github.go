@@ -10,7 +10,6 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/flanksource/commons/logger"
-	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
@@ -88,6 +87,28 @@ type releaseAssetsQuery struct {
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
+// releaseAllAssetsQuery fetches ALL assets from a release with SHA256 digests and pagination
+type releaseAllAssetsQuery struct {
+	Repository struct {
+		Release struct {
+			TagName      string
+			PublishedAt  time.Time
+			IsPrerelease bool
+			ReleaseAssets struct {
+				Nodes []struct {
+					Name        string
+					DownloadUrl string
+					Digest      string // SHA256 digest as a string
+				}
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   githubv4.String
+				}
+			} `graphql:"releaseAssets(first: $first, after: $after)"`
+		} `graphql:"release(tagName: $tagName)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
 // Internal structs for release data
 
 // ReleaseInfo represents a GitHub release with its assets
@@ -112,7 +133,7 @@ func (m *GitHubReleaseManager) Name() string {
 	return "github_release"
 }
 
-// DiscoverVersions returns the most recent versions from GitHub releases
+// DiscoverVersions returns the most recent versions from GitHub releases using GraphQL
 func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.Package, plat platform.Platform, limit int) ([]types.Version, error) {
 	if pkg.Repo == "" {
 		return nil, fmt.Errorf("repo is required for GitHub releases")
@@ -130,29 +151,30 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		first = 100
 	}
 
-	client := GetClient().Client()
-	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
-		PerPage: first,
-	})
+	graphql := GetClient().GraphQL()
+	var query releasesQuery
+	variables := map[string]interface{}{
+		"owner": githubv4.String(owner),
+		"name":  githubv4.String(repo),
+		"first": githubv4.Int(first),
+	}
+
+	err := graphql.Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to list releases for %s: %w", pkg.Repo, err)
 	}
 
-	// Extract version information from REST API response
+	// Extract version information from GraphQL response
 	var versions []types.Version
-	for _, release := range releases {
-		if release.TagName == nil {
-			continue
-		}
+	for _, release := range query.Repository.Releases.Nodes {
 		version := types.Version{
-			Tag:        *release.TagName,
-			Version:    versionpkg.Normalize(*release.TagName),
-			Prerelease: release.GetPrerelease(),
-			Published:  release.GetPublishedAt().Time,
-			SHA:        release.GetTargetCommitish(),
+			Tag:        release.TagName,
+			Version:    versionpkg.Normalize(release.TagName),
+			Prerelease: release.IsPrerelease,
+			Published:  release.PublishedAt,
+			SHA:        release.TagCommit.Oid,
 		}
-
 		versions = append(versions, version)
 	}
 
@@ -382,44 +404,13 @@ func (m *GitHubReleaseManager) Install(ctx context.Context, resolution *types.Re
 	return fmt.Errorf("install method not yet implemented - use existing Install")
 }
 
-// GetChecksums retrieves checksums for all platforms
+// GetChecksums returns nil since GitHub release assets include SHA256 digest
+// The digest is automatically included in the Resolution via the asset's digest field
 func (m *GitHubReleaseManager) GetChecksums(ctx context.Context, pkg types.Package, version string) (map[string]string, error) {
-	if pkg.ChecksumFile == "" {
-		return nil, fmt.Errorf("no checksum file pattern specified for package %s", pkg.Name)
-	}
-
-	parts := strings.Split(pkg.Repo, "/")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid repo format: %s", pkg.Repo)
-	}
-	owner, repo := parts[0], parts[1]
-
-	tagName, err := m.findReleaseByVersion(ctx, owner, repo, version, pkg.VersionExpr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Template the checksum file name
-	templatedName, err := m.templateString(pkg.ChecksumFile, map[string]string{
-		"version": depstemplate.NormalizeVersion(version),
-		"tag":     tagName,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to template checksum file pattern: %w", err)
-	}
-
-	// Fetch the checksum file asset using GraphQL
-	asset, err := m.fetchReleaseAssetByName(ctx, owner, repo, tagName, templatedName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch checksum asset: %w", err)
-	}
-
-	if asset == nil {
-		return nil, fmt.Errorf("checksum file %s not found for version %s", templatedName, version)
-	}
-
-	// Download and parse checksum file
-	return m.downloadAndParseChecksums(ctx, asset.BrowserDownloadURL)
+	// GitHub release assets include SHA256 digest in the GraphQL API response.
+	// The Resolve method automatically captures this digest and sets it in Resolution.Checksum
+	// No need to download separate checksum files
+	return nil, nil
 }
 
 // Verify checks if an installed binary matches expectations
@@ -599,22 +590,27 @@ func formatDuration(d time.Duration) string {
 func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion, versionExpr string) (string, error) {
 	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
-	client := GetClient().Client()
-	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
-		PerPage: 100,
-	})
+	graphql := GetClient().GraphQL()
+	var query releasesQuery
+	variables := map[string]interface{}{
+		"owner": githubv4.String(owner),
+		"name":  githubv4.String(repo),
+		"first": githubv4.Int(100),
+	}
+
+	err := graphql.Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return "", fmt.Errorf("failed to list releases: %w", err)
 	}
 
+	releases := query.Repository.Releases.Nodes
+
 	logger.V(4).Infof("GitHub found %d releases, checking for version %s", len(releases), targetVersion)
 	if logger.IsLevelEnabled(4) {
 		tagNames := make([]string, 0, min(6, len(releases)))
 		for i, rel := range releases {
-			if rel.TagName != nil {
-				tagNames = append(tagNames, *rel.TagName)
-			}
+			tagNames = append(tagNames, rel.TagName)
 			if i >= 5 {
 				break
 			}
@@ -625,23 +621,17 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	// Try exact tag match first
 	logger.V(4).Infof("Trying exact tag match for: %s or v%s", targetVersion, targetVersion)
 	for _, rel := range releases {
-		if rel.TagName == nil {
-			continue
-		}
-		if *rel.TagName == targetVersion || *rel.TagName == "v"+targetVersion {
-			logger.V(3).Infof("Found exact tag match: %s", *rel.TagName)
-			return *rel.TagName, nil
+		if rel.TagName == targetVersion || rel.TagName == "v"+targetVersion {
+			logger.V(3).Infof("Found exact tag match: %s", rel.TagName)
+			return rel.TagName, nil
 		}
 	}
 
 	// Try version normalization match
 	normalizedTarget := versionpkg.Normalize(targetVersion)
 	for _, rel := range releases {
-		if rel.TagName == nil {
-			continue
-		}
-		if versionpkg.Normalize(*rel.TagName) == normalizedTarget {
-			return *rel.TagName, nil
+		if versionpkg.Normalize(rel.TagName) == normalizedTarget {
+			return rel.TagName, nil
 		}
 	}
 
@@ -649,24 +639,21 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	if versionExpr != "" {
 		logger.V(4).Infof("Trying version_expr match with expr: %s", versionExpr)
 		for _, rel := range releases {
-			if rel.TagName == nil {
-				continue
-			}
 			// Apply version_expr to this tag
 			testVersion := types.Version{
-				Tag:     *rel.TagName,
-				Version: versionpkg.Normalize(*rel.TagName),
+				Tag:     rel.TagName,
+				Version: versionpkg.Normalize(rel.TagName),
 			}
 			transformed, err := versionpkg.ApplyVersionExpr([]types.Version{testVersion}, versionExpr)
 			if err != nil {
-				logger.V(4).Infof("Failed to apply version_expr to tag %s: %v", *rel.TagName, err)
+				logger.V(1).Infof("Failed to apply version_expr to tag %s: %v", rel.TagName, err)
 				continue
 			}
 
 			// Check if the transformed version matches our target
 			if len(transformed) > 0 && transformed[0].Version == targetVersion {
-				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", *rel.TagName, transformed[0].Version)
-				return *rel.TagName, nil
+				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", rel.TagName, transformed[0].Version)
+				return rel.TagName, nil
 			}
 		}
 	}
@@ -711,26 +698,65 @@ func (m *GitHubReleaseManager) fetchReleaseAssetByName(ctx context.Context, owne
 
 // fetchAllReleaseAssets queries GraphQL for all asset names (for error messages)
 func (m *GitHubReleaseManager) fetchAllReleaseAssets(ctx context.Context, owner, repo, tagName string) ([]string, error) {
-	graphql := GetClient().GraphQL()
-	var query releaseAssetsQuery
-	variables := map[string]interface{}{
-		"owner":   githubv4.String(owner),
-		"name":    githubv4.String(repo),
-		"tagName": githubv4.String(tagName),
-	}
-
-	err := graphql.Query(ctx, &query, variables)
+	assets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
 	if err != nil {
-		err = m.enhanceRateLimitError(ctx, err)
-		return nil, fmt.Errorf("failed to query release assets: %w", err)
+		return nil, err
 	}
 
-	assetNames := make([]string, 0, len(query.Repository.Release.ReleaseAssets.Nodes))
-	for _, node := range query.Repository.Release.ReleaseAssets.Nodes {
-		assetNames = append(assetNames, node.Name)
+	assetNames := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		assetNames = append(assetNames, asset.Name)
 	}
 
 	return assetNames, nil
+}
+
+// fetchAllReleaseAssetsWithDigests queries GraphQL for ALL assets with SHA256 digests and pagination
+// This is a package-level function that both GitHubReleaseManager and GitHubBuildManager can use
+func fetchAllReleaseAssetsWithDigests(ctx context.Context, owner, repo, tagName string) ([]AssetInfo, error) {
+	graphql := GetClient().GraphQL()
+	var allAssets []AssetInfo
+	var after *githubv4.String
+
+	// Handle pagination - loop until we've fetched all assets
+	for {
+		var query releaseAllAssetsQuery
+		variables := map[string]interface{}{
+			"owner":   githubv4.String(owner),
+			"name":    githubv4.String(repo),
+			"tagName": githubv4.String(tagName),
+			"first":   githubv4.Int(100),
+			"after":   after,
+		}
+
+		err := graphql.Query(ctx, &query, variables)
+		if err != nil {
+			// Create a temporary GitHubReleaseManager to use enhanceRateLimitError
+			tempMgr := &GitHubReleaseManager{}
+			err = tempMgr.enhanceRateLimitError(ctx, err)
+			return nil, fmt.Errorf("failed to query release assets: %w", err)
+		}
+
+		// Extract assets from this page
+		for _, node := range query.Repository.Release.ReleaseAssets.Nodes {
+			allAssets = append(allAssets, AssetInfo{
+				Name:               node.Name,
+				BrowserDownloadURL: node.DownloadUrl,
+				ID:                 0, // Not available in GraphQL schema
+				SHA256:             node.Digest,
+			})
+		}
+
+		// Check if there are more pages
+		if !query.Repository.Release.ReleaseAssets.PageInfo.HasNextPage {
+			break
+		}
+
+		// Set cursor for next page
+		after = &query.Repository.Release.ReleaseAssets.PageInfo.EndCursor
+	}
+
+	return allAssets, nil
 }
 
 func (m *GitHubReleaseManager) templateString(pattern string, data map[string]string) (string, error) {
@@ -787,18 +813,6 @@ func (m *GitHubReleaseManager) guessBinaryPath(pkg types.Package, assetName stri
 
 	// Return the first pattern (most common case)
 	return patterns[0]
-}
-
-func (m *GitHubReleaseManager) downloadAndParseChecksums(ctx context.Context, url string) (map[string]string, error) {
-	// Use the checksum package's discovery mechanisms
-	discovery := checksum.NewDiscovery()
-
-	// Create a minimal resolution for the discovery
-	resolution := &types.Resolution{
-		ChecksumURL: url,
-	}
-
-	return discovery.FindChecksums(ctx, resolution)
 }
 
 // isArchiveFile returns true if the filename appears to be an archive
