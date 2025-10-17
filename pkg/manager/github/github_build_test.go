@@ -5,7 +5,6 @@ import (
 
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
-	"github.com/google/go-github/v57/github"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -103,25 +102,28 @@ var _ = Describe("GitHubBuildManager", func() {
 		})
 	})
 
-	Describe("parseAssetsForPlatform", func() {
+	Describe("parseAssetsWithDigests", func() {
 		It("should filter assets by platform", func() {
-			assets := []*github.ReleaseAsset{
+			assets := []AssetInfo{
 				{
-					Name:               github.String("cpython-3.11.14+20251010-aarch64-apple-darwin-install_only.tar.gz"),
-					BrowserDownloadURL: github.String("https://example.com/darwin-arm64.tar.gz"),
+					Name:               "cpython-3.11.14+20251010-aarch64-apple-darwin-install_only.tar.gz",
+					BrowserDownloadURL: "https://example.com/darwin-arm64.tar.gz",
+					SHA256:             "abc123",
 				},
 				{
-					Name:               github.String("cpython-3.11.14+20251010-x86_64-apple-darwin-install_only.tar.gz"),
-					BrowserDownloadURL: github.String("https://example.com/darwin-amd64.tar.gz"),
+					Name:               "cpython-3.11.14+20251010-x86_64-apple-darwin-install_only.tar.gz",
+					BrowserDownloadURL: "https://example.com/darwin-amd64.tar.gz",
+					SHA256:             "def456",
 				},
 				{
-					Name:               github.String("cpython-3.11.14+20251010-x86_64-unknown-linux-gnu-install_only.tar.gz"),
-					BrowserDownloadURL: github.String("https://example.com/linux-amd64.tar.gz"),
+					Name:               "cpython-3.11.14+20251010-x86_64-unknown-linux-gnu-install_only.tar.gz",
+					BrowserDownloadURL: "https://example.com/linux-amd64.tar.gz",
+					SHA256:             "ghi789",
 				},
 			}
 
 			plat := platform.Platform{OS: "darwin", Arch: "arm64"}
-			result, err := manager.parseAssetsForPlatform(assets, plat)
+			result, err := manager.parseAssetsWithDigests(assets, plat)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveLen(1))
@@ -130,19 +132,21 @@ var _ = Describe("GitHubBuildManager", func() {
 		})
 
 		It("should skip non-install_only assets", func() {
-			assets := []*github.ReleaseAsset{
+			assets := []AssetInfo{
 				{
-					Name:               github.String("cpython-3.11.14+20251010-aarch64-apple-darwin-debug.tar.gz"),
-					BrowserDownloadURL: github.String("https://example.com/debug.tar.gz"),
+					Name:               "cpython-3.11.14+20251010-aarch64-apple-darwin-debug.tar.gz",
+					BrowserDownloadURL: "https://example.com/debug.tar.gz",
+					SHA256:             "abc123",
 				},
 				{
-					Name:               github.String("cpython-3.11.14+20251010-aarch64-apple-darwin-install_only.tar.gz"),
-					BrowserDownloadURL: github.String("https://example.com/install.tar.gz"),
+					Name:               "cpython-3.11.14+20251010-aarch64-apple-darwin-install_only.tar.gz",
+					BrowserDownloadURL: "https://example.com/install.tar.gz",
+					SHA256:             "def456",
 				},
 			}
 
 			plat := platform.Platform{OS: "darwin", Arch: "arm64"}
-			result, err := manager.parseAssetsForPlatform(assets, plat)
+			result, err := manager.parseAssetsWithDigests(assets, plat)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveLen(1))
@@ -355,15 +359,15 @@ var _ = Describe("GitHubBuildManager", func() {
 	})
 
 	Describe("GetChecksums", func() {
-		It("should return error indicating checksums not available", func() {
+		It("should return nil as checksums are embedded in asset digests", func() {
 			pkg := types.Package{
 				Name: "cpython",
 				Repo: "astral-sh/python-build-standalone",
 			}
 
-			_, err := manager.GetChecksums(ctx, pkg, "3.11.14")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("checksums not available"))
+			checksums, err := manager.GetChecksums(ctx, pkg, "3.11.14")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(checksums).To(BeNil())
 		})
 	})
 

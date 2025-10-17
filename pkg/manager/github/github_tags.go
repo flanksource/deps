@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/flanksource/commons/logger"
-	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
@@ -270,24 +269,13 @@ func (m *GitHubTagsManager) Install(ctx context.Context, resolution *types.Resol
 	return fmt.Errorf("install method not yet implemented - use existing Install")
 }
 
-// GetChecksums retrieves checksums for all platforms
+// GetChecksums returns nil since github_tags uses url_template for downloads
+// Checksums are managed externally via ChecksumFile field which points to external URLs
 func (m *GitHubTagsManager) GetChecksums(ctx context.Context, pkg types.Package, version string) (map[string]string, error) {
-	if pkg.ChecksumFile == "" {
-		return nil, fmt.Errorf("no checksum file pattern specified for package %s", pkg.Name)
-	}
-
-	tag, err := m.findTagByVersion(ctx, pkg, version)
-	if err != nil {
-		return nil, err
-	}
-
-	checksumURL := m.findChecksumURL(pkg.ChecksumFile, version, tag.Name)
-	if checksumURL == "" {
-		return nil, fmt.Errorf("checksum file not found for version %s", version)
-	}
-
-	// Download and parse checksum file
-	return m.downloadAndParseChecksums(ctx, checksumURL)
+	// github_tags manager uses url_template, not GitHub release assets
+	// Checksum files are external URLs that are handled by the download/checksum package
+	// No need to download separate checksum files here
+	return nil, nil
 }
 
 // Verify checks if an installed binary matches expectations
@@ -543,19 +531,6 @@ func (m *GitHubTagsManager) enhanceErrorWithVersions(ctx context.Context, pkg ty
 	return manager.EnhanceErrorWithVersions(pkg.Name, requestedVersion, versions, originalErr)
 }
 
-func (m *GitHubTagsManager) findChecksumURL(checksumPattern, version, tag string) string {
-	templatedName, err := m.templateString(checksumPattern, map[string]string{
-		"version": depstemplate.NormalizeVersion(version),
-		"tag":     tag,
-	})
-	if err != nil {
-		return ""
-	}
-
-	// For tags, we can only return templated URLs, not GitHub assets
-	return templatedName
-}
-
 func (m *GitHubTagsManager) templateChecksumURL(checksumPattern, assetName, version, tag string, plat platform.Platform) (string, error) {
 	// Template the checksum URL
 	url, err := m.templateString(checksumPattern, map[string]string{
@@ -610,16 +585,4 @@ func (m *GitHubTagsManager) guessBinaryPath(pkg types.Package, assetName string,
 
 	// Return the first pattern (most common case)
 	return patterns[0]
-}
-
-func (m *GitHubTagsManager) downloadAndParseChecksums(ctx context.Context, url string) (map[string]string, error) {
-	// Use the checksum package's discovery mechanisms
-	discovery := checksum.NewDiscovery()
-
-	// Create a minimal resolution for the discovery
-	resolution := &types.Resolution{
-		ChecksumURL: url,
-	}
-
-	return discovery.FindChecksums(ctx, resolution)
 }

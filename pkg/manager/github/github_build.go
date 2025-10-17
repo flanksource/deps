@@ -9,11 +9,10 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/flanksource/commons/logger"
-	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
-	"github.com/google/go-github/v57/github"
+	"github.com/shurcooL/githubv4"
 )
 
 // GitHubBuildManager implements the PackageManager interface for GitHub releases
@@ -41,6 +40,7 @@ type assetVersion struct {
 	buildDate   string // Build date from asset (e.g., "20251010")
 	platformStr string // Platform string from asset (e.g., "aarch64-apple-darwin")
 	downloadURL string // Download URL for the asset
+	sha256      string // SHA256 digest from GitHub asset
 }
 
 // parseVersion splits version string into build tag and software version
@@ -116,18 +116,40 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 	owner, repo := parts[0], parts[1]
 
 	// Always use "latest" release for version discovery
-	client := GetClient().Client()
 	logger.V(3).Infof("GitHub Build: Fetching 'latest' release from %s/%s", owner, repo)
 
-	release, _, err := client.Repositories.GetLatestRelease(ctx, owner, repo)
+	// First get the latest release tag name using GraphQL
+	graphql := GetClient().GraphQL()
+	var latestQuery releasesQuery
+	variables := map[string]interface{}{
+		"owner": githubv4.String(owner),
+		"name":  githubv4.String(repo),
+		"first": githubv4.Int(1),
+	}
+
+	err := graphql.Query(ctx, &latestQuery, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest release for %s: %w", pkg.Repo, err)
 	}
 
-	logger.V(4).Infof("GitHub Build: Found release %s with %d assets", release.GetTagName(), len(release.Assets))
+	if len(latestQuery.Repository.Releases.Nodes) == 0 {
+		return nil, fmt.Errorf("no releases found for %s", pkg.Repo)
+	}
+
+	latestRelease := latestQuery.Repository.Releases.Nodes[0]
+	tagName := latestRelease.TagName
+	publishedAt := latestRelease.PublishedAt
+
+	// Fetch all assets with digests using shared function
+	assets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch assets for %s: %w", pkg.Repo, err)
+	}
+
+	logger.V(4).Infof("GitHub Build: Found release %s with %d assets", tagName, len(assets))
 
 	// Parse all assets to extract unique software versions
-	assetVersions, err := m.parseAssetsForPlatform(release.Assets, plat)
+	assetVersions, err := m.parseAssetsWithDigests(assets, plat)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +161,7 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 			versionMap[av.softwareVer] = types.Version{
 				Version:   av.softwareVer,
 				Tag:       av.buildDate, // Store build date as tag
-				Published: release.GetPublishedAt().Time,
+				Published: publishedAt,
 			}
 		}
 	}
@@ -169,8 +191,9 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 	return versions, nil
 }
 
-// parseAssetsForPlatform extracts software versions from assets matching the platform
-func (m *GitHubBuildManager) parseAssetsForPlatform(assets []*github.ReleaseAsset, plat platform.Platform) ([]assetVersion, error) {
+// parseAssetsWithDigests extracts software versions from assets matching the platform
+// This replaces parseAssetsForPlatform and works with AssetInfo from GraphQL
+func (m *GitHubBuildManager) parseAssetsWithDigests(assets []AssetInfo, plat platform.Platform) ([]assetVersion, error) {
 	// Map platform to expected string in asset name
 	platformMap := map[string]string{
 		"darwin-amd64":  "x86_64-apple-darwin",
@@ -187,11 +210,7 @@ func (m *GitHubBuildManager) parseAssetsForPlatform(assets []*github.ReleaseAsse
 
 	var result []assetVersion
 	for _, asset := range assets {
-		if asset.Name == nil {
-			continue
-		}
-
-		assetName := *asset.Name
+		assetName := asset.Name
 
 		// Skip non-install_only assets
 		if !strings.Contains(assetName, "-install_only.tar.gz") {
@@ -215,7 +234,8 @@ func (m *GitHubBuildManager) parseAssetsForPlatform(assets []*github.ReleaseAsse
 			softwareVer: version,
 			buildDate:   buildDate,
 			platformStr: platformStr,
-			downloadURL: asset.GetBrowserDownloadURL(),
+			downloadURL: asset.BrowserDownloadURL,
+			sha256:      asset.SHA256,
 		})
 	}
 
@@ -235,30 +255,49 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 	logger.V(3).Infof("GitHub Build: Resolving %s@%s (build=%s, software=%s, platform=%s)",
 		pkg.Name, version, buildTag, softwareVersion, plat.String())
 
-	var release *github.RepositoryRelease
-	var err error
+	var tagName string
 
-	client := GetClient().Client()
+	// Get the tag name based on buildTag
 	if buildTag == "latest" {
-		release, _, err = client.Repositories.GetLatestRelease(ctx, owner, repo)
+		// Get latest release tag using GraphQL
+		graphql := GetClient().GraphQL()
+		var latestQuery releasesQuery
+		variables := map[string]interface{}{
+			"owner": githubv4.String(owner),
+			"name":  githubv4.String(repo),
+			"first": githubv4.Int(1),
+		}
+
+		err := graphql.Query(ctx, &latestQuery, variables)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest release for %s: %w", pkg.Repo, err)
+		}
+
+		if len(latestQuery.Repository.Releases.Nodes) == 0 {
+			return nil, fmt.Errorf("no releases found for %s", pkg.Repo)
+		}
+
+		tagName = latestQuery.Repository.Releases.Nodes[0].TagName
 	} else {
-		release, _, err = client.Repositories.GetReleaseByTag(ctx, owner, repo, buildTag)
+		tagName = buildTag
 	}
 
+	// Fetch all assets with digests using shared function
+	assets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get release %s for %s: %w", buildTag, pkg.Repo, err)
+		return nil, fmt.Errorf("failed to fetch assets for %s: %w", pkg.Repo, err)
 	}
 
-	logger.V(4).Infof("GitHub Build: Fetched release %s with %d assets", release.GetTagName(), len(release.Assets))
+	logger.V(4).Infof("GitHub Build: Fetched release %s with %d assets", tagName, len(assets))
 
 	// Parse all assets for this platform
-	assetVersions, err := m.parseAssetsForPlatform(release.Assets, plat)
+	assetVersions, err := m.parseAssetsWithDigests(assets, plat)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(assetVersions) == 0 {
-		return nil, fmt.Errorf("no assets found for platform %s in release %s", plat.String(), release.GetTagName())
+		return nil, fmt.Errorf("no assets found for platform %s in release %s", plat.String(), tagName)
 	}
 
 	// Find matching software version
@@ -266,7 +305,7 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 	if softwareVersion == "latest" {
 		// Pick the highest version available
 		if len(assetVersions) == 0 {
-			return nil, fmt.Errorf("no assets found for platform %s in release %s", plat.String(), release.GetTagName())
+			return nil, fmt.Errorf("no assets found for platform %s in release %s", plat.String(), tagName)
 		}
 		// Sort by version descending and pick first
 		sort.Slice(assetVersions, func(i, j int) bool {
@@ -278,7 +317,7 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 			return v1.GreaterThan(v2)
 		})
 		matched = &assetVersions[0]
-		logger.V(3).Infof("GitHub Build: Selected latest version %s from release %s", matched.softwareVer, release.GetTagName())
+		logger.V(3).Infof("GitHub Build: Selected latest version %s from release %s", matched.softwareVer, tagName)
 	} else {
 		var err error
 		matched, err = m.findMatchingVersion(assetVersions, softwareVersion)
@@ -299,10 +338,16 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 		IsArchive:   true,
 		GitHubAsset: &types.GitHubAsset{
 			Repo:        pkg.Repo,
-			Tag:         release.GetTagName(),
+			Tag:         tagName,
 			AssetName:   matched.assetName,
 			DownloadURL: matched.downloadURL,
 		},
+	}
+
+	// Set checksum from asset digest
+	if matched.sha256 != "" {
+		logger.V(3).Infof("Using SHA256 digest from GitHub asset: %s", matched.sha256)
+		resolution.Checksum = "sha256:" + matched.sha256
 	}
 
 	// Guess binary path
@@ -439,11 +484,13 @@ func (m *GitHubBuildManager) Install(ctx context.Context, resolution *types.Reso
 	return fmt.Errorf("install method not yet implemented - use existing Install")
 }
 
-// GetChecksums retrieves checksums for all platforms
+// GetChecksums returns nil since GitHub release assets include SHA256 digest
+// The digest is automatically included in the Resolution via the asset's digest field
 func (m *GitHubBuildManager) GetChecksums(ctx context.Context, pkg types.Package, version string) (map[string]string, error) {
-	// GitHub Build releases typically don't have checksum files
-	// Individual assets would need to be checksummed after download
-	return nil, fmt.Errorf("checksums not available for github_build manager")
+	// GitHub release assets include SHA256 digest in the GraphQL API response.
+	// The Resolve method automatically captures this digest and sets it in Resolution.Checksum
+	// No need to download separate checksum files
+	return nil, nil
 }
 
 // Verify checks if an installed binary matches expectations
@@ -486,12 +533,4 @@ func (m *GitHubBuildManager) guessBinaryPath(pkg types.Package, assetName string
 		baseName += ".exe"
 	}
 	return baseName
-}
-
-func (m *GitHubBuildManager) downloadAndParseChecksums(ctx context.Context, url string) (map[string]string, error) {
-	discovery := checksum.NewDiscovery()
-	resolution := &types.Resolution{
-		ChecksumURL: url,
-	}
-	return discovery.FindChecksums(ctx, resolution)
 }
