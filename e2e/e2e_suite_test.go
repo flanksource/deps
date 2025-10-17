@@ -12,6 +12,7 @@ import (
 	_ "github.com/flanksource/deps/pkg/manager/github"
 	_ "github.com/flanksource/deps/pkg/manager/gitlab"
 	_ "github.com/flanksource/deps/pkg/manager/maven"
+	_ "github.com/flanksource/deps/pkg/manager/url"
 )
 
 func TestE2E(t *testing.T) {

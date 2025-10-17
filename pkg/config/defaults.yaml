@@ -480,21 +480,21 @@ registry:
         manager: url
         mode: directory
         versions_url: https://raw.githubusercontent.com/google-github-actions/setup-cloud-sdk/refs/heads/main/data/versions.json
-        version_expr: 'response.json.map(i, i -> {version: i, tag: i})'
-        url_template: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-{{.version}}-{{.os}}-{{.arch}}.tar.gz
+        url_template: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/{{.asset}}
         asset_patterns:
             darwin-amd64: google-cloud-cli-{{.version}}-darwin-x86_64.tar.gz
             darwin-arm64: google-cloud-cli-{{.version}}-darwin-arm.tar.gz
             linux-amd64: google-cloud-cli-{{.version}}-linux-x86_64.tar.gz
             linux-arm64: google-cloud-cli-{{.version}}-linux-arm.tar.gz
             windows-amd64: google-cloud-cli-{{.version}}-windows-x86_64.zip
-        version_command: bin/gcloud version --format="value(Google Cloud SDK)"
-        version_pattern: '(\d+\.\d+\.\d+)'
+        version_command: gcloud version
+        version_pattern: Google Cloud SDK (\d+\.\d+\.\d+)
         symlinks:
             - bin/gcloud
             - bin/gsutil
             - bin/bq
-
+            - bin/git-credential-gcloud.sh
+            - bin/docker-credential-gcloud
 
     openjdk17:
         name: openjdk
