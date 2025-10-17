@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 	versionpkg "github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
+	"github.com/shurcooL/githubv4"
 )
 
 // GitHubReleaseManager implements the PackageManager interface for GitHub releases
@@ -132,22 +132,25 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 
 	client := GetClient().Client()
 	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, &github.ListOptions{
-		PerPage: perPage,
+		PerPage: first,
 	})
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to list releases for %s: %w", pkg.Repo, err)
 	}
 
-	// Extract version information from GraphQL response
+	// Extract version information from REST API response
 	var versions []types.Version
-	for _, node := range query.Repository.Releases.Nodes {
+	for _, release := range releases {
+		if release.TagName == nil {
+			continue
+		}
 		version := types.Version{
-			Tag:        node.TagName,
-			Version:    versionpkg.Normalize(node.TagName),
-			Prerelease: node.IsPrerelease,
-			Published:  node.PublishedAt,
-			SHA:        node.TagCommit.Oid,
+			Tag:        *release.TagName,
+			Version:    versionpkg.Normalize(*release.TagName),
+			Prerelease: release.GetPrerelease(),
+			Published:  release.GetPublishedAt().Time,
+			SHA:        release.GetTargetCommitish(),
 		}
 
 		versions = append(versions, version)
@@ -307,27 +310,6 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		asset, err := m.fetchReleaseAssetByName(ctx, owner, repo, tagName, templatedPattern)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch asset: %w", err)
-		}
-
-		var matchedAsset *github.ReleaseAsset
-		for _, asset := range release.Assets {
-			if asset.Name == nil {
-				continue
-			}
-			// Try exact match first
-			if *asset.Name == templatedPattern {
-				logger.V(3).Infof("Found exact matching asset: %s", *asset.Name)
-				matchedAsset = asset
-				break
-			}
-			// Try glob pattern match if exact match fails and pattern contains wildcards
-			if matchedAsset == nil && strings.Contains(templatedPattern, "*") {
-				if matched, _ := filepath.Match(templatedPattern, *asset.Name); matched {
-					logger.V(3).Infof("Found glob matching asset: %s (pattern: %s)", *asset.Name, templatedPattern)
-					matchedAsset = asset
-					// Don't break - continue to find best match
-				}
-			}
 		}
 
 		if asset == nil {
@@ -623,63 +605,68 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	})
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
-		return nil, fmt.Errorf("failed to list releases: %w", err)
+		return "", fmt.Errorf("failed to list releases: %w", err)
 	}
 
-	err := graphql.Query(ctx, &query, variables)
-	if err != nil {
-		err = m.enhanceRateLimitError(ctx, err)
-		return "", fmt.Errorf("failed to query releases: %w", err)
-	}
-
-	logger.V(4).Infof("GitHub found %d releases, checking for version %s", len(query.Repository.Releases.Nodes), targetVersion)
+	logger.V(4).Infof("GitHub found %d releases, checking for version %s", len(releases), targetVersion)
 	if logger.IsLevelEnabled(4) {
-		tagNames := make([]string, 0, min(6, len(query.Repository.Releases.Nodes)))
-		for i, node := range query.Repository.Releases.Nodes {
-			tagNames = append(tagNames, node.TagName)
+		tagNames := make([]string, 0, min(6, len(releases)))
+		for i, rel := range releases {
+			if rel.TagName != nil {
+				tagNames = append(tagNames, *rel.TagName)
+			}
 			if i >= 5 {
 				break
 			}
 		}
-		logger.V(4).Infof("First releases: %v (and %d more)", tagNames, max(0, len(query.Repository.Releases.Nodes)-6))
+		logger.V(4).Infof("First releases: %v (and %d more)", tagNames, max(0, len(releases)-6))
 	}
 
 	// Try exact tag match first
 	logger.V(4).Infof("Trying exact tag match for: %s or v%s", targetVersion, targetVersion)
-	for _, node := range query.Repository.Releases.Nodes {
-		if node.TagName == targetVersion || node.TagName == "v"+targetVersion {
-			logger.V(3).Infof("Found exact tag match: %s", node.TagName)
-			return node.TagName, nil
+	for _, rel := range releases {
+		if rel.TagName == nil {
+			continue
+		}
+		if *rel.TagName == targetVersion || *rel.TagName == "v"+targetVersion {
+			logger.V(3).Infof("Found exact tag match: %s", *rel.TagName)
+			return *rel.TagName, nil
 		}
 	}
 
 	// Try version normalization match
 	normalizedTarget := versionpkg.Normalize(targetVersion)
-	for _, node := range query.Repository.Releases.Nodes {
-		if versionpkg.Normalize(node.TagName) == normalizedTarget {
-			return node.TagName, nil
+	for _, rel := range releases {
+		if rel.TagName == nil {
+			continue
+		}
+		if versionpkg.Normalize(*rel.TagName) == normalizedTarget {
+			return *rel.TagName, nil
 		}
 	}
 
 	// If version_expr is provided, try applying it to each tag and see if it matches targetVersion
 	if versionExpr != "" {
 		logger.V(4).Infof("Trying version_expr match with expr: %s", versionExpr)
-		for _, node := range query.Repository.Releases.Nodes {
+		for _, rel := range releases {
+			if rel.TagName == nil {
+				continue
+			}
 			// Apply version_expr to this tag
 			testVersion := types.Version{
-				Tag:     node.TagName,
-				Version: versionpkg.Normalize(node.TagName),
+				Tag:     *rel.TagName,
+				Version: versionpkg.Normalize(*rel.TagName),
 			}
 			transformed, err := versionpkg.ApplyVersionExpr([]types.Version{testVersion}, versionExpr)
 			if err != nil {
-				logger.V(4).Infof("Failed to apply version_expr to tag %s: %v", node.TagName, err)
+				logger.V(4).Infof("Failed to apply version_expr to tag %s: %v", *rel.TagName, err)
 				continue
 			}
 
 			// Check if the transformed version matches our target
 			if len(transformed) > 0 && transformed[0].Version == targetVersion {
-				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", node.TagName, transformed[0].Version)
-				return node.TagName, nil
+				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", *rel.TagName, transformed[0].Version)
+				return *rel.TagName, nil
 			}
 		}
 	}
