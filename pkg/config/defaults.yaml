@@ -477,8 +477,10 @@ registry:
 
     gcloud-cli:
         name: gcloud
-        manager: direct
+        manager: url
         mode: directory
+        versions_url: https://raw.githubusercontent.com/google-github-actions/setup-cloud-sdk/refs/heads/main/data/versions.json
+        version_expr: 'response.json.map(i, i -> {version: i, tag: i})'
         url_template: https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-{{.version}}-{{.os}}-{{.arch}}.tar.gz
         asset_patterns:
             darwin-amd64: google-cloud-cli-{{.version}}-darwin-x86_64.tar.gz
