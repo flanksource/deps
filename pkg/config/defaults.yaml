@@ -493,21 +493,6 @@ registry:
             - bin/gsutil
             - bin/bq
 
-    python-installer:
-        name: python
-        repo: python/cpython
-        mode: directory
-        asset_patterns:
-            darwin-amd64: Python-{{.version}}-macOS-universal2.tar.gz
-            darwin-arm64: Python-{{.version}}-macOS-universal2.tar.gz
-            linux-amd64: Python-{{.version}}.tar.xz
-            linux-arm64: Python-{{.version}}.tar.xz
-            windows-amd64: python-{{.version}}-amd64.exe
-        version_command: python --version
-        version_pattern: 'Python (\d+\.\d+\.\d+)'
-        symlinks:
-            - python
-            - pip
 
     openjdk17:
         name: openjdk
@@ -671,18 +656,9 @@ registry:
         symlinks:
             - as.sh->arthas
 
-    xmlstarlet:
-        name: xmlstarlet
-        manager: direct
-        url_template: https://sourceforge.net/projects/xmlstar/files/xmlstarlet/{{.version}}/xmlstarlet-{{.version}}.tar.gz/download
-        asset_patterns:
-            "*": xmlstarlet-{{.version}}.tar.gz
-        version_command: --version
-        version_pattern: 'compiled against libxml2 (\d+\.\d+\.\d+)'
-
     opensearch:
         name: opensearch
-        manager: direct
+        repo: opensearch-project/OpenSearch
         mode: directory
         url_template: https://artifacts.opensearch.org/releases/bundle/opensearch/{{.version}}/{{.asset}}
         asset_patterns:
