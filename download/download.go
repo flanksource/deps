@@ -286,16 +286,22 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 
 		// If we have a checksum, validate cached file
 		if config.expectedChecksum != "" {
-			// Parse checksum type if not already set
+			// Always parse to strip any prefix (e.g., "sha256:") from the checksum value
 			var checksumType checksum.HashType
-			if config.checksumType == "" {
-				var err error
-				config.expectedChecksum, checksumType, err = checksum.ParseChecksumWithType(config.expectedChecksum)
-				if err == nil {
+			var err error
+			config.expectedChecksum, checksumType, err = checksum.ParseChecksumWithType(config.expectedChecksum)
+			if err == nil {
+				// Only override checksumType if it wasn't already set
+				if config.checksumType == "" {
 					config.checksumType = string(checksumType)
+				} else {
+					checksumType = checksum.HashType(config.checksumType)
 				}
 			} else {
-				checksumType = checksum.HashType(config.checksumType)
+				// If parsing failed but checksumType is already set, use it
+				if config.checksumType != "" {
+					checksumType = checksum.HashType(config.checksumType)
+				}
 			}
 
 			// Validate cached file checksum
@@ -418,13 +424,18 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 
 	var checksumType checksum.HashType
-	if config.expectedChecksum != "" && config.checksumType == "" {
+	if config.expectedChecksum != "" {
 		var err error
-
+		// Always parse to strip any prefix (e.g., "sha256:") from the checksum value
 		config.expectedChecksum, checksumType, err = checksum.ParseChecksumWithType(config.expectedChecksum)
-		config.checksumType = string(checksumType)
 		if err != nil {
 			return fmt.Errorf("invalid checksum format: %w", err)
+		}
+		// Only override checksumType if it wasn't already set
+		if config.checksumType == "" {
+			config.checksumType = string(checksumType)
+		} else {
+			checksumType = checksum.HashType(config.checksumType)
 		}
 	} else if config.checksumType != "" {
 		checksumType = checksum.HashType(config.checksumType)
