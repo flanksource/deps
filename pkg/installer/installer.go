@@ -1086,7 +1086,13 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 		return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
 	}
 
-	// Try the provided checksum URL if configured
+	// Priority 1: Use checksum from resolution if available (e.g., from GitHub GraphQL digest)
+	if resolution.Checksum != "" {
+		t.V(3).Infof("Using checksum from resolution: %s", resolution.Checksum)
+		return download.Download(url, dest, t, download.WithChecksum(resolution.Checksum), download.WithCacheDir(i.options.CacheDir))
+	}
+
+	// Priority 2: Try the provided checksum URL if configured
 	if checksumURL != "" {
 		t.V(3).Infof("Using configured checksum URL: %s", checksumURL)
 
