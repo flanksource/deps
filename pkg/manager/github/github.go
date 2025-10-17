@@ -393,8 +393,8 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		// The GraphQL Digest field already includes the "sha256:" prefix
 		resolution.Checksum = assetSHA256
 	} else if githubAsset != nil {
-		// If we queried for a specific asset and didn't get a digest, that's an error
-		return nil, fmt.Errorf("no SHA256 digest available from GitHub for asset %s (repo: %s, tag: %s)",
+		// Older releases may not have digest field populated in GraphQL - log warning
+		logger.Infof("\033[31mNo digest available from GraphQL for asset %s (repo: %s, tag: %s) - will try checksum files\033[0m",
 			githubAsset.AssetName, githubAsset.Repo, githubAsset.Tag)
 	}
 
