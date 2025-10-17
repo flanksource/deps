@@ -387,10 +387,15 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		resolution.BinaryPath = m.guessBinaryPath(pkg, assetName, plat)
 	}
 
-	// Set checksum from asset digest if available (eliminates need for checksum file download)
+	// Set checksum from asset digest - this should always be available from GraphQL
 	if assetSHA256 != "" {
 		logger.V(3).Infof("Using SHA256 digest from GitHub asset: %s", assetSHA256)
-		resolution.Checksum = "sha256:" + assetSHA256
+		// The GraphQL Digest field already includes the "sha256:" prefix
+		resolution.Checksum = assetSHA256
+	} else if githubAsset != nil {
+		// If we queried for a specific asset and didn't get a digest, that's an error
+		return nil, fmt.Errorf("no SHA256 digest available from GitHub for asset %s (repo: %s, tag: %s)",
+			githubAsset.AssetName, githubAsset.Repo, githubAsset.Tag)
 	}
 
 	return resolution, nil
