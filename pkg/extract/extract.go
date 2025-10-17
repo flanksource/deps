@@ -197,10 +197,13 @@ func FindBinaryInDir(extractDir, binaryPath string, t *task.Task) (string, error
 	return executables[0], nil
 }
 
-// fileExists checks if a file exists
+// fileExists checks if a file exists and is not a directory
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
 }
 
 // verifyExtraction verifies that extraction destination exists and is not empty
