@@ -347,7 +347,8 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 	// Set checksum from asset digest
 	if matched.sha256 != "" {
 		logger.V(3).Infof("Using SHA256 digest from GitHub asset: %s", matched.sha256)
-		resolution.Checksum = "sha256:" + matched.sha256
+		// The GraphQL Digest field already includes the "sha256:" prefix
+		resolution.Checksum = matched.sha256
 	}
 
 	// Guess binary path
