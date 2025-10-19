@@ -8,6 +8,7 @@ import (
 	flanksourceContext "github.com/flanksource/commons/context"
 	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/installer"
+	"github.com/flanksource/deps/pkg/runtime"
 	"github.com/flanksource/deps/pkg/types"
 )
 
@@ -18,6 +19,8 @@ type (
 	VerifyStatus  = types.VerifyStatus
 	VersionStatus = types.VersionStatus
 	Package       = types.Package
+	RunOptions    = runtime.RunOptions
+	RunResult     = runtime.RunResult
 )
 
 // Re-export status constants
@@ -104,4 +107,57 @@ func InstallWithContext(ctx context.Context, packageName, version string, opts .
 	result, installErr = inst.InstallWithResult(packageName, version, t)
 
 	return result, installErr
+}
+
+// RunPython executes a Python script with automatic runtime detection and installation.
+//
+// Example:
+//
+//	result, err := deps.RunPython("script.py", deps.RunOptions{
+//	    Version: ">=3.9",
+//	    Timeout: 30 * time.Second,
+//	})
+func RunPython(script string, opts RunOptions) (*RunResult, error) {
+	return runtime.RunPython(script, opts)
+}
+
+// RunNode executes a Node.js script with automatic runtime detection and installation.
+//
+// Example:
+//
+//	result, err := deps.RunNode("server.js", deps.RunOptions{
+//	    Version: ">=18.0",
+//	    Timeout: 30 * time.Second,
+//	})
+//
+// For npx execution, use the "npx:" prefix:
+//
+//	result, err := deps.RunNode("npx:cowsay hello", deps.RunOptions{})
+func RunNode(script string, opts RunOptions) (*RunResult, error) {
+	return runtime.RunNode(script, opts)
+}
+
+// RunJava executes a Java file (.java, .jar, or .class) with automatic runtime detection and installation.
+//
+// Example:
+//
+//	result, err := deps.RunJava("Main.jar", deps.RunOptions{
+//	    Version: ">=17",
+//	    Timeout: 30 * time.Second,
+//	    Env: map[string]string{"CLASSPATH": "./lib/*"},
+//	})
+func RunJava(script string, opts RunOptions) (*RunResult, error) {
+	return runtime.RunJava(script, opts)
+}
+
+// RunPowershell executes a PowerShell script with automatic runtime detection and installation.
+//
+// Example:
+//
+//	result, err := deps.RunPowershell("script.ps1", deps.RunOptions{
+//	    Version: ">=7.0",
+//	    Timeout: 30 * time.Second,
+//	})
+func RunPowershell(script string, opts RunOptions) (*RunResult, error) {
+	return runtime.RunPowershell(script, opts)
 }

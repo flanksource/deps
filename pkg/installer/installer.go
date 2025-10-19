@@ -18,6 +18,13 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/plugin"
 	_ "github.com/flanksource/deps/pkg/plugin/builtin" // Register built-in plugins
+	_ "github.com/flanksource/deps/pkg/manager/apache"  // Register apache manager
+	_ "github.com/flanksource/deps/pkg/manager/direct"  // Register direct manager
+	_ "github.com/flanksource/deps/pkg/manager/github"  // Register github managers
+	_ "github.com/flanksource/deps/pkg/manager/gitlab"  // Register gitlab manager
+	_ "github.com/flanksource/deps/pkg/manager/golang"  // Register golang manager
+	_ "github.com/flanksource/deps/pkg/manager/maven"   // Register maven manager
+	_ "github.com/flanksource/deps/pkg/manager/url"     // Register url manager
 	"github.com/flanksource/deps/pkg/system"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/utils"
