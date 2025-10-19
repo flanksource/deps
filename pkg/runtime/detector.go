@@ -193,9 +193,15 @@ func (d *runtimeDetector) installRuntime(constraint string) (*runtimeInfo, error
 	// Create installer
 	inst := installer.NewWithConfig(depsConfig)
 
+	// Ensure we have a task for installation
+	installTask := d.task
+	if installTask == nil {
+		installTask = &task.Task{}
+	}
+
 	// Install the runtime
 	packageName := d.language
-	_, err := inst.InstallWithResult(packageName, versionToInstall, d.task)
+	_, err := inst.InstallWithResult(packageName, versionToInstall, installTask)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install %s: %w", d.language, err)
 	}
