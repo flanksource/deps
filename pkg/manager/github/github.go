@@ -10,6 +10,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/flanksource/commons/logger"
+	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
@@ -390,7 +391,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	// Set checksum from asset digest - this should always be available from GraphQL
 	if assetSHA256 != "" {
 		logger.V(3).Infof("Using SHA256 digest from GitHub asset: %s", assetSHA256)
-		// The GraphQL Digest field is a raw hex string, add the sha256: prefix
+		// GitHub returns digest with sha256: prefix, but we've already stripped it, so add it back
 		resolution.Checksum = "sha256:" + assetSHA256
 	} else if githubAsset != nil {
 		// Older releases may not have digest field populated in GraphQL - log warning
@@ -697,7 +698,7 @@ func (m *GitHubReleaseManager) fetchReleaseAssetByName(ctx context.Context, owne
 		Name:               node.Name,
 		BrowserDownloadURL: node.DownloadUrl,
 		ID:                 0, // AssetID not available in GraphQL schema and not used
-		SHA256:             node.Digest,
+		SHA256:             stripChecksumPrefix(node.Digest),
 	}, nil
 }
 
@@ -748,7 +749,7 @@ func fetchAllReleaseAssetsWithDigests(ctx context.Context, owner, repo, tagName 
 				Name:               node.Name,
 				BrowserDownloadURL: node.DownloadUrl,
 				ID:                 0, // Not available in GraphQL schema
-				SHA256:             node.Digest,
+				SHA256:             stripChecksumPrefix(node.Digest),
 			})
 		}
 
@@ -818,6 +819,16 @@ func (m *GitHubReleaseManager) guessBinaryPath(pkg types.Package, assetName stri
 
 	// Return the first pattern (most common case)
 	return patterns[0]
+}
+
+// stripChecksumPrefix removes the checksum type prefix (e.g., "sha256:") from a digest string
+// Returns the raw hex string, or empty string if input is empty
+func stripChecksumPrefix(digest string) string {
+	if digest == "" {
+		return ""
+	}
+	value, _ := checksum.ParseChecksum(digest)
+	return value
 }
 
 // isArchiveFile returns true if the filename appears to be an archive
