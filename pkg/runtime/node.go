@@ -51,9 +51,11 @@ func RunNodeWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 	}
 
 	// Build execution command
+	args := []string{script}
+	args = append(args, opts.Args...)
 	process := clickyExec.Process{
 		Cmd:  runtimeInfo.Path,
-		Args: []string{script},
+		Args: args,
 	}
 
 	// Apply options

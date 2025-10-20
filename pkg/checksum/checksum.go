@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io"
@@ -449,41 +450,150 @@ func VerifyChecksum(filePath, expectedChecksum string) error {
 	return nil
 }
 
-// EvaluateCELExpression uses a CEL expression to extract a checksum from checksum file contents
-func EvaluateCELExpression(checksumContents map[string]string, fileURL, expr string) (value string, hashType HashType, err error) {
-	filename := filepath.Base(fileURL)
+// EvaluateCELExpression uses a CEL expression to extract checksum (and optionally download URL) from variables
+// If the expression returns a map with "url" and "checksum" keys, both values are extracted.
+// If the expression returns a string, it's treated as the checksum value (backward compatible).
+// Variables map can contain any data needed by the expression (e.g., filename, os, arch, json, etc.)
+func EvaluateCELExpression(vars map[string]interface{}, expr string) (value string, hashType HashType, downloadURL string, err error) {
 
-	// Prepare variables for evaluation
-	vars := map[string]interface{}{
-		"filename": filename,
-	}
-	for name, content := range checksumContents {
-		vars[name] = content
-	}
-
-	checksumValue, evalErr := gomplate.RunTemplate(vars, gomplate.Template{Expression: expr})
+	result, evalErr := gomplate.RunTemplate(vars, gomplate.Template{Expression: expr})
 	if evalErr != nil {
-		return "", "", evalErr
+		return "", "", "", evalErr
 	}
 
-	if checksumValue == "" {
-		// Get list of available checksum file names for debugging
-		var fileNames []string
-		for name := range checksumContents {
-			fileNames = append(fileNames, name)
+	if result == "" {
+		// Get list of available variable names for debugging
+		var varNames []string
+		for name := range vars {
+			varNames = append(varNames, name)
 		}
-		return "", "", fmt.Errorf("CEL expression returned empty checksum - expression: %s, filename: %s, checksum files available: %v",
-			expr, filename, fileNames)
+		return "", "", "", fmt.Errorf("CEL expression returned empty result - expression: %s, variables available: %v",
+			expr, varNames)
 	}
 
-	// Parse the checksum type and value from CEL result
-	// CEL expressions should return format "type:checksum"
-	value, hashType, err = ParseChecksumWithType(checksumValue)
+	// Trim quotes if gomplate returns a quoted string
+	result = strings.Trim(result, `"'`)
+
+	// Try to parse result as JSON (for map responses)
+	var resultMap map[string]interface{}
+	jsonErr := json.Unmarshal([]byte(result), &resultMap)
+
+	if jsonErr == nil {
+		// Successfully parsed as JSON map
+		// Extract checksum
+		if checksumVal, ok := resultMap["checksum"].(string); ok && checksumVal != "" {
+			value, hashType, err = ParseChecksumWithType(checksumVal)
+			if err != nil {
+				return "", "", "", fmt.Errorf("failed to parse checksum from JSON result: %w", err)
+			}
+		} else {
+			return "", "", "", fmt.Errorf("JSON result missing 'checksum' field or it's not a string")
+		}
+
+		// Extract optional URL
+		if urlVal, ok := resultMap["url"].(string); ok && urlVal != "" {
+			downloadURL = urlVal
+		}
+
+		return value, hashType, downloadURL, nil
+	}
+
+	// JSON parsing failed - check if result is in Go map format (map[key:value ...])
+	// This happens when gomplate returns a map but converts it to string using default Go formatting
+	if strings.HasPrefix(result, "map[") && strings.HasSuffix(result, "]") {
+		parsed, parseErr := parseGoMapFormat(result)
+		if parseErr == nil {
+			// Successfully parsed Go map format - extract fields
+			if checksumVal, ok := parsed["checksum"]; ok && checksumVal != "" {
+				value, hashType, err = ParseChecksumWithType(checksumVal)
+				if err != nil {
+					return "", "", "", fmt.Errorf("failed to parse checksum from Go map result: %w", err)
+				}
+			} else {
+				return "", "", "", fmt.Errorf("Go map result missing 'checksum' field")
+			}
+
+			// Extract optional URL
+			if urlVal, ok := parsed["url"]; ok && urlVal != "" {
+				downloadURL = urlVal
+			}
+
+			return value, hashType, downloadURL, nil
+		}
+		// If Go map parsing also failed, return a clearer error
+		return "", "", "", fmt.Errorf(
+			"CEL expression returned a map in Go format that could not be parsed. "+
+				"Result: %q. Parse error: %v. "+
+				"This is likely a gomplate library issue - the CEL expression should return JSON",
+			result, parseErr)
+	}
+
+	// Fallback: treat result as a plain checksum string (backward compatible)
+	// Validate that it looks like a checksum before attempting to parse
+	if !isValidChecksumFormat(result) {
+		return "", "", "", fmt.Errorf(
+			"CEL expression result does not look like a valid checksum: %q (JSON parse error: %v)",
+			result, jsonErr)
+	}
+
+	value, hashType, err = ParseChecksumWithType(result)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to parse '%s' from CEL result: %w", checksumValue, err)
+		return "", "", "", fmt.Errorf("failed to parse '%s' from CEL result: %w", result, err)
 	}
 
-	return value, hashType, nil
+	return value, hashType, "", nil
+}
+
+// parseGoMapFormat parses a string in Go's default map format: "map[key:value key2:value2]"
+// This is a workaround for gomplate returning maps in this format instead of JSON
+func parseGoMapFormat(s string) (map[string]string, error) {
+	if !strings.HasPrefix(s, "map[") || !strings.HasSuffix(s, "]") {
+		return nil, fmt.Errorf("not in Go map format")
+	}
+
+	// Strip "map[" prefix and "]" suffix
+	content := s[4 : len(s)-1]
+	if content == "" {
+		return map[string]string{}, nil
+	}
+
+	result := make(map[string]string)
+
+	// We need to identify keys, which are words followed by a colon (but not URLs)
+	// Known keys are: checksum, url
+	// Strategy: use regex to find "word:" patterns at word boundaries
+	keyRegex := regexp.MustCompile(`\b(checksum|url):`)
+	matches := keyRegex.FindAllStringIndex(content, -1)
+
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no valid keys found in map")
+	}
+
+	for i, match := range matches {
+		keyStart := match[0]
+		keyEnd := match[1]
+		key := content[keyStart : keyEnd-1] // Remove trailing ":"
+
+		// Find value: from keyEnd to the start of the next key (or end of string)
+		valueStart := keyEnd
+		var valueEnd int
+		if i < len(matches)-1 {
+			// Value ends where next key starts (minus leading space)
+			valueEnd = matches[i+1][0]
+			// Trim trailing space
+			for valueEnd > valueStart && content[valueEnd-1] == ' ' {
+				valueEnd--
+			}
+		} else {
+			// Last key - value goes to end of content
+			valueEnd = len(content)
+		}
+
+		value := strings.TrimSpace(content[valueStart:valueEnd])
+		result[key] = value
+	}
+
+	return result, nil
 }
 
 // EnvtestReleasesYAML represents the structure of the envtest-releases.yaml file

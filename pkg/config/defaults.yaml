@@ -686,6 +686,20 @@ registry:
         version_command: --version
         version_pattern: 'loki, version (\d+\.\d+\.\d+)'
 
+    grafana:
+        name: grafana
+        repo: grafana/grafana
+        manager: github_tags
+        url_template: "https://grafana.com/api/grafana/versions/{{.version}}"
+        assets_expr: |
+            json.packages.filter(p, p.os == os && p.arch == arch).size() > 0 ? {
+                'url': json.packages.filter(p, p.os == os && p.arch == arch)[0].url,
+                'checksum': 'sha256:' + json.packages.filter(p, p.os == os && p.arch == arch)[0].sha256
+            } : {}
+        version_command: --version
+        version_pattern: 'Version (\d+\.\d+\.\d+)'
+        binary_path: grafana
+
     localstack:
         name: localstack
         repo: localstack/localstack-cli

@@ -1122,7 +1122,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 			}
 
 			// Use multi-file checksum with CEL support
-			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithCacheDir(i.options.CacheDir))
+			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithPlatform(resolution.Platform.OS, resolution.Platform.Arch), download.WithCacheDir(i.options.CacheDir))
 		} else {
 			// Use single checksum file
 			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir))
