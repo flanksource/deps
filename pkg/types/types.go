@@ -37,6 +37,7 @@ type Package struct {
 	AssetPatterns  map[string]string      `json:"asset_patterns,omitempty" yaml:"asset_patterns,omitempty"`   // Platform -> asset pattern
 	ChecksumFile   string                 `json:"checksum_file,omitempty" yaml:"checksum_file,omitempty"`     // Checksum file pattern (comma-separated for multiple files)
 	ChecksumExpr   string                 `json:"checksum_expr,omitempty" yaml:"checksum_expr,omitempty"`     // CEL expression to extract checksum from file contents
+	AssetsExpr     string                 `json:"assets_expr,omitempty" yaml:"assets_expr,omitempty"`         // CEL expression for JSON asset discovery (returns {url, checksum})
 	VersionCommand string                 `json:"version_command,omitempty" yaml:"version_command,omitempty"` // Command to get version
 	VersionPattern string                 `json:"version_pattern,omitempty" yaml:"version_pattern,omitempty"` // Regex to extract version
 	VersionExpr    string                 `json:"version_expr,omitempty" yaml:"version_expr,omitempty"`       // CEL expression to filter and map versions
