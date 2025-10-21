@@ -1,6 +1,7 @@
 package download
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash"
 	"io"
@@ -60,6 +61,8 @@ type downloadConfig struct {
 	checksumExpr     string   // CEL expression for extracting checksum from files
 	simpleMode       bool     // No task/progress support
 	cacheDir         string   // Directory for download cache
+	os               string   // Operating system for CEL expressions
+	arch             string   // Architecture for CEL expressions
 }
 
 // WithChecksum sets the expected checksum for verification
@@ -125,6 +128,14 @@ func WithSimpleMode() DownloadOption {
 func WithCacheDir(cacheDir string) DownloadOption {
 	return func(c *downloadConfig) {
 		c.cacheDir = strings.TrimSpace(cacheDir)
+	}
+}
+
+// WithPlatform sets the OS and architecture for CEL expressions in checksum evaluation
+func WithPlatform(os, arch string) DownloadOption {
+	return func(c *downloadConfig) {
+		c.os = os
+		c.arch = arch
 	}
 }
 
@@ -199,7 +210,9 @@ func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task) (checks
 }
 
 // fetchChecksumFromMultipleURLs fetches checksums from multiple URLs with optional CEL expression
-func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string, checksumExpr, downloadURL string, t *task.Task) (checksumValue, checksumType string, sources []string, err error) {
+// Returns: checksumValue, checksumType, overrideURL, sources, error
+// If the CEL expression returns a URL, it's included as overrideURL for the caller to use
+func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string, checksumExpr, downloadURL, os, arch string, t *task.Task) (checksumValue, checksumType, overrideURL string, sources []string, err error) {
 	checksumContents := make(map[string]string)
 	allSources := []string{}
 
@@ -211,17 +224,17 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 		client := createHTTPClient(t)
 		resp, err := client.Get(checksumURL)
 		if err != nil {
-			return "", "", nil, fmt.Errorf("failed to download checksum file %s: %w", checksumURL, err)
+			return "", "", "", nil, fmt.Errorf("failed to download checksum file %s: %w", checksumURL, err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return "", "", nil, fmt.Errorf("checksum file not found at %s: status %d", checksumURL, resp.StatusCode)
+			return "", "", "", nil, fmt.Errorf("checksum file not found at %s: status %d", checksumURL, resp.StatusCode)
 		}
 
 		content, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", "", nil, fmt.Errorf("failed to read checksum file %s: %w", checksumURL, err)
+			return "", "", "", nil, fmt.Errorf("failed to read checksum file %s: %w", checksumURL, err)
 		}
 
 		checksumContents[checksumURL] = string(content)
@@ -230,37 +243,72 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 
 	// Parse checksum using CEL expression or fallback to simple parsing
 	if checksumExpr != "" {
-		// Create a map using logical names for CEL evaluation
-		namedContents := make(map[string]string)
+		// Build vars map for CEL evaluation
+		vars := make(map[string]interface{})
+
+		// Add filename from download URL
+		vars["filename"] = filepath.Base(downloadURL)
+
+		// Add platform info
+		if os != "" {
+			vars["os"] = os
+		}
+		if arch != "" {
+			vars["arch"] = arch
+		}
+
+		// Add checksum file contents with logical names
 		for i, url := range checksumURLs {
 			content := checksumContents[url]
 			// Use logical name if provided, otherwise use index-based fallback
 			var varName string
 			if checksumNames != nil && i < len(checksumNames) {
-				varName = checksumNames[i]
+				name := checksumNames[i]
+				// If the name looks like a URL or has special characters, extract a cleaner name
+				if strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://") || strings.Contains(name, "{{") {
+					// Use a generic name for URL-based checksum files
+					if i == 0 {
+						varName = "api"
+					} else {
+						varName = fmt.Sprintf("api_%d", i)
+					}
+				} else {
+					varName = name
+				}
 			} else {
 				// Fallback to positional names if logical names not provided
 				varName = fmt.Sprintf("checksum_%d", i)
 			}
-			namedContents[varName] = content
+
+			// Try to parse content as JSON, otherwise keep as string
+			var jsonData interface{}
+			if jsonErr := json.Unmarshal([]byte(content), &jsonData); jsonErr == nil {
+				vars[varName] = jsonData
+			} else {
+				vars[varName] = content
+			}
 		}
 
-		checksumValue, checksumHashType, err := checksum.EvaluateCELExpression(namedContents, downloadURL, checksumExpr)
-		t.V(3).Infof("Evaluated checksum using expression: %s -> %s, %s", checksumExpr, checksumValue, checksumHashType)
-		if err != nil {
-			return "", "", nil, err
+		checksumValue, checksumHashType, discoveredURL, err := checksum.EvaluateCELExpression(vars, checksumExpr)
+		if discoveredURL != "" {
+			t.V(3).Infof("Evaluated checksum using expression: %s -> checksum=%s, type=%s, url=%s", checksumExpr, checksumValue, checksumHashType, discoveredURL)
+		} else {
+			t.V(3).Infof("Evaluated checksum using expression: %s -> %s, %s", checksumExpr, checksumValue, checksumHashType)
 		}
-		return checksumValue, string(checksumHashType), allSources, nil
+		if err != nil {
+			return "", "", "", nil, err
+		}
+		return checksumValue, string(checksumHashType), discoveredURL, allSources, nil
 	} else {
 		// Try to parse from all files, return first successful match
 		for _, checksumURL := range checksumURLs {
 			content := checksumContents[checksumURL]
 			checksumValue, checksumHashType, err := checksum.ParseChecksumFile(content, downloadURL)
 			if err == nil && checksumValue != "" {
-				return checksumValue, string(checksumHashType), allSources, nil
+				return checksumValue, string(checksumHashType), "", allSources, nil
 			}
 		}
-		return "", "", nil, fmt.Errorf("no valid checksum found in any of the checksum files")
+		return "", "", "", nil, fmt.Errorf("no valid checksum found in any of the checksum files")
 	}
 }
 
@@ -378,11 +426,42 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 
 	// Download logging is handled by utils.LogDownloadStart if needed
 
+	// Pre-download checksum and URL discovery
+	// If checksum_expr is configured, fetch the checksum (and potentially URL) before downloading
+	// This allows API-based asset discovery where both URL and checksum come from the same API response
+	actualDownloadURL := url
+	var prediscoveredChecksum string
+
+	if len(config.checksumURLs) > 0 && config.checksumExpr != "" {
+		// Fetch checksum (and potentially URL) from API before downloading
+		checksumValue, checksumType, discoveredURL, checksumSources, err := fetchChecksumFromMultipleURLs(
+			config.checksumURLs, config.checksumNames, config.checksumExpr, url, config.os, config.arch, t)
+		if err == nil {
+			prediscoveredChecksum = checksumValue
+			config.expectedChecksum = checksumValue
+			if config.checksumType == "" {
+				config.checksumType = checksumType
+			}
+			if config.checksumSource == "" {
+				config.checksumSource = strings.Join(checksumSources, ",")
+			}
+			// If a URL was discovered from the API, use it instead of the original URL
+			if discoveredURL != "" {
+				actualDownloadURL = discoveredURL
+				if t != nil {
+					t.V(3).Infof("Using discovered URL from API: %s", discoveredURL)
+				}
+			}
+		} else if t != nil {
+			t.V(2).Infof("Failed to pre-fetch checksum, will attempt post-download: %v", err)
+		}
+	}
+
 	// Create HTTP client with redirect logging
 	client := createHTTPClient(t)
 
-	// Get the data
-	resp, err := client.Get(url)
+	// Get the data using the actual download URL (either original or discovered from API)
+	resp, err := client.Get(actualDownloadURL)
 	if err != nil {
 		return fmt.Errorf("failed to download from %s: %w", url, err)
 	}
@@ -482,7 +561,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	out.Close()
 
 	// Fetch checksum from URL if configured (takes precedence over expectedChecksum)
-	if config.checksumURL != "" {
+	// Skip if we already fetched it pre-download (prediscoveredChecksum is set)
+	if config.checksumURL != "" && prediscoveredChecksum == "" {
 		checksumValue, checksumType, checksumSources, err := fetchChecksumFromURL(config.checksumURL, finalURL, t)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
@@ -494,8 +574,9 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		if config.checksumSource == "" {
 			config.checksumSource = strings.Join(checksumSources, ",")
 		}
-	} else if len(config.checksumURLs) > 0 {
-		checksumValue, checksumType, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, finalURL, t)
+	} else if len(config.checksumURLs) > 0 && prediscoveredChecksum == "" {
+		// Only fetch post-download if we didn't already fetch pre-download
+		checksumValue, checksumType, discoveredURL, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, finalURL, config.os, config.arch, t)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
@@ -505,6 +586,10 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		}
 		if config.checksumSource == "" {
 			config.checksumSource = strings.Join(checksumSources, ",")
+		}
+		// Note: discoveredURL from post-download is ignored since we already downloaded
+		if discoveredURL != "" && t != nil {
+			t.V(4).Infof("Discovered URL post-download (ignored): %s", discoveredURL)
 		}
 	}
 

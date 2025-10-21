@@ -2,12 +2,17 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/flanksource/commons/logger"
+	"github.com/flanksource/deps/pkg/checksum"
+	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
@@ -19,12 +24,14 @@ import (
 
 // GitHubTagsManager implements the PackageManager interface for GitHub tags
 type GitHubTagsManager struct {
-	// Uses shared singleton GitHub client
+	client *http.Client
 }
 
 // NewGitHubTagsManager creates a new GitHub tags manager.
 func NewGitHubTagsManager() *GitHubTagsManager {
-	return &GitHubTagsManager{}
+	return &GitHubTagsManager{
+		client: depshttp.GetHttpClient(),
+	}
 }
 
 // GraphQL query structs for tags with commit dates
@@ -218,14 +225,71 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 		return nil, fmt.Errorf("failed to template URL: %w", err)
 	}
 
-	isArchive := isArchiveFile(downloadURL)
+	// Check for JSON asset discovery
+	var discoveredURL string
+	var discoveredChecksum string
+
+	if pkg.AssetsExpr != "" {
+		// Download the URL to check if it's JSON
+		resp, err := m.client.Get(downloadURL)
+		if err == nil {
+			defer resp.Body.Close()
+
+			// Check Content-Type
+			contentType := resp.Header.Get("Content-Type")
+			if strings.Contains(contentType, "application/json") {
+				// Read and parse JSON
+				body, err := io.ReadAll(resp.Body)
+				if err == nil {
+					var jsonData interface{}
+					if json.Unmarshal(body, &jsonData) == nil {
+						// Build vars map for CEL evaluation
+						vars := map[string]interface{}{
+							"json":     jsonData,
+							"os":       plat.OS,
+							"arch":     plat.Arch,
+							"version":  version,
+							"package":  pkg,
+							"platform": plat,
+						}
+
+						// Evaluate assets_expr to get URL and checksum
+						// EvaluateCELExpression returns (checksumValue, checksumType, discoveredURL, error)
+						checksumValue, checksumType, url, evalErr := checksum.EvaluateCELExpression(vars, pkg.AssetsExpr)
+						if evalErr == nil {
+							if url != "" {
+								discoveredURL = url
+							}
+							if checksumValue != "" {
+								// Format checksum with hash type prefix (e.g., "sha256:abc123")
+								discoveredChecksum = checksum.FormatChecksum(checksumValue, checksumType)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Use discovered URL if available, otherwise use templated URL
+	finalDownloadURL := downloadURL
+	if discoveredURL != "" {
+		finalDownloadURL = discoveredURL
+	}
+
+	isArchive := isArchiveFile(finalDownloadURL)
 
 	resolution := &types.Resolution{
 		Package:     pkg,
 		Version:     version,
 		Platform:    plat,
-		DownloadURL: downloadURL,
+		DownloadURL: finalDownloadURL,
 		IsArchive:   isArchive,
+	}
+
+	// Set discovered checksum if available
+	if discoveredChecksum != "" {
+		resolution.Checksum = discoveredChecksum
 	}
 
 	// Set binary path for archives

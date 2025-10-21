@@ -21,6 +21,9 @@ type RunOptions struct {
 	// Env provides custom environment variables
 	Env map[string]string
 
+	// Args provides additional command-line arguments to pass to the script
+	Args []string
+
 	// InstallDeps triggers dependency installation when true
 	// When false, uses smart detection (only install if missing)
 	InstallDeps *bool

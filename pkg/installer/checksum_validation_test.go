@@ -1,4 +1,4 @@
-package e2e
+package installer
 
 import (
 	"context"
@@ -18,9 +18,8 @@ import (
 	"github.com/flanksource/clicky/task"
 	flanksourceContext "github.com/flanksource/commons/context"
 	"github.com/flanksource/commons/logger"
-	"github.com/flanksource/deps/download"
 	"github.com/flanksource/deps/pkg/config"
-	"github.com/flanksource/deps/pkg/installer"
+	"github.com/flanksource/deps/pkg/download"
 )
 
 type testContext struct {
@@ -182,8 +181,8 @@ var _ = Describe("Checksum Validation", func() {
 			Expect(exists).To(BeTrue(), "jq package should exist in default registry")
 
 			// Create installer with temp directories
-			inst := installer.NewWithConfig(depsConfig,
-				installer.WithBinDir(binDir),
+			inst := NewWithConfig(depsConfig,
+				WithBinDir(binDir),
 			)
 
 			// Create task with Info level logging
@@ -234,6 +233,46 @@ var _ = Describe("Checksum Validation", func() {
 			}
 
 			Expect(foundChecksumLog).To(BeTrue(), "Expected to find checksum verification log at Info level")
+		})
+	})
+
+	Context("GitHub GraphQL digest handling", func() {
+		It("should correctly strip sha256: prefix from GitHub digest field", func() {
+			// This test verifies that GitHub GraphQL digests (which come with sha256: prefix)
+			// are properly stripped before being reassembled with the prefix
+
+			// Create a mock server that mimics GitHub's behavior
+			digestTestServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write(testBinary)
+			}))
+			defer digestTestServer.Close()
+
+			// Extract port from server URL
+			digestServerURL := digestTestServer.URL
+			digestParts := strings.Split(digestServerURL, ":")
+			digestServerPort := digestParts[len(digestParts)-1]
+
+			// Create test task
+			testTask := &task.Task{}
+
+			// Create temporary download destination
+			tempFile := filepath.Join(testCtx.TempDir, "test-digest-download")
+
+			// Download with the correct checksum (GitHub format with sha256: prefix)
+			// This simulates what happens when GitHub GraphQL returns the digest
+			downloadURL := fmt.Sprintf("http://localhost:%s/test-binary", digestServerPort)
+			githubStyleChecksum := fmt.Sprintf("sha256:%s", correctHash)
+
+			err := download.Download(downloadURL, tempFile, testTask,
+				download.WithChecksum(githubStyleChecksum))
+
+			// Verify download succeeded
+			Expect(err).ToNot(HaveOccurred(), "Download should succeed with correctly formatted checksum")
+
+			// Verify file was created
+			_, err = os.Stat(tempFile)
+			Expect(err).ToNot(HaveOccurred(), "File should exist when checksum validation succeeds")
 		})
 	})
 })

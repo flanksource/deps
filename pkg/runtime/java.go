@@ -52,9 +52,11 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 	switch ext {
 	case ".jar":
 		// Execute JAR file
+		args := []string{"-jar", script}
+		args = append(args, opts.Args...)
 		process = clickyExec.Process{
 			Cmd:  runtimeInfo.Path,
-			Args: []string{"-jar", script},
+			Args: args,
 		}
 
 	case ".java":
@@ -100,9 +102,11 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 		className := strings.TrimSuffix(scriptBase, ".java")
 
 		// Run the compiled class with same working directory
+		args := []string{className}
+		args = append(args, opts.Args...)
 		process = clickyExec.Process{
 			Cmd:  runtimeInfo.Path,
-			Args: []string{className},
+			Args: args,
 		}
 
 		// Use same working directory for execution
@@ -113,9 +117,11 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 	case ".class":
 		// Run compiled class file
 		className := strings.TrimSuffix(filepath.Base(script), ".class")
+		args := []string{className}
+		args = append(args, opts.Args...)
 		process = clickyExec.Process{
 			Cmd:  runtimeInfo.Path,
-			Args: []string{className},
+			Args: args,
 		}
 
 	default:

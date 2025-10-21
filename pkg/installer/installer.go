@@ -10,21 +10,21 @@ import (
 
 	"github.com/flanksource/clicky/task"
 	flanksourceContext "github.com/flanksource/commons/context"
-	"github.com/flanksource/deps/download"
 	"github.com/flanksource/deps/pkg/config"
+	"github.com/flanksource/deps/pkg/download"
 	"github.com/flanksource/deps/pkg/extract"
 	"github.com/flanksource/deps/pkg/manager"
+	_ "github.com/flanksource/deps/pkg/manager/apache" // Register apache manager
+	_ "github.com/flanksource/deps/pkg/manager/direct" // Register direct manager
+	_ "github.com/flanksource/deps/pkg/manager/github" // Register github managers
+	_ "github.com/flanksource/deps/pkg/manager/gitlab" // Register gitlab manager
+	_ "github.com/flanksource/deps/pkg/manager/golang" // Register golang manager
+	_ "github.com/flanksource/deps/pkg/manager/maven"  // Register maven manager
+	_ "github.com/flanksource/deps/pkg/manager/url"    // Register url manager
 	"github.com/flanksource/deps/pkg/pipeline"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/plugin"
 	_ "github.com/flanksource/deps/pkg/plugin/builtin" // Register built-in plugins
-	_ "github.com/flanksource/deps/pkg/manager/apache"  // Register apache manager
-	_ "github.com/flanksource/deps/pkg/manager/direct"  // Register direct manager
-	_ "github.com/flanksource/deps/pkg/manager/github"  // Register github managers
-	_ "github.com/flanksource/deps/pkg/manager/gitlab"  // Register gitlab manager
-	_ "github.com/flanksource/deps/pkg/manager/golang"  // Register golang manager
-	_ "github.com/flanksource/deps/pkg/manager/maven"   // Register maven manager
-	_ "github.com/flanksource/deps/pkg/manager/url"     // Register url manager
 	"github.com/flanksource/deps/pkg/system"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/utils"
@@ -1122,7 +1122,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 			}
 
 			// Use multi-file checksum with CEL support
-			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithCacheDir(i.options.CacheDir))
+			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithPlatform(resolution.Platform.OS, resolution.Platform.Arch), download.WithCacheDir(i.options.CacheDir))
 		} else {
 			// Use single checksum file
 			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir))
