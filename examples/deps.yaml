@@ -7,6 +7,7 @@ dependencies:
     etcd: v3.6.5
     #    expenv: v1.2.0
     gomplate: v3.5.0
+    grafana: v12.2.0
     helm: v3.7.2
     helmfile: v0.144.0
     jb: v0.1.0

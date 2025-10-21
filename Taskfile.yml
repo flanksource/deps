@@ -4,6 +4,7 @@ vars:
   BINARY_NAME: deps
   BUILD_DIR: ./bin
   MAIN_PATH: ./cmd/deps/main.go
+  GINKGO: go run github.com/onsi/ginkgo/v2/ginkgo
 
 tasks:
   default:
@@ -16,7 +17,7 @@ tasks:
     status:
       - which ginkgo
     cmds:
-      - go install github.com/onsi/ginkgo/v2/ginkgo@latest
+      - go install github.com/onsi/ginkgo/v2/ginkgo
 
   build:
     desc: Build the deps binary
@@ -57,16 +58,14 @@ tasks:
       - install-ginkgo
 
     cmds:
-      - ginkgo -v ./...
+      - "{{.GINKGO}} -v ./..."
     sources:
       - "**/*.go"
 
   test:unit:
     desc: Run all unit tests using Ginkgo
-    deps:
-      - install-ginkgo
     cmds:
-      - ginkgo -v  --skip-package e2e ./...
+      - "{{.GINKGO}} -v  --skip-package e2e ./..."
     sources:
       - "**/*.go"
 
@@ -75,7 +74,7 @@ tasks:
     deps:
       - install-ginkgo
     cmds:
-      - ginkgo -v -p -nodes=4  --skip-package ./e2e
+      - go run github.com/onsi/ginkgo/v2/ginkgo -v -p -nodes=4  --skip-package ./e2e
     sources:
       - "**/*.go"
 

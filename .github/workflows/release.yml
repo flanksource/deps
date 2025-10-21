@@ -126,7 +126,7 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file_glob: true
-          file: deps-*
+          file: deps-*.{exe,tar.gz,zip,sha256}
           tag: ${{ needs.version.outputs.tag }}
 
   release:

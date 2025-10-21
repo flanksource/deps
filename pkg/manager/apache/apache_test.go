@@ -248,9 +248,22 @@ var _ = Describe("Apache Manager", func() {
 
 		Context("when resolving with valid version", func() {
 			It("should succeed when version exists", func() {
-				// Note: This test uses real HTML fixtures and might pass if the version happens to exist
-				// For a true unit test, we'd need to mock the HTTP client
-				Skip("Requires mocking HTTP client for deterministic testing")
+				// Use an existing package that we know works in integration tests
+				pkg := types.Package{
+					Name:        "maven",
+					URLTemplate: "https://archive.apache.org/dist/{{.name}}/binaries/{{.asset}}",
+					AssetPatterns: map[string]string{
+						"*": "apache-maven-{{.version}}-bin.tar.gz",
+					},
+				}
+
+				// Use a version that actually exists (3.2.1 is available per error message)
+				resolution, err := apacheManager.Resolve(ctx, pkg, "3.2.1", plat)
+
+				// This test makes real HTTP calls - it should succeed when the version exists
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resolution).ToNot(BeNil())
+				Expect(resolution.DownloadURL).To(ContainSubstring("apache-maven-3.2.1-bin.tar.gz"))
 			})
 		})
 	})

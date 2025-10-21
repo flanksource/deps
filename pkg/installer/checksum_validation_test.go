@@ -1,4 +1,4 @@
-package e2e
+package installer
 
 import (
 	"context"
@@ -18,9 +18,8 @@ import (
 	"github.com/flanksource/clicky/task"
 	flanksourceContext "github.com/flanksource/commons/context"
 	"github.com/flanksource/commons/logger"
-	"github.com/flanksource/deps/download"
 	"github.com/flanksource/deps/pkg/config"
-	"github.com/flanksource/deps/pkg/installer"
+	"github.com/flanksource/deps/pkg/download"
 )
 
 type testContext struct {
@@ -102,8 +101,15 @@ var _ = Describe("Checksum Validation", func() {
 				fmt.Sprintf("http://localhost:%s/checksums_hashes_order", serverPort),
 			}
 			checksumNames := []string{"checksums", "checksums_hashes_order"}
-			// Use the correct hash but modify last character to make it wrong
-			incorrectHash := correctHash[:len(correctHash)-1] + "x"
+			// Use the correct hash but flip the last hex digit to make it wrong
+			lastChar := correctHash[len(correctHash)-1]
+			var newLastChar byte
+			if lastChar == '0' {
+				newLastChar = 'f'
+			} else {
+				newLastChar = '0'
+			}
+			incorrectHash := correctHash[:len(correctHash)-1] + string(newLastChar)
 			checksumExpr := fmt.Sprintf("'sha256:%s'", incorrectHash)
 
 			// Create test task
@@ -139,8 +145,15 @@ var _ = Describe("Checksum Validation", func() {
 				fmt.Sprintf("http://localhost:%s/checksums_hashes_order", serverPort),
 			}
 			checksumNames := []string{"checksums", "checksums_hashes_order"}
-			// Use the correct hash but modify last character to make it wrong
-			incorrectHash := correctHash[:len(correctHash)-1] + "x"
+			// Use the correct hash but flip the last hex digit to make it wrong
+			lastChar := correctHash[len(correctHash)-1]
+			var newLastChar byte
+			if lastChar == '0' {
+				newLastChar = 'f'
+			} else {
+				newLastChar = '0'
+			}
+			incorrectHash := correctHash[:len(correctHash)-1] + string(newLastChar)
 			checksumExpr := fmt.Sprintf("size(checksums) > 0 && size(checksums_hashes_order) > 0 ? 'sha256:%s' : 'sha256:0000000000000000000000000000000000000000000000000000000000000000'", incorrectHash)
 
 			// Create test task
@@ -182,8 +195,8 @@ var _ = Describe("Checksum Validation", func() {
 			Expect(exists).To(BeTrue(), "jq package should exist in default registry")
 
 			// Create installer with temp directories
-			inst := installer.NewWithConfig(depsConfig,
-				installer.WithBinDir(binDir),
+			inst := NewWithConfig(depsConfig,
+				WithBinDir(binDir),
 			)
 
 			// Create task with Info level logging
