@@ -159,9 +159,9 @@ def456  other.zip`,
 		},
 		{
 			name: "single checksum file",
-			content:      "sha256:abc123def456",
+			content:      "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 			fileURL:      "https://example.com/file.tar.gz",
-			wantValue:    "abc123def456",
+			wantValue:    "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 			wantHashType: HashTypeSHA256,
 			wantErr:      false,
 		},
@@ -194,10 +194,6 @@ def456  other.zip`,
 }
 
 func TestCalculateFileChecksum_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Test actual URL download and checksum calculation
 	url := "https://raw.githubusercontent.com/flanksource/deps/main/README.md"
 
