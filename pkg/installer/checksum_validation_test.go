@@ -1,4 +1,4 @@
-package e2e
+package installer
 
 import (
 	"context"
@@ -20,7 +20,6 @@ import (
 	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/deps/download"
 	"github.com/flanksource/deps/pkg/config"
-	"github.com/flanksource/deps/pkg/installer"
 )
 
 type testContext struct {
@@ -182,8 +181,8 @@ var _ = Describe("Checksum Validation", func() {
 			Expect(exists).To(BeTrue(), "jq package should exist in default registry")
 
 			// Create installer with temp directories
-			inst := installer.NewWithConfig(depsConfig,
-				installer.WithBinDir(binDir),
+			inst := NewWithConfig(depsConfig,
+				WithBinDir(binDir),
 			)
 
 			// Create task with Info level logging
