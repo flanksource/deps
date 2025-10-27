@@ -1,0 +1,178 @@
+---
+name: 'Install Tools with deps'
+description: 'Automatically install development tools using the deps tool'
+author: 'Flanksource'
+
+branding:
+  icon: 'download'
+  color: 'blue'
+
+inputs:
+  tools:
+    description: 'List of tools to install (comma-separated or multiline)'
+    required: true
+  deps-version:
+    description: 'Version of deps to use (e.g., v1.0.0 or latest)'
+    required: false
+    default: 'latest'
+
+outputs:
+  tools-installed:
+    description: 'JSON array of installed tools with versions'
+    value: ${{ steps.report.outputs.tools-installed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup cache paths
+      id: cache-paths
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          echo "deps-bin=$HOME/.local/bin" >> $GITHUB_OUTPUT
+          echo "deps-cache=$HOME/.deps" >> $GITHUB_OUTPUT
+          echo "tools-dir=$HOME/.local/opt" >> $GITHUB_OUTPUT
+        else
+          echo "deps-bin=$HOME/.local/bin" >> $GITHUB_OUTPUT
+          echo "deps-cache=$HOME/.deps" >> $GITHUB_OUTPUT
+          echo "tools-dir=$HOME/.local/opt" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Restore deps binary cache
+      id: cache-deps
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.cache-paths.outputs.deps-bin }}/deps
+        key: >-
+          deps-binary-${{ runner.os }}-${{ runner.arch }}-
+          ${{ inputs.deps-version }}
+
+    - name: Restore tools cache
+      id: cache-tools
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ steps.cache-paths.outputs.tools-dir }}
+          ${{ steps.cache-paths.outputs.deps-cache }}
+        key: >-
+          deps-tools-${{ runner.os }}-${{ runner.arch }}-
+          ${{ hashFiles(inputs.tools) }}
+
+    - name: Install deps binary
+      shell: bash
+      run: |
+        DEPS_BIN="${{ steps.cache-paths.outputs.deps-bin }}"
+        mkdir -p "$DEPS_BIN"
+
+        # Skip if cached
+        if [ -f "$DEPS_BIN/deps" ]; then
+          echo "deps binary found in cache"
+          chmod +x "$DEPS_BIN/deps"
+        else
+          echo "Installing deps binary..."
+
+          # Determine platform and architecture
+          OS="${RUNNER_OS,,}"
+          if [ "$OS" == "macos" ]; then
+            OS="darwin"
+          fi
+
+          ARCH="${RUNNER_ARCH}"
+          if [ "$ARCH" == "X64" ]; then
+            ARCH="amd64"
+          elif [ "$ARCH" == "ARM64" ]; then
+            ARCH="arm64"
+          fi
+
+          VERSION="${{ inputs.deps-version }}"
+
+          # Download URL
+          BASE_URL="https://github.com/flanksource/deps/releases"
+          if [ "$VERSION" == "latest" ]; then
+            DOWNLOAD_URL="$BASE_URL/latest/download/deps_${OS}_${ARCH}"
+          else
+            DOWNLOAD_URL="$BASE_URL/download/${VERSION}/deps_${OS}_${ARCH}"
+          fi
+
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -L -o "$DEPS_BIN/deps" "$DOWNLOAD_URL"
+          chmod +x "$DEPS_BIN/deps"
+
+          # Verify installation
+          if [ ! -f "$DEPS_BIN/deps" ]; then
+            echo "Failed to download deps binary"
+            exit 1
+          fi
+        fi
+
+        # Add to PATH
+        echo "$DEPS_BIN" >> $GITHUB_PATH
+
+        # Verify deps works
+        "$DEPS_BIN/deps" --version
+
+    - name: Parse and install tools
+      id: install
+      shell: bash
+      run: |
+        TOOLS_INPUT="${{ inputs.tools }}"
+        DEPS_BIN="${{ steps.cache-paths.outputs.deps-bin }}/deps"
+
+        # Parse tools (handle both comma-separated and multiline)
+        TOOLS=$(echo "$TOOLS_INPUT" | tr ',' '\n' | tr -d '\r' | \
+          sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+
+        echo "Installing tools:"
+        echo "$TOOLS"
+
+        # Install each tool
+        while IFS= read -r tool; do
+          if [ -n "$tool" ]; then
+            echo "Installing $tool..."
+            "$DEPS_BIN" install "$tool"
+
+            if [ $? -ne 0 ]; then
+              echo "Failed to install $tool"
+              exit 1
+            fi
+          fi
+        done <<< "$TOOLS"
+
+    - name: Generate installation report
+      id: report
+      shell: bash
+      run: |
+        TOOLS_INPUT="${{ inputs.tools }}"
+        DEPS_BIN="${{ steps.cache-paths.outputs.deps-bin }}/deps"
+
+        # Parse tools
+        TOOLS=$(echo "$TOOLS_INPUT" | tr ',' '\n' | tr -d '\r' | \
+          sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+
+        echo "## Installed Tools" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Tool | Version |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|---------|" >> $GITHUB_STEP_SUMMARY
+
+        TOOLS_JSON="["
+        FIRST=true
+
+        while IFS= read -r tool; do
+          if [ -n "$tool" ]; then
+            # Try to get version
+            VERSION=$("$DEPS_BIN" list 2>/dev/null | \
+              grep "^$tool " | awk '{print $2}' || echo "installed")
+
+            echo "| $tool | $VERSION |" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              TOOLS_JSON="$TOOLS_JSON,"
+            fi
+            TOOLS_JSON="$TOOLS_JSON{\"name\":\"$tool\",\"version\":\"$VERSION\"}"
+          fi
+        done <<< "$TOOLS"
+
+        TOOLS_JSON="$TOOLS_JSON]"
+        echo "tools-installed=$TOOLS_JSON" >> $GITHUB_OUTPUT

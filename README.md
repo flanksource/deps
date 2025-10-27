@@ -63,6 +63,121 @@ deps lock
 
 This creates `deps-lock.yaml` with resolved versions and checksums.
 
+## Using as a GitHub Action
+
+You can use deps in your GitHub Actions workflows to automatically install
+development tools across Linux, macOS, and Windows runners.
+
+### Basic Usage
+
+```yaml
+name: CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        uses: flanksource/deps@v1
+        with:
+          tools: |
+            yq
+            kubectl
+            helm
+
+      - name: Use installed tools
+        run: |
+          yq --version
+          kubectl version --client
+          helm version
+```
+
+### Action Inputs
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `tools` | List of tools to install (comma-separated or multiline) | Yes | - |
+| `deps-version` | Version of deps to use (e.g., v1.0.0) | No | `latest` |
+
+### Action Outputs
+
+| Output | Description |
+|--------|-------------|
+| `tools-installed` | JSON array of installed tools with versions |
+
+### Examples
+
+**Install a single tool:**
+
+```yaml
+- uses: flanksource/deps@v1
+  with:
+    tools: yq
+```
+
+**Install multiple tools (comma-separated):**
+
+```yaml
+- uses: flanksource/deps@v1
+  with:
+    tools: yq,kubectl,helm
+```
+
+**Install multiple tools (multiline):**
+
+```yaml
+- uses: flanksource/deps@v1
+  with:
+    tools: |
+      yq
+      kubectl
+      helm
+      jq
+```
+
+**Use specific deps version:**
+
+```yaml
+- uses: flanksource/deps@v1
+  with:
+    tools: yq
+    deps-version: v1.2.3
+```
+
+**Platform matrix testing:**
+
+```yaml
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        uses: flanksource/deps@v1
+        with:
+          tools: yq,kubectl
+
+      - name: Test
+        run: yq --version
+```
+
+### Features
+
+- **Multi-platform**: Works on Linux, macOS, and Windows runners
+- **Caching**: Automatically caches deps binary and installed tools for
+  faster workflow runs
+- **Installation report**: Generates a summary of installed tools with
+  versions in the GitHub Actions UI
+- **Fast installation**: Parallel downloads and smart caching minimize
+  installation time
+
 ## Commands
 
 ### `deps install [tool[@version]...]`
