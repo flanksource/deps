@@ -101,8 +101,15 @@ var _ = Describe("Checksum Validation", func() {
 				fmt.Sprintf("http://localhost:%s/checksums_hashes_order", serverPort),
 			}
 			checksumNames := []string{"checksums", "checksums_hashes_order"}
-			// Use the correct hash but modify last character to make it wrong
-			incorrectHash := correctHash[:len(correctHash)-1] + "x"
+			// Use the correct hash but flip the last hex digit to make it wrong
+			lastChar := correctHash[len(correctHash)-1]
+			var newLastChar byte
+			if lastChar == '0' {
+				newLastChar = 'f'
+			} else {
+				newLastChar = '0'
+			}
+			incorrectHash := correctHash[:len(correctHash)-1] + string(newLastChar)
 			checksumExpr := fmt.Sprintf("'sha256:%s'", incorrectHash)
 
 			// Create test task
@@ -138,8 +145,15 @@ var _ = Describe("Checksum Validation", func() {
 				fmt.Sprintf("http://localhost:%s/checksums_hashes_order", serverPort),
 			}
 			checksumNames := []string{"checksums", "checksums_hashes_order"}
-			// Use the correct hash but modify last character to make it wrong
-			incorrectHash := correctHash[:len(correctHash)-1] + "x"
+			// Use the correct hash but flip the last hex digit to make it wrong
+			lastChar := correctHash[len(correctHash)-1]
+			var newLastChar byte
+			if lastChar == '0' {
+				newLastChar = 'f'
+			} else {
+				newLastChar = '0'
+			}
+			incorrectHash := correctHash[:len(correctHash)-1] + string(newLastChar)
 			checksumExpr := fmt.Sprintf("size(checksums) > 0 && size(checksums_hashes_order) > 0 ? 'sha256:%s' : 'sha256:0000000000000000000000000000000000000000000000000000000000000000'", incorrectHash)
 
 			// Create test task

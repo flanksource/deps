@@ -438,7 +438,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			config.checksumURLs, config.checksumNames, config.checksumExpr, url, config.os, config.arch, t)
 		if err == nil {
 			prediscoveredChecksum = checksumValue
-			config.expectedChecksum = checksumValue
+			// Format checksum with type prefix for later parsing
+			config.expectedChecksum = checksum.FormatChecksum(checksumValue, checksum.HashType(checksumType))
 			if config.checksumType == "" {
 				config.checksumType = checksumType
 			}
@@ -567,7 +568,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
-		config.expectedChecksum = checksumValue
+		// Format checksum with type prefix for later parsing
+		config.expectedChecksum = checksum.FormatChecksum(checksumValue, checksum.HashType(checksumType))
 		if config.checksumType == "" {
 			config.checksumType = checksumType
 		}
@@ -580,7 +582,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
-		config.expectedChecksum = checksumValue
+		// Format checksum with type prefix for later parsing
+		config.expectedChecksum = checksum.FormatChecksum(checksumValue, checksum.HashType(checksumType))
 		if config.checksumType == "" {
 			config.checksumType = checksumType
 		}

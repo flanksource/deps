@@ -194,10 +194,6 @@ def456  other.zip`,
 }
 
 func TestCalculateFileChecksum_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	// Test actual URL download and checksum calculation
 	url := "https://raw.githubusercontent.com/flanksource/deps/main/README.md"
 
