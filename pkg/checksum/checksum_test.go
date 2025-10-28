@@ -7,19 +7,19 @@ import (
 
 func TestEvaluateCELExpression_MapResult(t *testing.T) {
 	tests := []struct {
-		name           string
-		expr           string
-		vars           map[string]interface{}
-		wantValue      string
-		wantHashType   HashType
-		wantURL        string
-		wantErr        bool
-		errContains    string
+		name         string
+		expr         string
+		vars         map[string]interface{}
+		wantValue    string
+		wantHashType HashType
+		wantURL      string
+		wantErr      bool
+		errContains  string
 	}{
 		{
-			name: "valid JSON map with url and checksum",
-			expr: `{'url': 'https://example.com/file.tar.gz', 'checksum': 'sha256:abc123'}`,
-			vars: map[string]interface{}{},
+			name:         "valid JSON map with url and checksum",
+			expr:         `{'url': 'https://example.com/file.tar.gz', 'checksum': 'sha256:abc123'}`,
+			vars:         map[string]interface{}{},
 			wantValue:    "abc123",
 			wantHashType: HashTypeSHA256,
 			wantURL:      "https://example.com/file.tar.gz",
@@ -51,18 +51,18 @@ func TestEvaluateCELExpression_MapResult(t *testing.T) {
 			wantErr:      false,
 		},
 		{
-			name:        "plain checksum string (backward compatibility)",
-			expr:        `'sha256:def4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'`,
-			vars:        map[string]interface{}{},
-			wantValue:   "def4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+			name:         "plain checksum string (backward compatibility)",
+			expr:         `'sha256:def4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'`,
+			vars:         map[string]interface{}{},
+			wantValue:    "def4567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
 			wantHashType: HashTypeSHA256,
-			wantURL:     "",
-			wantErr:     false,
+			wantURL:      "",
+			wantErr:      false,
 		},
 		{
-			name: "invalid result containing structured data",
-			expr: `'url:https://example.com checksum:sha256:abc'`,
-			vars: map[string]interface{}{},
+			name:        "invalid result containing structured data",
+			expr:        `'url:https://example.com checksum:sha256:abc'`,
+			vars:        map[string]interface{}{},
 			wantErr:     true,
 			errContains: "does not look like a valid checksum",
 		},
@@ -158,7 +158,7 @@ def456  other.zip`,
 			wantErr:      false,
 		},
 		{
-			name: "single checksum file",
+			name:         "single checksum file",
 			content:      "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
 			fileURL:      "https://example.com/file.tar.gz",
 			wantValue:    "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",

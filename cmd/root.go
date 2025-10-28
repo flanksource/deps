@@ -37,7 +37,29 @@ var (
 	archOverride   string
 	configFile     string
 	depsConfig     *types.DepsConfig
+	versionInfo    VersionInfo
+	showVersion    bool
 )
+
+type VersionInfo struct {
+	Version string
+	Commit  string
+	Date    string
+	Dirty   string
+}
+
+func SetVersion(version, commit, date, dirty string) {
+	versionInfo = VersionInfo{
+		Version: version,
+		Commit:  commit,
+		Date:    date,
+		Dirty:   dirty,
+	}
+}
+
+func GetVersionInfo() VersionInfo {
+	return versionInfo
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "deps",
@@ -45,7 +67,22 @@ var rootCmd = &cobra.Command{
 	Long: `deps is a CLI tool for managing binary dependencies.
 It can download and install various tools like kubectl, helm, terraform, and more.`,
 	SilenceUsage: true,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Handle --version flag when no subcommand is specified
+		if showVersion {
+			printVersion()
+			return
+		}
+		// Show help if no version flag and no subcommand
+		cmd.Help()
+	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Handle --version flag for subcommands
+		if showVersion {
+			printVersion()
+			os.Exit(0)
+		}
+
 		// Apply clicky flags after command line parsing
 		clicky.Flags.UseFlags()
 
@@ -62,6 +99,17 @@ It can download and install various tools like kubectl, helm, terraform, and mor
 
 		logger.Infof("Installing to %s (%s/%s)", binDir, osOverride, archOverride)
 	},
+}
+
+func printVersion() {
+	dirtyStr := ""
+	if versionInfo.Dirty == "true" {
+		dirtyStr = " (dirty)"
+	}
+	fmt.Printf("deps version %s\n", versionInfo.Version)
+	fmt.Printf("  commit: %s%s\n", versionInfo.Commit, dirtyStr)
+	fmt.Printf("  built: %s\n", versionInfo.Date)
+	fmt.Printf("  platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }
 
 func Execute() error {
@@ -95,6 +143,7 @@ func init() {
 		defaultBinDir = d
 	}
 
+	rootCmd.PersistentFlags().BoolVar(&showVersion, "version", false, "Show version information")
 	rootCmd.PersistentFlags().StringVar(&binDir, "bin-dir", defaultBinDir, "Directory to install binaries")
 	rootCmd.PersistentFlags().StringVar(&appDir, "app-dir", defaultAppDir, "Directory to install directory-mode packages")
 	rootCmd.PersistentFlags().StringVar(&tmpDir, "tmp-dir", os.TempDir(), "Directory for temporary files (will not be cleaned up on exit)")
