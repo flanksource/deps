@@ -12,25 +12,25 @@ A modern dependency manager that goes beyond simple binary installation. `deps` 
 
 ## Features
 
-- **7+ Package Sources**: GitHub (Releases/Tags/Builds), GitLab, Apache, Maven, direct URLs with smart auto-detection
-- **Runtime Auto-Installation**: Auto-install and run Node.js, Python, Java, and PowerShell scripts with dependency management
-- **Embeddable Go Library**: Simple `deps.Install()` and `deps.Run*()` APIs for Go programs
-- **GitHub Action**: Native action with multi-platform support and intelligent caching
-- **Built-in Registry**: Pre-configured defaults for 30+ popular tools (kubectl, helm, jq, yq, kind, postgres, maven, etc.)
-- **CEL Post-Processing**: Complex transformations with `glob()`, `unarchive()`, `move()`, `chmod()` expressions
-- **Lock Files**: Reproducible builds with `deps-lock.yaml` containing resolved versions and checksums
-- **Directory Mode**: Install full applications with symlink management, not just single binaries
-- **Checksum Verification**: Multiple strategies including inline, URL patterns, and CEL expressions
-- **Version Constraints**: Semantic versioning, version pinning, or "latest" resolution with intelligent config merging
+- 📦 **7+ Package Sources**: GitHub (Releases/Tags/Builds), GitLab, Apache, Maven, direct URLs with smart auto-detection
+- 🚀 **Runtime Auto-Installation**: Auto-install and run Node.js, Python, Java, and PowerShell scripts with dependency management
+- 🔌 **Embeddable Go Library**: Simple `deps.Install()` and `deps.Run*()` APIs for Go programs
+- ⚡ **GitHub Action**: Native action with multi-platform support and intelligent caching
+- 🛠️ **Built-in Registry**: Pre-configured defaults for 30+ popular tools (kubectl, helm, jq, yq, kind, postgres, maven, etc.)
+- 🔧 **CEL Post-Processing**: Complex transformations with `glob()`, `unarchive()`, `move()`, `chmod()` expressions
+- 🔒 **Lock Files**: Reproducible builds with `deps-lock.yaml` containing resolved versions and checksums
+- 📁 **Directory Mode**: Install full applications with symlink management, not just single binaries
+- ✅ **Checksum Verification**: Multiple strategies including inline, URL patterns, and CEL expressions
+- 🏷️ **Version Constraints**: Semantic versioning, version pinning, or "latest" resolution with intelligent config merging
 
 ---
 
-## Quickstart
+## 🚀 Quickstart
 
 ### 1. Install deps
 
 <details open>
-<summary><b>Binary Download (Recommended)</b></summary>
+<summary><b>💾 Binary Download (Recommended)</b></summary>
 
 ```bash
 # Linux (amd64)
@@ -55,7 +55,7 @@ Move-Item deps.exe C:\Windows\System32\deps.exe
 </details>
 
 <details>
-<summary><b>Using Go</b></summary>
+<summary><b>🐹 Using Go</b></summary>
 
 ```bash
 go install github.com/flanksource/deps/cmd/deps@latest
@@ -63,7 +63,7 @@ go install github.com/flanksource/deps/cmd/deps@latest
 </details>
 
 <details>
-<summary><b>From Source</b></summary>
+<summary><b>🔨 From Source</b></summary>
 
 ```bash
 git clone https://github.com/flanksource/deps
@@ -74,7 +74,7 @@ sudo mv bin/deps /usr/local/bin/
 </details>
 
 <details>
-<summary><b>Using Homebrew</b></summary>
+<summary><b>🍺 Using Homebrew</b></summary>
 
 ```bash
 # Coming soon
@@ -85,7 +85,7 @@ brew install flanksource/tap/deps
 ### 2. Use deps
 
 <details open>
-<summary><b>CLI</b></summary>
+<summary><b>💻 CLI</b></summary>
 
 ```bash
 # Install multiple tools at once
@@ -100,7 +100,7 @@ deps lock
 </details>
 
 <details>
-<summary><b>GitHub Action</b></summary>
+<summary><b>⚙️ GitHub Action</b></summary>
 
 ```yaml
 - uses: flanksource/deps@v1
@@ -113,7 +113,7 @@ deps lock
 </details>
 
 <details>
-<summary><b>Go Library</b></summary>
+<summary><b>📚 Go Library</b></summary>
 
 ```go
 import "github.com/flanksource/deps"
@@ -131,7 +131,7 @@ result, err := deps.RunPython("script.py", deps.RunOptions{
 
 ---
 
-## Usage: GitHub Action
+## ⚙️ Usage: GitHub Action
 
 The deps GitHub Action automatically installs tools across Linux, macOS, and Windows runners with intelligent caching and parallel downloads.
 
@@ -218,7 +218,7 @@ No manual cache configuration needed!
 
 ---
 
-## Usage: CLI
+## 💻 Usage: CLI
 
 ### Install Tools
 
@@ -294,7 +294,7 @@ deps whoami
 
 ---
 
-## Usage: Go Library
+## 📚 Usage: Go Library
 
 Embed deps functionality directly in your Go applications.
 
@@ -458,12 +458,12 @@ func main() {
 
 ---
 
-## Usage: Runtime Scripts
+## 🏃 Usage: Runtime Scripts
 
 deps can automatically detect, install, and run scripts in various languages.
 
 <details open>
-<summary><b>Node.js</b></summary>
+<summary><b>🟢 Node.js</b></summary>
 
 ```bash
 # Auto-installs Node.js if needed, runs script
@@ -495,7 +495,7 @@ deps automatically runs `npm install` before executing your script.
 </details>
 
 <details>
-<summary><b>Python</b></summary>
+<summary><b>🐍 Python</b></summary>
 
 ```bash
 # Auto-installs Python if needed
@@ -521,7 +521,7 @@ deps automatically runs `pip install -r requirements.txt` before executing your 
 </details>
 
 <details>
-<summary><b>Java</b></summary>
+<summary><b>☕ Java</b></summary>
 
 ```bash
 # Auto-installs JDK, compiles and runs
@@ -539,7 +539,7 @@ deps run --env=CLASSPATH=./lib/* Main.jar
 </details>
 
 <details>
-<summary><b>PowerShell</b></summary>
+<summary><b>💠 PowerShell</b></summary>
 
 ```bash
 # Auto-installs PowerShell Core (cross-platform)
@@ -552,7 +552,7 @@ deps run --runtime-version=">=7.0" advanced.ps1
 
 ---
 
-## Adding Custom Dependencies
+## ➕ Adding Custom Dependencies
 
 ### Basic Package Definition
 
@@ -751,7 +751,7 @@ registry:
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
 ### deps.yaml Structure
 
@@ -844,7 +844,7 @@ deps whoami
 
 ---
 
-## Comparisons
+## 🔄 Comparisons
 
 ### vs. aqua (https://aquaproj.github.io/)
 
@@ -913,7 +913,7 @@ deps whoami
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! Please see our [contributing guidelines](CONTRIBUTING.md) for details.
 
@@ -955,7 +955,7 @@ make test:e2e
 
 ---
 
-## License
+## 📄 License
 
 deps is licensed under the [Apache License 2.0](LICENSE).
 
@@ -963,7 +963,7 @@ Copyright 2024 Flanksource
 
 ---
 
-## Links
+## 🔗 Links
 
 - [GitHub Repository](https://github.com/flanksource/deps)
 - [Issue Tracker](https://github.com/flanksource/deps/issues)
