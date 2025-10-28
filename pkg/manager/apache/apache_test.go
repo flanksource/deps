@@ -90,8 +90,8 @@ var _ = Describe("Apache Manager", func() {
 		Context("with checksum file", func() {
 			It("should build checksum URL", func() {
 				pkg := types.Package{
-					Name:         "maven",
-					URLTemplate:  "https://archive.apache.org/dist/{{.name}}/binaries/{{.asset}}",
+					Name:        "maven",
+					URLTemplate: "https://archive.apache.org/dist/{{.name}}/binaries/{{.asset}}",
 					AssetPatterns: map[string]string{
 						"*": "apache-maven-{{.version}}-bin.tar.gz",
 					},
