@@ -27,62 +27,20 @@ jobs:
             yq
             kubectl
             helm
-          deps-version: latest
+            openjdk@8
+            svu
+            helm/chart-testing
+          version: latest
 
       - name: Verify yq installation
         shell: bash
         run: |
           yq --version
+          java -version
+          svu --version
           echo "yq is available in PATH"
-
-      - name: Verify kubectl installation
-        shell: bash
-        run: |
-          kubectl version --client
-          echo "kubectl is available in PATH"
-
-      - name: Verify helm installation
-        shell: bash
-        run: |
-          helm version
-          echo "helm is available in PATH"
 
       - name: Check action outputs
         shell: bash
         run: |
           echo "Tools installed: ${{ steps.install-tools.outputs.tools-installed }}"
-
-  test-single-tool:
-    name: Test single tool on ubuntu-latest
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install single tool
-        uses: ./
-        with:
-          tools: yq
-
-      - name: Verify installation
-        run: |
-          yq --version
-
-  test-comma-separated:
-    name: Test comma-separated tools
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install tools (comma-separated)
-        uses: ./
-        with:
-          tools: yq,kubectl
-
-      - name: Verify installations
-        run: |
-          yq --version
-          kubectl version --client

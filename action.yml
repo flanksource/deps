@@ -1,28 +1,28 @@
 ---
-name: 'Install Tools with deps'
-description: 'Automatically install development tools using the deps tool'
-author: 'Flanksource'
+name: "Install Tools with deps"
+description: "Automatically install development tools using the deps tool"
+author: "Flanksource"
 
 branding:
-  icon: 'download'
-  color: 'blue'
+  icon: "download"
+  color: "blue"
 
 inputs:
   tools:
-    description: 'List of tools to install (comma-separated or multiline)'
+    description: "List of tools to install (comma-separated or multiline)"
     required: true
-  deps-version:
-    description: 'Version of deps to use (e.g., v1.0.0 or latest)'
+  version:
+    description: "Version of deps to use (e.g., v1.0.0 or latest)"
     required: false
-    default: 'latest'
+    default: "latest"
 
 outputs:
   tools-installed:
-    description: 'JSON array of installed tools with versions'
+    description: "JSON array of installed tools with versions"
     value: ${{ steps.report.outputs.tools-installed }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Setup cache paths
       id: cache-paths
@@ -84,7 +84,7 @@ runs:
             ARCH="arm64"
           fi
 
-          VERSION="${{ inputs.deps-version }}"
+          VERSION="${{ inputs.version }}"
 
           # Download URL
           BASE_URL="https://github.com/flanksource/deps/releases"
