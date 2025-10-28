@@ -89,9 +89,9 @@ runs:
           # Download URL
           BASE_URL="https://github.com/flanksource/deps/releases"
           if [ "$VERSION" == "latest" ]; then
-            DOWNLOAD_URL="$BASE_URL/latest/download/deps_${OS}_${ARCH}"
+            DOWNLOAD_URL="$BASE_URL/latest/download/deps-${OS}-${ARCH}"
           else
-            DOWNLOAD_URL="$BASE_URL/download/${VERSION}/deps_${OS}_${ARCH}"
+            DOWNLOAD_URL="$BASE_URL/download/${VERSION}/deps-${OS}-${ARCH}"
           fi
 
           echo "Downloading from: $DOWNLOAD_URL"
