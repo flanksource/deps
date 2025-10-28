@@ -30,6 +30,7 @@ jobs:
             openjdk@8
             svu
             helm/chart-testing
+            python@3.11
           version: latest
 
       - name: Verify yq installation
@@ -38,7 +39,7 @@ jobs:
           yq --version
           java -version
           svu --version
-          echo "yq is available in PATH"
+          python3 --version
 
       - name: Check action outputs
         shell: bash
