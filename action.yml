@@ -109,7 +109,7 @@ runs:
         echo "$DEPS_BIN" >> $GITHUB_PATH
 
         # Verify deps works
-        "$DEPS_BIN/deps" --version
+        "$DEPS_BIN/deps" --help
 
     - name: Parse and install tools
       id: install
