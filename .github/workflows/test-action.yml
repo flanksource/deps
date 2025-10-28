@@ -32,6 +32,7 @@ jobs:
             helm/chart-testing
             python@3.11
           version: latest
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify yq installation
         shell: bash

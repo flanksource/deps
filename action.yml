@@ -15,6 +15,9 @@ inputs:
     description: "Version of deps to use (e.g., v1.0.0 or latest)"
     required: false
     default: "latest"
+  GITHUB_TOKEN:
+    description: "GitHub token for accessing the API and avoiding rate limit"
+    required: false
 
 outputs:
   tools-installed:
@@ -114,6 +117,8 @@ runs:
     - name: Parse and install tools
       id: install
       shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
       run: |
         TOOLS_INPUT="${{ inputs.tools }}"
         DEPS_BIN="${{ steps.cache-paths.outputs.deps-bin }}/deps"
