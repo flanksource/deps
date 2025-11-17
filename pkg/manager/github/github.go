@@ -337,36 +337,77 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 
 		if asset == nil {
 			logger.V(3).Infof("No matching asset found for pattern: %s", templatedPattern)
-			// Fetch all asset names for enhanced error message
-			availableAssets, err := m.fetchAllReleaseAssets(ctx, owner, repo, tagName)
+			// Fetch all asset names and digests for filtering fallback
+			allAssets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
 			if err != nil {
 				// If we can't get asset list, return a basic error
 				return nil, fmt.Errorf("asset not found: %s", templatedPattern)
 			}
 
-			// Create enhanced asset not found error
+			// Convert to manager.AssetInfo format for filtering
+			filterAssets := make([]manager.AssetInfo, len(allAssets))
+			for i, a := range allAssets {
+				filterAssets[i] = manager.AssetInfo{
+					Name:        a.Name,
+					DownloadURL: a.BrowserDownloadURL,
+					SHA256:      a.SHA256,
+				}
+			}
+
+			// Try iterative filtering as fallback
+			logger.V(3).Infof("Attempting to filter %d assets by platform: %s", len(filterAssets), platformKey)
+			filtered, filterErr := manager.FilterAssetsByPlatform(filterAssets, plat.OS, plat.Arch)
+			if filterErr == nil && len(filtered) == 1 {
+				// Found exactly one asset through filtering - use it
+				logger.Infof("Found asset through iterative filtering: %s", filtered[0].Name)
+				downloadURL = filtered[0].DownloadURL
+				isArchive = isArchiveFile(filtered[0].Name)
+				assetSHA256 = filtered[0].SHA256
+				githubAsset = &types.GitHubAsset{
+					Repo:        pkg.Repo,
+					Tag:         tagName,
+					AssetName:   filtered[0].Name,
+					DownloadURL: filtered[0].DownloadURL,
+				}
+				// Successfully found asset through filtering - continue with download
+				goto assetFound
+			} else if filterErr == nil && len(filtered) > 1 {
+				logger.V(3).Infof("Filtering produced %d candidates, cannot determine which to use", len(filtered))
+			} else if filterErr != nil {
+				logger.V(3).Infof("Filtering failed: %v", filterErr)
+			}
+
+			// Filtering didn't produce a single result - create enhanced error
+			availableAssetNames := make([]string, len(allAssets))
+			for i, a := range allAssets {
+				availableAssetNames[i] = a.Name
+			}
+
 			assetErr := &manager.ErrAssetNotFound{
 				Package:         pkg.Name,
 				AssetPattern:    templatedPattern,
 				Platform:        platformKey,
-				AvailableAssets: availableAssets,
+				AvailableAssets: availableAssetNames,
 			}
 
 			// Enhance the error with available assets and suggestions
-			return nil, manager.EnhanceAssetNotFoundError(pkg.Name, templatedPattern, platformKey, availableAssets, assetErr)
+			return nil, manager.EnhanceAssetNotFoundError(pkg.Name, templatedPattern, platformKey, availableAssetNames, assetErr)
 		}
 
-		// Debug: GitHub found matching asset: %s
-
-		downloadURL = asset.BrowserDownloadURL
-		isArchive = isArchiveFile(asset.Name)
-		assetSHA256 = asset.SHA256 // Store the SHA256 digest from GraphQL
-		githubAsset = &types.GitHubAsset{
-			Repo:        pkg.Repo,
-			Tag:         tagName,
-			AssetName:   asset.Name,
-			AssetID:     asset.ID,
-			DownloadURL: asset.BrowserDownloadURL,
+	assetFound:
+		// Set asset info if we found it via exact match (not filtering)
+		if asset != nil {
+			// Debug: GitHub found matching asset: %s
+			downloadURL = asset.BrowserDownloadURL
+			isArchive = isArchiveFile(asset.Name)
+			assetSHA256 = asset.SHA256 // Store the SHA256 digest from GraphQL
+			githubAsset = &types.GitHubAsset{
+				Repo:        pkg.Repo,
+				Tag:         tagName,
+				AssetName:   asset.Name,
+				AssetID:     asset.ID,
+				DownloadURL: asset.BrowserDownloadURL,
+			}
 		}
 	}
 

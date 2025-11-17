@@ -192,7 +192,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 			continue
 		}
 
-		output = []byte(result.Stdout.String())
+		output = []byte(result.Out())
 		if len(output) > 0 {
 			lastErr = nil
 			break

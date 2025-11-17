@@ -288,22 +288,45 @@ func (m *GitLabReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	}
 
 	if matchedAsset == nil {
-		// Extract available asset names for enhanced error
-		availableAssets := make([]string, 0, len(targetRelease.Assets.Links))
-		for _, asset := range targetRelease.Assets.Links {
-			availableAssets = append(availableAssets, asset.Name)
+		// Convert to manager.AssetInfo format for filtering
+		filterAssets := make([]manager.AssetInfo, len(targetRelease.Assets.Links))
+		for i, asset := range targetRelease.Assets.Links {
+			filterAssets[i] = manager.AssetInfo{
+				Name:        asset.Name,
+				DownloadURL: asset.URL,
+				SHA256:      "", // GitLab doesn't include SHA256 in asset list
+			}
 		}
 
-		// Create enhanced asset not found error
-		assetErr := &manager.ErrAssetNotFound{
-			Package:         pkg.Name,
-			AssetPattern:    assetName,
-			Platform:        plat.String(),
-			AvailableAssets: availableAssets,
+		// Try iterative filtering as fallback
+		filtered, filterErr := manager.FilterAssetsByPlatform(filterAssets, plat.OS, plat.Arch)
+		if filterErr == nil && len(filtered) == 1 {
+			// Found exactly one asset through filtering - use it
+			// Find the matching asset from the original list
+			for _, asset := range targetRelease.Assets.Links {
+				if asset.Name == filtered[0].Name {
+					matchedAsset = &asset
+					break
+				}
+			}
 		}
 
-		// Enhance the error with available assets and suggestions
-		return nil, manager.EnhanceAssetNotFoundError(pkg.Name, assetName, plat.String(), availableAssets, assetErr)
+		// If filtering didn't find a single result, create enhanced error
+		if matchedAsset == nil {
+			availableAssets := make([]string, 0, len(targetRelease.Assets.Links))
+			for _, asset := range targetRelease.Assets.Links {
+				availableAssets = append(availableAssets, asset.Name)
+			}
+
+			assetErr := &manager.ErrAssetNotFound{
+				Package:         pkg.Name,
+				AssetPattern:    assetName,
+				Platform:        plat.String(),
+				AvailableAssets: availableAssets,
+			}
+
+			return nil, manager.EnhanceAssetNotFoundError(pkg.Name, assetName, plat.String(), availableAssets, assetErr)
+		}
 	}
 
 	// Use the matched asset's URL if available, otherwise construct download URL
