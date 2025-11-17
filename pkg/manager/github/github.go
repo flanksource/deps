@@ -372,7 +372,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 				// Successfully found asset through filtering - continue with download
 				goto assetFound
 			} else if filterErr == nil && len(filtered) > 1 {
-				logger.V(3).Infof("Filtering produced %d candidates, cannot determine which to use", len(filtered))
+				logger.V(3).Infof("Filtering produced %d candidates, cannot determine which to use: %v", len(filtered), filtered)
 			} else if filterErr != nil {
 				logger.V(3).Infof("Filtering failed: %v", filterErr)
 			}

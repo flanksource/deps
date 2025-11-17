@@ -27,7 +27,6 @@ jobs:
             yq
             kubectl
             helm
-            openjdk@8
             svu
             helm/chart-testing
             python@3.11
@@ -38,7 +37,6 @@ jobs:
         shell: bash
         run: |
           yq --version
-          java -version
           svu --version
           python3 --version
 
