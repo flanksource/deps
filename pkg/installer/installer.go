@@ -280,7 +280,7 @@ func createGitHubPackage(repo string) types.Package {
 		Manager: "github_release",
 		// Use multiple common asset patterns as fallbacks
 		AssetPatterns: map[string]string{
-			"*": fmt.Sprintf("*%s*{{.os}}*{{.arch}}*", name),
+			"*": "*{{.os}}*{{.arch}}*",
 		},
 	}
 }

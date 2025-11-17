@@ -34,6 +34,7 @@ type Package struct {
 	Repo           string                 `json:"repo,omitempty" yaml:"repo,omitempty"`                       // For GitHub: "owner/repo"
 	URLTemplate    string                 `json:"url_template,omitempty" yaml:"url_template,omitempty"`       // For direct URLs
 	VersionsURL    string                 `json:"versions_url,omitempty" yaml:"versions_url,omitempty"`       // URL to fetch version list (for url manager)
+	VersionsExpr   string                 `json:"versions_expr,omitempty" yaml:"versions_expr,omitempty"`     // CEL expression to extract structured version data from JSON (returns array of {version, url?, checksum?, asset?})
 	AssetPatterns  map[string]string      `json:"asset_patterns,omitempty" yaml:"asset_patterns,omitempty"`   // Platform -> asset pattern
 	ChecksumFile   string                 `json:"checksum_file,omitempty" yaml:"checksum_file,omitempty"`     // Checksum file pattern (comma-separated for multiple files)
 	ChecksumExpr   string                 `json:"checksum_expr,omitempty" yaml:"checksum_expr,omitempty"`     // CEL expression to extract checksum from file contents

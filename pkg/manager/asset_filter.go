@@ -50,10 +50,10 @@ func FilterAssetsByPlatform(assets []AssetInfo, os, arch string) ([]AssetInfo, e
 // filterNonBinaryFiles removes signature files, checksums, and documentation
 func filterNonBinaryFiles(assets []AssetInfo) []AssetInfo {
 	nonBinaryExtensions := []string{
-		".asc", ".sig", ".gpg", // Signature files
+		".asc", ".sig", ".gpg", ".pem", // Signature files
 		".sha1", ".sha256", ".sha512", // Checksum files
 		".md5", ".checksum", // More checksum files
-		".txt", // Text files (often checksums)
+		".txt", ".json", ".yaml", // Text files (often checksums)
 	}
 
 	nonBinaryPrefixes := []string{
@@ -143,7 +143,7 @@ func filterByOS(assets []AssetInfo, os string) ([]AssetInfo, error) {
 func getArchAliases(arch string) []string {
 	aliases := map[string][]string{
 		"amd64": {"amd64", "x86_64", "x64", "i386", "i686", "x86", "386"},
-		"arm64": {"arm64", "aarch64"},
+		"arm64": {"arm64", "aarch64", "arm"},
 		"arm":   {"arm", "armv7", "armv7l"},
 	}
 
