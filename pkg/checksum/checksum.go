@@ -427,6 +427,16 @@ func (g *GitHubReleaseBodyStrategy) Name() string {
 	return "github_release_body"
 }
 
+func ChecksumsMatch(expected, actual string) bool {
+	if strings.Contains(expected, ":") {
+		expected = strings.SplitN(expected, ":", 2)[1]
+	}
+	if strings.Contains(actual, ":") {
+		actual = strings.SplitN(actual, ":", 2)[1]
+	}
+	return strings.EqualFold(expected, actual)
+}
+
 func (g *GitHubReleaseBodyStrategy) FindChecksums(ctx context.Context, resolution *types.Resolution) (map[string]string, error) {
 	// This would require GitHub API access to get the release body
 	// For now, return not implemented
@@ -442,7 +452,7 @@ func VerifyChecksum(filePath, expectedChecksum string) error {
 		return fmt.Errorf("failed to calculate checksum: %w", err)
 	}
 
-	if strings.ToLower(actualValue) != strings.ToLower(expectedValue) {
+	if !ChecksumsMatch(expectedValue, actualValue) {
 		return fmt.Errorf("checksum mismatch for file %s: expected %s:%s, got %s:%s",
 			filepath.Base(filePath), hashType, expectedValue, hashType, actualValue)
 	}
