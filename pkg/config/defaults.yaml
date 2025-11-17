@@ -495,6 +495,21 @@ registry:
             - bin/bq
             - bin/git-credential-gcloud.sh
             - bin/docker-credential-gcloud
+            - bin/gcloud-crc32c
+
+    gke-gcloud-auth-plugin:
+        name: gcloud-auth-plugin
+        manager: url
+
+        versions_url: https://dl.google.com/dl/cloudsdk/channels/rapid/components-2.json
+        versions_expr: |
+            json.components
+                .filter(c, c.id == "gke-gcloud-auth-plugin-" + os + "-" + arch.replaceAll("arm64", "arm").replaceAll("amd64", "x86_64"))
+                .map(c, {
+                    "version": c.version.version_string,
+                    "url": "https://dl.google.com/dl/cloudsdk/channels/rapid/" + c.data.source,
+                    "checksum": "sha256:" + c.data.checksum
+                })
 
     openjdk17:
         name: openjdk

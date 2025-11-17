@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -18,17 +19,27 @@ import (
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
+	"github.com/flanksource/gomplate/v3"
 )
+
+// versionMetadata stores additional metadata for a version
+type versionMetadata struct {
+	URL      string
+	Checksum string
+	Asset    string
+}
 
 // URLManager implements the PackageManager interface for packages with version URLs
 type URLManager struct {
-	client *http.Client
+	client          *http.Client
+	versionMetadata map[string]map[string]*versionMetadata // pkg.Name -> version -> metadata
 }
 
 // NewURLManager creates a new URL manager
 func NewURLManager() *URLManager {
 	return &URLManager{
-		client: depshttp.GetHttpClient(),
+		client:          depshttp.GetHttpClient(),
+		versionMetadata: make(map[string]map[string]*versionMetadata),
 	}
 }
 
@@ -73,10 +84,20 @@ func (m *URLManager) DiscoverVersions(ctx context.Context, pkg types.Package, pl
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
-	// Create versions from JSON data
-	versions, err := m.parseVersions(rawVersions, pkg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse versions: %w", err)
+	// Check if we should use versions_expr for structured version data
+	var versions []types.Version
+	if pkg.VersionsExpr != "" {
+		log.Tracef("Using versions_expr to extract structured version data")
+		versions, err = m.parseVersionsWithExpr(rawVersions, pkg, plat)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse versions with versions_expr: %w", err)
+		}
+	} else {
+		// Create versions from JSON data using standard parsing
+		versions, err = m.parseVersions(rawVersions, pkg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse versions: %w", err)
+		}
 	}
 
 	// Apply version expression filtering if specified
@@ -188,35 +209,131 @@ func (m *URLManager) parseVersionObject(obj map[string]interface{}) types.Versio
 	return ver
 }
 
+// parseVersionsWithExpr uses versions_expr to extract structured version data
+func (m *URLManager) parseVersionsWithExpr(data interface{}, pkg types.Package, plat platform.Platform) ([]types.Version, error) {
+	// Prepare variables for CEL expression
+	vars := map[string]interface{}{
+		"json": data,
+		"os":   plat.OS,
+		"arch": plat.Arch,
+	}
+
+	// Evaluate the versions_expr using gomplate
+	resultStr, err := gomplate.RunTemplate(vars, gomplate.Template{Expression: pkg.VersionsExpr})
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate versions_expr: %w", err)
+	}
+
+	// Try to parse as JSON array
+	// Remove any wrapping quotes from gomplate
+	resultStr = strings.Trim(resultStr, `"'`)
+
+	// Try to convert the result to valid JSON
+	// CEL returns objects without quoted keys or string values, so we need to add them
+	// This is a workaround - FIXME: find a better way to get structured data from CEL
+
+	// Step 1: Add quotes around keys (e.g., {version: → {"version":)
+	// Match pattern: word characters after { or , followed by colon and space
+	reKey := regexp.MustCompile(`([{,]\s*)(\w+):\s`)
+	resultStr = reKey.ReplaceAllString(resultStr, `$1"$2": `)
+
+	// Step 2: Add quotes around string values (including version numbers)
+	// Match pattern: ": value" where value is alphanumeric with special chars like :,/,.,+,-
+	// This matches string values that come after a colon and are not already quoted
+	reValue := regexp.MustCompile(`:\s*([a-zA-Z0-9][\w:/.+-]*)([,}\s])`)
+	resultStr = reValue.ReplaceAllString(resultStr, `: "$1"$2`)
+
+	var versionObjects []map[string]interface{}
+	if err := json.Unmarshal([]byte(resultStr), &versionObjects); err != nil {
+		return nil, fmt.Errorf("versions_expr must return an array of objects (got: %s): %w", resultStr[:min(100, len(resultStr))], err)
+	}
+
+	// Initialize metadata map for this package
+	if m.versionMetadata[pkg.Name] == nil {
+		m.versionMetadata[pkg.Name] = make(map[string]*versionMetadata)
+	}
+
+	// Extract versions and metadata
+	var versions []types.Version
+	for _, obj := range versionObjects {
+		// Extract version (required)
+		versionStr, ok := obj["version"].(string)
+		if !ok || versionStr == "" {
+			continue
+		}
+
+		ver := types.Version{
+			Version:    version.Normalize(versionStr),
+			Tag:        versionStr,
+			Prerelease: isPrerelease(versionStr),
+		}
+
+		// Extract optional metadata
+		metadata := &versionMetadata{}
+		if url, ok := obj["url"].(string); ok {
+			metadata.URL = url
+		}
+		if checksum, ok := obj["checksum"].(string); ok {
+			metadata.Checksum = checksum
+		}
+		if asset, ok := obj["asset"].(string); ok {
+			metadata.Asset = asset
+		}
+
+		// Store metadata if any fields are present
+		if metadata.URL != "" || metadata.Checksum != "" || metadata.Asset != "" {
+			m.versionMetadata[pkg.Name][ver.Version] = metadata
+		}
+
+		versions = append(versions, ver)
+	}
+
+	return versions, nil
+}
+
 // Resolve gets the download URL for a specific version and platform
 func (m *URLManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
 	log := logger.GetLogger()
 
-	if pkg.URLTemplate == "" {
-		return nil, fmt.Errorf("url_template is required for url manager")
-	}
-
 	log.Tracef("URL resolve: package=%s, version=%s, platform=%s", pkg.Name, version, plat.String())
 
-	// Resolve asset pattern if specified
-	asset := ""
-	if len(pkg.AssetPatterns) > 0 {
+	// Check if we have cached metadata from versions_expr
+	var downloadURL, checksum, asset string
+	if pkgMetadata, ok := m.versionMetadata[pkg.Name]; ok {
+		if metadata, ok := pkgMetadata[version]; ok {
+			log.Tracef("Using cached metadata from versions_expr")
+			downloadURL = metadata.URL
+			checksum = metadata.Checksum
+			asset = metadata.Asset
+		}
+	}
+
+	// If no cached URL, use url_template
+	if downloadURL == "" {
+		if pkg.URLTemplate == "" {
+			return nil, fmt.Errorf("url_template is required for url manager when versions_expr doesn't provide URL")
+		}
+
+		// Resolve asset pattern if specified
+		if asset == "" && len(pkg.AssetPatterns) > 0 {
 		assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
 		if err != nil {
 			return nil, err
 		}
 
-		// Template the asset pattern
-		asset, err = depstemplate.TemplateURL(assetPattern, version, plat.OS, plat.Arch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to template asset pattern: %w", err)
+			// Template the asset pattern
+			asset, err = depstemplate.TemplateURL(assetPattern, version, plat.OS, plat.Arch)
+			if err != nil {
+				return nil, fmt.Errorf("failed to template asset pattern: %w", err)
+			}
 		}
-	}
 
-	// Template the URL with asset variable
-	downloadURL, err := m.templateURLWithAsset(pkg.URLTemplate, version, plat, asset)
-	if err != nil {
-		return nil, fmt.Errorf("failed to template URL: %w", err)
+		// Template the URL with asset variable
+		var err error
+		downloadURL, err = m.templateURLWithAsset(pkg.URLTemplate, version, plat, asset)
+		if err != nil {
+			return nil, fmt.Errorf("failed to template URL: %w", err)
+		}
 	}
 
 	resolution := &types.Resolution{
@@ -227,8 +344,11 @@ func (m *URLManager) Resolve(ctx context.Context, pkg types.Package, version str
 		IsArchive:   extract.IsArchive(downloadURL),
 	}
 
-	// Template checksum URL if available
-	if pkg.ChecksumFile != "" {
+	// If we have a cached checksum, use it directly
+	if checksum != "" {
+		resolution.Checksum = checksum
+	} else if pkg.ChecksumFile != "" {
+		// Template checksum URL if available
 		var checksumURL string
 		var err error
 

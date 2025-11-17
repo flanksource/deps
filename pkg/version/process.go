@@ -18,8 +18,8 @@ func buildVersionCheckProcess(
 	isShellCommand bool,
 	versionCommand string,
 	t *task.Task,
-) (clickyExec.Process, error) {
-	p := clickyExec.Process{}
+) (*clickyExec.Process, error) {
+	p := &clickyExec.Process{}
 	p = p.WithTask(t)
 
 	// Check if this is a shell command that needs special handling
@@ -38,8 +38,8 @@ func buildVersionCheckProcess(
 }
 
 // buildShellProcess creates a process for shell commands (with pipes, redirects, etc.)
-func buildShellProcess(versionCommand, binaryPath, mode string, t *task.Task) clickyExec.Process {
-	p := clickyExec.Process{}
+func buildShellProcess(versionCommand, binaryPath, mode string, t *task.Task) *clickyExec.Process {
+	p := &clickyExec.Process{}
 	p = p.WithTask(t)
 
 	if t != nil {
@@ -57,8 +57,8 @@ func buildShellProcess(versionCommand, binaryPath, mode string, t *task.Task) cl
 }
 
 // buildDirectoryModeProcess creates a process for directory mode packages
-func buildDirectoryModeProcess(cmdArgs []string, binaryPath, binDir string, t *task.Task) (clickyExec.Process, error) {
-	p := clickyExec.Process{}
+func buildDirectoryModeProcess(cmdArgs []string, binaryPath, binDir string, t *task.Task) (*clickyExec.Process, error) {
+	p := &clickyExec.Process{}
 	p = p.WithTask(t)
 
 	// Try to resolve the binary path if it's a relative path
