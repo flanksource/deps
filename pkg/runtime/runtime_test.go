@@ -40,7 +40,7 @@ func TestRunPython(t *testing.T) {
 		}
 
 		// Check output
-		stdout := result.Stdout.String()
+		stdout := result.GetStdout()
 		if !strings.Contains(stdout, "Python Runtime Test") {
 			t.Errorf("Expected output to contain 'Python Runtime Test', got: %s", stdout)
 		}
@@ -81,7 +81,7 @@ func TestRunNode(t *testing.T) {
 		}
 
 		// Check output
-		stdout := result.Stdout.String()
+		stdout := result.Out()
 		if !strings.Contains(stdout, "Node.js Runtime Test") {
 			t.Errorf("Expected output to contain 'Node.js Runtime Test', got: %s", stdout)
 		}
@@ -121,14 +121,14 @@ func TestRunJava(t *testing.T) {
 			stderr := ""
 			stdout := ""
 			if result != nil {
-				stderr = result.Stderr.String()
-				stdout = result.Stdout.String()
+				stderr = result.GetStderr()
+				stdout = result.GetOutput()
 			}
 			t.Fatalf("RunJava failed: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
 		}
 
 		// Check output
-		stdout := result.Stdout.String()
+		stdout := result.GetStdout()
 		if !strings.Contains(stdout, "Java Runtime Test") {
 			t.Errorf("Expected output to contain 'Java Runtime Test', got: %s", stdout)
 		}
@@ -169,14 +169,14 @@ func TestRunPowershell(t *testing.T) {
 			stderr := ""
 			stdout := ""
 			if result != nil {
-				stderr = result.Stderr.String()
-				stdout = result.Stdout.String()
+				stderr = result.GetStderr()
+				stdout = result.GetStdout()
 			}
 			t.Fatalf("RunPowershell failed: %v\nStdout: %s\nStderr: %s", err, stdout, stderr)
 		}
 
 		// Check output
-		stdout := result.Stdout.String()
+		stdout := result.GetStdout()
 		if !strings.Contains(stdout, "PowerShell Runtime Test") {
 			t.Errorf("Expected output to contain 'PowerShell Runtime Test', got: %s", stdout)
 		}

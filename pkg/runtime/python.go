@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	clickyExec "github.com/flanksource/clicky/exec"
+	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/task"
 )
 
@@ -49,11 +49,7 @@ func RunPythonWithTask(script string, opts RunOptions, t *task.Task) (*RunResult
 	// Build execution command
 	args := []string{script}
 	args = append(args, opts.Args...)
-	process := clickyExec.Process{
-		Cmd:  runtimeInfo.Path,
-		Args: args,
-	}
-
+	process := clicky.Exec(runtimeInfo.Path, args...)
 	// Apply options
 	if opts.Timeout > 0 {
 		process = process.WithTimeout(opts.Timeout)
@@ -105,10 +101,7 @@ func installPythonDependencies(scriptDir string, opts RunOptions) error {
 	requirementsTxt := filepath.Join(scriptDir, "requirements.txt")
 	if fileExists(requirementsTxt) {
 		// Use pip to install from requirements.txt
-		process := clickyExec.Process{
-			Cmd:  "pip",
-			Args: []string{"install", "-r", requirementsTxt},
-		}
+		process := clicky.Exec("pip", "install", "-r", requirementsTxt)
 
 		if opts.WorkingDir != "" {
 			process = process.WithCwd(opts.WorkingDir)
@@ -116,7 +109,7 @@ func installPythonDependencies(scriptDir string, opts RunOptions) error {
 
 		result := process.Run()
 		if result.Err != nil {
-			return fmt.Errorf("pip install failed: %w\nStderr: %s", result.Err, result.Stderr.String())
+			return result.Err
 		}
 	}
 

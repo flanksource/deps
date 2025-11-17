@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"runtime"
 
-	clickyExec "github.com/flanksource/clicky/exec"
+	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/task"
 )
 
@@ -54,10 +54,7 @@ func RunPowershellWithTask(script string, opts RunOptions, t *task.Task) (*RunRe
 
 	// Build execution command
 	// Use -File to execute script file
-	process := clickyExec.Process{
-		Cmd:  runtimeInfo.Path,
-		Args: []string{"-File", script},
-	}
+	process := clicky.Exec(runtimeInfo.Path, "-File", script)
 
 	// Apply options
 	if opts.Timeout > 0 {
