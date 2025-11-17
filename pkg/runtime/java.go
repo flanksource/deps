@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/flanksource/clicky"
 	clickyExec "github.com/flanksource/clicky/exec"
 	"github.com/flanksource/clicky/task"
 )
@@ -47,17 +48,14 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 	// Determine execution type based on file extension
 	ext := strings.ToLower(filepath.Ext(script))
 
-	var process clickyExec.Process
+	var process *clickyExec.Process
 
 	switch ext {
 	case ".jar":
 		// Execute JAR file
 		args := []string{"-jar", script}
 		args = append(args, opts.Args...)
-		process = clickyExec.Process{
-			Cmd:  runtimeInfo.Path,
-			Args: args,
-		}
+		process = clicky.Exec(runtimeInfo.Path, args...)
 
 	case ".java":
 		// Compile and run Java source file
@@ -71,10 +69,7 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 		scriptDir := filepath.Dir(script)
 		scriptBase := filepath.Base(script)
 
-		compileProcess := clickyExec.Process{
-			Cmd:  javacPath,
-			Args: []string{scriptBase},
-		}
+		compileProcess := clicky.Exec(javacPath, scriptBase)
 
 		if t != nil {
 			compileProcess = compileProcess.WithTask(t)
@@ -95,7 +90,7 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 				Process:        compileResult,
 				RuntimePath:    javacPath,
 				RuntimeVersion: runtimeInfo.Version,
-			}, fmt.Errorf("compilation failed: %w\nStderr: %s", compileResult.Err, compileResult.Stderr.String())
+			}, compileResult.Err
 		}
 
 		// Get class name from filename (without .java extension)
@@ -104,10 +99,7 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 		// Run the compiled class with same working directory
 		args := []string{className}
 		args = append(args, opts.Args...)
-		process = clickyExec.Process{
-			Cmd:  runtimeInfo.Path,
-			Args: args,
-		}
+		process = clicky.Exec(runtimeInfo.Path, args...)
 
 		// Use same working directory for execution
 		if workDir != "" {
@@ -119,10 +111,7 @@ func RunJavaWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 		className := strings.TrimSuffix(filepath.Base(script), ".class")
 		args := []string{className}
 		args = append(args, opts.Args...)
-		process = clickyExec.Process{
-			Cmd:  runtimeInfo.Path,
-			Args: args,
-		}
+		clicky.Exec(runtimeInfo.Path, args...)
 
 	default:
 		return nil, fmt.Errorf("unsupported Java file type: %s (expected .java, .jar, or .class)", ext)

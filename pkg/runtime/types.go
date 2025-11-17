@@ -10,28 +10,28 @@ import (
 type RunOptions struct {
 	// Version constraint (e.g., ">=3.9", "18", "latest")
 	// If empty, uses latest stable version
-	Version string
+	Version string `json:"version,omitempty" flag:"version"`
 
 	// Timeout for script execution
-	Timeout time.Duration
+	Timeout time.Duration `json:"timeout,omitempty" flag:"timeout"`
 
 	// WorkingDir sets the working directory for script execution
-	WorkingDir string
+	WorkingDir string `json:"working_dir,omitempty" flag:"working-dir"`
 
 	// Env provides custom environment variables
-	Env map[string]string
+	Env map[string]string `json:"env,omitempty" flag:"env"`
 
 	// Args provides additional command-line arguments to pass to the script
-	Args []string
+	Args []string `json:"args,omitempty" args:"true"`
 
 	// InstallDeps triggers dependency installation when true
 	// When false, uses smart detection (only install if missing)
-	InstallDeps *bool
+	InstallDeps *bool `json:"install_deps,omitempty" flag:"install" default:"false"`
 }
 
 // RunResult extends exec.Process with runtime-specific metadata
 type RunResult struct {
-	exec.Process
+	*exec.Process
 
 	// RuntimePath is the path to the runtime binary used
 	RuntimePath string

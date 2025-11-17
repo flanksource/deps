@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	clickyExec "github.com/flanksource/clicky/exec"
+	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/installer"
@@ -73,10 +73,7 @@ func (d *runtimeDetector) getVersion(binaryPath string) (string, error) {
 	cmd := append([]string{binaryPath}, d.versionCmd...)
 
 	// Execute command to get version
-	process := clickyExec.Process{
-		Cmd:  cmd[0],
-		Args: cmd[1:],
-	}
+	process := clicky.Exec(cmd[0], cmd[1:]...)
 
 	if d.task != nil {
 		process = process.WithTask(d.task)
@@ -85,15 +82,13 @@ func (d *runtimeDetector) getVersion(binaryPath string) (string, error) {
 	result := process.Run()
 
 	if result.Err != nil {
-		return "", fmt.Errorf("version command failed: %w\nStderr: %s", result.Err, result.Stderr.String())
+		return "", result.Err
 	}
 
-	// Parse version from output
-	output := result.Stdout.String() + result.Stderr.String()
-	versionStr := d.parseVersion(output)
+	versionStr := d.parseVersion(result.Out())
 
 	if versionStr == "" {
-		return "", fmt.Errorf("failed to parse version from output: %s", output)
+		return "", fmt.Errorf("failed to parse version from output: %s", result.Out())
 	}
 
 	return versionStr, nil

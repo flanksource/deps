@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	clickyExec "github.com/flanksource/clicky/exec"
+	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/task"
 )
 
@@ -30,6 +30,9 @@ func RunNodeWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 		return runNpx(script[4:], opts)
 	}
 
+	// Check if this is a TypeScript file
+	isTypeScript := filepath.Ext(script) == ".ts" || filepath.Ext(script) == ".tsx"
+
 	detector := &runtimeDetector{
 		language:       "node",
 		binaryVariants: []string{"node"},
@@ -50,14 +53,34 @@ func RunNodeWithTask(script string, opts RunOptions, t *task.Task) (*RunResult, 
 		return nil, fmt.Errorf("failed to install Node dependencies: %w", err)
 	}
 
-	// Build execution command
-	args := []string{script}
-	args = append(args, opts.Args...)
-	process := clickyExec.Process{
-		Cmd:  runtimeInfo.Path,
-		Args: args,
+	// For TypeScript files, use tsx or ts-node
+	var execPath string
+	var args []string
+
+	if isTypeScript {
+		// Try to find tsx first (faster and more modern)
+		tsxPath, _ := searchPath("tsx")
+		if tsxPath != "" {
+			execPath = tsxPath
+			args = []string{script}
+		} else {
+			// Fall back to ts-node
+			tsNodePath, _ := searchPath("ts-node")
+			if tsNodePath != "" {
+				execPath = tsNodePath
+				args = []string{script}
+			} else {
+				return nil, fmt.Errorf("TypeScript execution requires tsx or ts-node. Install with: npm install -g tsx")
+			}
+		}
+	} else {
+		// Regular JavaScript execution
+		execPath = runtimeInfo.Path
+		args = []string{script}
 	}
 
+	args = append(args, opts.Args...)
+	process := clicky.Exec(execPath, args...)
 	// Apply options
 	if opts.Timeout > 0 {
 		process = process.WithTimeout(opts.Timeout)
@@ -92,10 +115,7 @@ func runNpx(packageAndArgs string, opts RunOptions) (*RunResult, error) {
 		return nil, fmt.Errorf("npx not found in PATH")
 	}
 
-	// Build execution command: npx <package> <args>
-	process := clickyExec.Process{
-		Cmd: npxPath + " " + packageAndArgs, // Shell command for npx
-	}
+	process := clicky.Exec("npx", packageAndArgs)
 
 	// Apply options
 	if opts.Timeout > 0 {
@@ -145,10 +165,7 @@ func installNodeDependencies(scriptDir string, opts RunOptions) error {
 	// Install dependencies with npm
 	packageJSON := filepath.Join(scriptDir, "package.json")
 	if fileExists(packageJSON) {
-		process := clickyExec.Process{
-			Cmd:  "npm",
-			Args: []string{"install"},
-		}
+		process := clicky.Exec("npm", "install")
 
 		if opts.WorkingDir != "" {
 			process = process.WithCwd(opts.WorkingDir)
@@ -158,7 +175,7 @@ func installNodeDependencies(scriptDir string, opts RunOptions) error {
 
 		result := process.Run()
 		if result.Err != nil {
-			return fmt.Errorf("npm install failed: %w\nStderr: %s", result.Err, result.Stderr.String())
+			return result.Err
 		}
 	}
 

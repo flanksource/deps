@@ -292,6 +292,55 @@ deps list
 deps whoami
 ```
 
+### Run Scripts
+
+Execute scripts in multiple languages with automatic runtime detection and installation:
+
+```bash
+# Run Python script
+deps run script.py
+
+# Run JavaScript/Node.js script
+deps run server.js
+
+# Run TypeScript script (requires tsx or ts-node)
+deps run app.ts
+
+# Run Java program (automatically compiles and executes)
+deps run Main.java
+
+# Run PowerShell script
+deps run deploy.ps1
+
+# With version constraint
+deps run --version ">=3.9" script.py
+deps run --version ">=18" server.js
+
+# With timeout
+deps run --timeout 30s script.py
+
+# With environment variables
+deps run --env "API_KEY=secret" --env "DEBUG=true" script.py
+
+# With script arguments
+deps run script.py arg1 arg2
+
+# With custom working directory
+deps run --working-dir /tmp script.js
+
+# Install dependencies automatically
+deps run --install script.py
+```
+
+**Supported Languages:**
+- **Python** (.py) - Auto-installs from requirements.txt
+- **JavaScript** (.js, .mjs, .cjs) - Auto-installs from package.json
+- **TypeScript** (.ts, .tsx) - Requires tsx or ts-node
+- **Java** (.java, .jar, .class) - Auto-compiles .java files
+- **PowerShell** (.ps1) - Uses pwsh or powershell
+
+See [examples/scripts/](examples/scripts/) for example scripts.
+
 ---
 
 ## Usage: Go Library
