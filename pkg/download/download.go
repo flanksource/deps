@@ -629,7 +629,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		}
 
 		// Compare checksums
-		if actualChecksum != config.expectedChecksum {
+		if !checksum.ChecksumsMatch(config.expectedChecksum, actualChecksum) {
 			return fmt.Errorf("checksum mismatch: expected %s, got %s", config.expectedChecksum, actualChecksum)
 		}
 
