@@ -359,7 +359,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			filtered, filterErr := manager.FilterAssetsByPlatform(filterAssets, plat.OS, plat.Arch)
 			if filterErr == nil && len(filtered) == 1 {
 				// Found exactly one asset through filtering - use it
-				logger.Infof("Found asset through iterative filtering: %s", filtered[0].Name)
+				logger.Tracef("Found asset through iterative filtering: %s", filtered[0].Name)
 				downloadURL = filtered[0].DownloadURL
 				isArchive = isArchiveFile(filtered[0].Name)
 				assetSHA256 = filtered[0].SHA256
