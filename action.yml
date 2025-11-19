@@ -94,21 +94,42 @@ runs:
 
           VERSION="${{ inputs.version }}"
 
-          # Download URL
-          BASE_URL="https://github.com/flanksource/deps/releases"
-          if [ "$VERSION" == "latest" ]; then
-            DOWNLOAD_URL="$BASE_URL/latest/download/deps-${OS}-${ARCH}"
+          # Determine archive extension based on OS
+          if [ "$OS" == "windows" ]; then
+            ARCHIVE_EXT=".zip"
           else
-            DOWNLOAD_URL="$BASE_URL/download/${VERSION}/deps-${OS}-${ARCH}"
+            ARCHIVE_EXT=".tar.gz"
           fi
 
+          # Build download URL with archive extension
+          BASE_URL="https://github.com/flanksource/deps/releases"
+          if [ "$VERSION" == "latest" ]; then
+            DOWNLOAD_URL="$BASE_URL/latest/download/deps-${OS}-${ARCH}${ARCHIVE_EXT}"
+          else
+            DOWNLOAD_URL="$BASE_URL/download/${VERSION}/deps-${OS}-${ARCH}${ARCHIVE_EXT}"
+          fi
+
+          # Download archive
+          ARCHIVE_FILE="$DEPS_BIN/deps-archive${ARCHIVE_EXT}"
           echo "Downloading from: $DOWNLOAD_URL"
-          curl -L -o "$DEPS_BIN/deps" "$DOWNLOAD_URL"
+          curl -L -o "$ARCHIVE_FILE" "$DOWNLOAD_URL"
+
+          # Extract binary from archive
+          if [ "$OS" == "windows" ]; then
+            unzip -q "$ARCHIVE_FILE" -d "$DEPS_BIN"
+          else
+            tar -xzf "$ARCHIVE_FILE" -C "$DEPS_BIN"
+          fi
+
+          # Clean up archive
+          rm -f "$ARCHIVE_FILE"
+
+          # Make executable
           chmod +x "$DEPS_BIN/deps"
 
           # Verify installation
           if [ ! -f "$DEPS_BIN/deps" ]; then
-            echo "Failed to download deps binary"
+            echo "Failed to extract deps binary"
             exit 1
           fi
         fi
