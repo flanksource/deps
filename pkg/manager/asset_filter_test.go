@@ -7,444 +7,464 @@ import (
 
 var _ = Describe("Asset Filtering", func() {
 	Describe("filterNonBinaryFiles", func() {
-		It("should filter out signature files", func() {
-			assets := []AssetInfo{
-				{Name: "tool-v1.0.0-linux-amd64"},
-				{Name: "tool-v1.0.0-linux-amd64.asc"},
-				{Name: "tool-v1.0.0-linux-amd64.sig"},
-				{Name: "tool-v1.0.0-linux-amd64.gpg"},
-			}
+		type testCase struct {
+			name     string
+			assets   []string
+			expected []string
+		}
 
-			filtered := filterNonBinaryFiles(assets)
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-v1.0.0-linux-amd64"))
-		})
+		tests := []testCase{
+			{
+				name: "should filter out signature files",
+				assets: []string{
+					"tool-v1.0.0-linux-amd64",
+					"tool-v1.0.0-linux-amd64.asc",
+					"tool-v1.0.0-linux-amd64.sig",
+					"tool-v1.0.0-linux-amd64.gpg",
+				},
+				expected: []string{"tool-v1.0.0-linux-amd64"},
+			},
+			{
+				name: "should filter out checksum files",
+				assets: []string{
+					"tool-linux-amd64",
+					"tool-linux-amd64.sha1",
+					"tool-linux-amd64.sha256",
+					"tool-linux-amd64.sha512",
+					"tool-linux-amd64.md5",
+					"checksums.txt",
+				},
+				expected: []string{"tool-linux-amd64"},
+			},
+			{
+				name: "should filter out documentation files",
+				assets: []string{
+					"binary-darwin-arm64.tar.gz",
+					"README.md",
+					"CHANGELOG.txt",
+					"LICENSE",
+					"COPYING",
+					"AUTHORS",
+				},
+				expected: []string{"binary-darwin-arm64.tar.gz"},
+			},
+			{
+				name: "should keep all binary files",
+				assets: []string{
+					"tool-linux-amd64",
+					"tool-darwin-arm64.tar.gz",
+					"tool-windows-x64.zip",
+				},
+				expected: []string{
+					"tool-linux-amd64",
+					"tool-darwin-arm64.tar.gz",
+					"tool-windows-x64.zip",
+				},
+			},
+		}
 
-		It("should filter out checksum files", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-amd64"},
-				{Name: "tool-linux-amd64.sha1"},
-				{Name: "tool-linux-amd64.sha256"},
-				{Name: "tool-linux-amd64.sha512"},
-				{Name: "tool-linux-amd64.md5"},
-				{Name: "checksums.txt"},
-			}
+		for _, tt := range tests {
+			It(tt.name, func() {
+				var assets []AssetInfo
+				for _, name := range tt.assets {
+					assets = append(assets, AssetInfo{Name: name})
+				}
 
-			filtered := filterNonBinaryFiles(assets)
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-amd64"))
-		})
-
-		It("should filter out documentation files", func() {
-			assets := []AssetInfo{
-				{Name: "binary-darwin-arm64.tar.gz"},
-				{Name: "README.md"},
-				{Name: "CHANGELOG.txt"},
-				{Name: "LICENSE"},
-				{Name: "COPYING"},
-				{Name: "AUTHORS"},
-			}
-
-			filtered := filterNonBinaryFiles(assets)
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("binary-darwin-arm64.tar.gz"))
-		})
-
-		It("should keep all binary files", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-amd64"},
-				{Name: "tool-darwin-arm64.tar.gz"},
-				{Name: "tool-windows-x64.zip"},
-			}
-
-			filtered := filterNonBinaryFiles(assets)
-			Expect(filtered).To(HaveLen(3))
-		})
+				filtered := filterNonBinaryFiles(assets)
+				Expect(filtered).To(HaveLen(len(tt.expected)))
+				for i, exp := range tt.expected {
+					Expect(filtered[i].Name).To(Equal(exp))
+				}
+			})
+		}
 	})
 
 	Describe("getOSAliases", func() {
-		It("should return darwin aliases", func() {
-			aliases := getOSAliases("darwin")
-			Expect(aliases).To(ConsistOf("darwin", "mac", "macos", "osx"))
-		})
+		type testCase struct {
+			name     string
+			os       string
+			expected []string
+		}
 
-		It("should return windows aliases", func() {
-			aliases := getOSAliases("windows")
-			Expect(aliases).To(ConsistOf("windows", "win", "win32", "win64"))
-		})
+		tests := []testCase{
+			{
+				name:     "should return darwin aliases",
+				os:       "darwin",
+				expected: []string{"darwin", "mac", "macos", "osx"},
+			},
+			{
+				name:     "should return windows aliases",
+				os:       "windows",
+				expected: []string{"windows", "win", "win32", "win64"},
+			},
+			{
+				name:     "should return linux aliases",
+				os:       "linux",
+				expected: []string{"linux"},
+			},
+			{
+				name:     "should return unknown OS as-is",
+				os:       "freebsd",
+				expected: []string{"freebsd"},
+			},
+		}
 
-		It("should return linux aliases", func() {
-			aliases := getOSAliases("linux")
-			Expect(aliases).To(ConsistOf("linux"))
-		})
-
-		It("should return unknown OS as-is", func() {
-			aliases := getOSAliases("freebsd")
-			Expect(aliases).To(ConsistOf("freebsd"))
-		})
+		for _, tt := range tests {
+			It(tt.name, func() {
+				aliases := getOSAliases(tt.os)
+				Expect(aliases).To(ConsistOf(tt.expected))
+			})
+		}
 	})
 
 	Describe("filterByOS", func() {
-		It("should filter by darwin using 'darwin' in filename", func() {
-			assets := []AssetInfo{
-				{Name: "tool-darwin-arm64"},
-				{Name: "tool-linux-amd64"},
-				{Name: "tool-windows-x64.exe"},
-			}
+		type testCase struct {
+			name     string
+			assets   []string
+			os       string
+			expected []string
+			wantErr  bool
+		}
 
-			filtered, err := filterByOS(assets, "darwin")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-darwin-arm64"))
-		})
+		tests := []testCase{
+			{
+				name: "should filter by darwin using 'darwin' in filename",
+				assets: []string{
+					"tool-darwin-arm64",
+					"tool-linux-amd64",
+					"tool-windows-x64.exe",
+				},
+				os:       "darwin",
+				expected: []string{"tool-darwin-arm64"},
+			},
+			{
+				name: "should filter by darwin using 'mac' alias",
+				assets: []string{
+					"tool-mac-arm64",
+					"tool-linux-amd64",
+				},
+				os:       "darwin",
+				expected: []string{"tool-mac-arm64"},
+			},
+			{
+				name: "should filter by darwin using 'macos' alias",
+				assets: []string{
+					"tool-macos-amd64.tar.gz",
+					"tool-linux-amd64.tar.gz",
+				},
+				os:       "darwin",
+				expected: []string{"tool-macos-amd64.tar.gz"},
+			},
+			{
+				name: "should filter by windows using 'win' alias",
+				assets: []string{
+					"tool-win-x64.exe",
+					"tool-linux-amd64",
+				},
+				os:       "windows",
+				expected: []string{"tool-win-x64.exe"},
+			},
+			{
+				name: "should be case-insensitive",
+				assets: []string{
+					"Tool-Darwin-ARM64.tar.gz",
+					"Tool-Linux-AMD64.tar.gz",
+				},
+				os:       "darwin",
+				expected: []string{"Tool-Darwin-ARM64.tar.gz"},
+			},
+			{
+				name: "should return all assets if no OS-specific files found (universal binary)",
+				assets: []string{
+					"universal-binary.tar.gz",
+					"another-binary",
+				},
+				os:       "darwin",
+				expected: []string{"universal-binary.tar.gz", "another-binary"},
+			},
+		}
 
-		It("should filter by darwin using 'mac' alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-mac-arm64"},
-				{Name: "tool-linux-amd64"},
-			}
+		for _, tt := range tests {
+			It(tt.name, func() {
+				var assets []AssetInfo
+				for _, name := range tt.assets {
+					assets = append(assets, AssetInfo{Name: name})
+				}
 
-			filtered, err := filterByOS(assets, "darwin")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-mac-arm64"))
-		})
-
-		It("should filter by darwin using 'macos' alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-macos-amd64.tar.gz"},
-				{Name: "tool-linux-amd64.tar.gz"},
-			}
-
-			filtered, err := filterByOS(assets, "darwin")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-macos-amd64.tar.gz"))
-		})
-
-		It("should filter by windows using 'win' alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-win-x64.exe"},
-				{Name: "tool-linux-amd64"},
-			}
-
-			filtered, err := filterByOS(assets, "windows")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-win-x64.exe"))
-		})
-
-		It("should be case-insensitive", func() {
-			assets := []AssetInfo{
-				{Name: "Tool-Darwin-ARM64.tar.gz"},
-				{Name: "Tool-Linux-AMD64.tar.gz"},
-			}
-
-			filtered, err := filterByOS(assets, "darwin")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("Tool-Darwin-ARM64.tar.gz"))
-		})
-
-		It("should return all assets if no OS-specific files found (universal binary)", func() {
-			assets := []AssetInfo{
-				{Name: "universal-binary.tar.gz"},
-				{Name: "another-binary"},
-			}
-
-			filtered, err := filterByOS(assets, "darwin")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(2))
-		})
-	})
-
-	Describe("getArchAliases", func() {
-		It("should return amd64 aliases including x86 variants", func() {
-			aliases := getArchAliases("amd64")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
-		})
-
-		It("should return amd64 aliases for x86_64", func() {
-			aliases := getArchAliases("x86_64")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
-		})
-
-		It("should return amd64 aliases for i386", func() {
-			aliases := getArchAliases("i386")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
-		})
-
-		It("should return amd64 aliases for x86-64", func() {
-			aliases := getArchAliases("x86-64")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
-		})
-
-		It("should return amd64 aliases for 64bit", func() {
-			aliases := getArchAliases("64bit")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
-		})
-
-		It("should return amd64 aliases for 64-bit", func() {
-			aliases := getArchAliases("64-bit")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
-		})
-
-		It("should return arm64 aliases", func() {
-			aliases := getArchAliases("arm64")
-			Expect(aliases).To(ConsistOf("arm64", "aarch64", "arm"))
-		})
-
-		It("should return arm aliases", func() {
-			aliases := getArchAliases("arm")
-			Expect(aliases).To(ConsistOf("arm", "armv7", "armv7l"))
-		})
-
-		It("should return unknown arch as-is", func() {
-			aliases := getArchAliases("riscv64")
-			Expect(aliases).To(ConsistOf("riscv64"))
-		})
+				filtered, err := filterByOS(assets, tt.os)
+				if tt.wantErr {
+					Expect(err).To(HaveOccurred())
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(filtered).To(HaveLen(len(tt.expected)))
+					for i, exp := range tt.expected {
+						Expect(filtered[i].Name).To(Equal(exp))
+					}
+				}
+			})
+		}
 	})
 
 	Describe("filterByArch", func() {
-		It("should filter by amd64", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-amd64"},
-				{Name: "tool-linux-arm64"},
-			}
+		type testCase struct {
+			name     string
+			assets   []string
+			arch     string
+			expected []string
+			wantErr  bool
+		}
 
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-amd64"))
-		})
+		tests := []testCase{
+			{
+				name: "should filter by amd64",
+				assets: []string{
+					"tool-linux-amd64",
+					"tool-linux-arm64",
+				},
+				arch:     "amd64",
+				expected: []string{"tool-linux-amd64"},
+			},
+			{
+				name: "should filter by amd64 using x86_64 alias",
+				assets: []string{
+					"tool-linux-x86_64.tar.gz",
+					"tool-linux-arm64.tar.gz",
+				},
+				arch:     "amd64",
+				expected: []string{"tool-linux-x86_64.tar.gz"},
+			},
+			{
+				name: "should filter by amd64 using x64 alias",
+				assets: []string{
+					"tool-win-x64.exe",
+					"tool-win-arm64.exe",
+				},
+				arch:     "amd64",
+				expected: []string{"tool-win-x64.exe"},
+			},
+			{
+				name: "should filter by amd64 using i386 alias",
+				assets: []string{
+					"tool-linux-i386",
+					"tool-linux-arm",
+				},
+				arch:     "amd64",
+				expected: []string{"tool-linux-i386"},
+			},
+			{
+				name: "should filter by amd64 using x86-64 alias",
+				assets: []string{
+					"tool-linux-x86-64.tar.gz",
+					"tool-linux-arm64.tar.gz",
+				},
+				arch:     "amd64",
+				expected: []string{"tool-linux-x86-64.tar.gz"},
+			},
+			{
+				name: "should filter by amd64 using 64bit alias",
+				assets: []string{
+					"binary-windows-64bit.exe",
+					"binary-windows-arm64.exe",
+				},
+				arch:     "amd64",
+				expected: []string{"binary-windows-64bit.exe"},
+			},
+			{
+				name: "should filter by amd64 using 64-bit alias",
+				assets: []string{
+					"tool-darwin-64-bit",
+					"tool-darwin-arm64",
+				},
+				arch:     "amd64",
+				expected: []string{"tool-darwin-64-bit"},
+			},
+			{
+				name: "should filter by arm64 using aarch64 alias",
+				assets: []string{
+					"tool-linux-aarch64.tar.gz",
+					"tool-linux-x86_64.tar.gz",
+				},
+				arch:     "arm64",
+				expected: []string{"tool-linux-aarch64.tar.gz"},
+			},
+			{
+				name: "should be case-insensitive",
+				assets: []string{
+					"Tool-Linux-AMD64.tar.gz",
+					"Tool-Linux-ARM64.tar.gz",
+				},
+				arch:     "amd64",
+				expected: []string{"Tool-Linux-AMD64.tar.gz"},
+			},
+			{
+				name: "should return all assets if no arch-specific files found (universal binary)",
+				assets: []string{
+					"universal-binary",
+				},
+				arch:     "amd64",
+				expected: []string{"universal-binary"},
+			},
+		}
 
-		It("should filter by amd64 using x86_64 alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-x86_64.tar.gz"},
-				{Name: "tool-linux-arm64.tar.gz"},
-			}
+		for _, tt := range tests {
+			It(tt.name, func() {
+				var assets []AssetInfo
+				for _, name := range tt.assets {
+					assets = append(assets, AssetInfo{Name: name})
+				}
 
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-x86_64.tar.gz"))
-		})
-
-		It("should filter by amd64 using x64 alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-win-x64.exe"},
-				{Name: "tool-win-arm64.exe"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-win-x64.exe"))
-		})
-
-		It("should filter by amd64 using i386 alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-i386"},
-				{Name: "tool-linux-arm"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-i386"))
-		})
-
-		It("should filter by amd64 using x86-64 alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-x86-64.tar.gz"},
-				{Name: "tool-linux-arm64.tar.gz"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-x86-64.tar.gz"))
-		})
-
-		It("should filter by amd64 using 64bit alias", func() {
-			assets := []AssetInfo{
-				{Name: "binary-windows-64bit.exe"},
-				{Name: "binary-windows-arm64.exe"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("binary-windows-64bit.exe"))
-		})
-
-		It("should filter by amd64 using 64-bit alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-darwin-64-bit"},
-				{Name: "tool-darwin-arm64"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-darwin-64-bit"))
-		})
-
-		It("should filter by arm64 using aarch64 alias", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-aarch64.tar.gz"},
-				{Name: "tool-linux-x86_64.tar.gz"},
-			}
-
-			filtered, err := filterByArch(assets, "arm64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-aarch64.tar.gz"))
-		})
-
-		It("should be case-insensitive", func() {
-			assets := []AssetInfo{
-				{Name: "Tool-Linux-AMD64.tar.gz"},
-				{Name: "Tool-Linux-ARM64.tar.gz"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("Tool-Linux-AMD64.tar.gz"))
-		})
-
-		It("should return all assets if no arch-specific files found (universal binary)", func() {
-			assets := []AssetInfo{
-				{Name: "universal-binary"},
-			}
-
-			filtered, err := filterByArch(assets, "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-		})
+				filtered, err := filterByArch(assets, tt.arch)
+				if tt.wantErr {
+					Expect(err).To(HaveOccurred())
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(filtered).To(HaveLen(len(tt.expected)))
+					for i, exp := range tt.expected {
+						Expect(filtered[i].Name).To(Equal(exp))
+					}
+				}
+			})
+		}
 	})
 
 	Describe("FilterAssetsByPlatform", func() {
-		It("should apply all three filtering stages", func() {
-			assets := []AssetInfo{
-				{Name: "tool-v1.0.0-linux-amd64"},
-				{Name: "tool-v1.0.0-linux-amd64.sha256"},
-				{Name: "tool-v1.0.0-linux-arm64"},
-				{Name: "tool-v1.0.0-darwin-amd64"},
-				{Name: "tool-v1.0.0-darwin-arm64"},
-				{Name: "tool-v1.0.0-windows-x64.exe"},
-				{Name: "README.md"},
-			}
+		type testCase struct {
+			name     string
+			assets   []string
+			os       string
+			arch     string
+			expected []string
+			wantErr  bool
+		}
 
-			filtered, err := FilterAssetsByPlatform(assets, "darwin", "arm64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-v1.0.0-darwin-arm64"))
-		})
+		tests := []testCase{
+			{
+				name: "should apply all three filtering stages",
+				assets: []string{
+					"tool-v1.0.0-linux-amd64",
+					"tool-v1.0.0-linux-amd64.sha256",
+					"tool-v1.0.0-linux-arm64",
+					"tool-v1.0.0-darwin-amd64",
+					"tool-v1.0.0-darwin-arm64",
+					"tool-v1.0.0-windows-x64.exe",
+					"README.md",
+				},
+				os:       "darwin",
+				arch:     "arm64",
+				expected: []string{"tool-v1.0.0-darwin-arm64"},
+			},
+			{
+				name: "should work with OS and arch aliases",
+				assets: []string{
+					"kubectl-macos-x86_64.tar.gz",
+					"kubectl-linux-amd64.tar.gz",
+					"kubectl-win-x64.zip",
+				},
+				os:       "darwin",
+				arch:     "amd64",
+				expected: []string{"kubectl-macos-x86_64.tar.gz"},
+			},
+			{
+				name: "should filter checksums and signatures first",
+				assets: []string{
+					"helm-darwin-arm64.tar.gz",
+					"helm-darwin-arm64.tar.gz.sha256",
+					"helm-darwin-arm64.tar.gz.asc",
+					"helm-linux-amd64.tar.gz",
+				},
+				os:       "darwin",
+				arch:     "arm64",
+				expected: []string{"helm-darwin-arm64.tar.gz"},
+			},
+			{
+				name: "should handle i386 mapping to x64",
+				assets: []string{
+					"legacy-tool-linux-i386",
+					"legacy-tool-linux-arm",
+				},
+				os:       "linux",
+				arch:     "amd64",
+				expected: []string{"legacy-tool-linux-i386"},
+			},
+			{
+				name: "should handle i686 mapping to x64",
+				assets: []string{
+					"tool-linux-i686.tar.gz",
+					"tool-linux-armv7.tar.gz",
+				},
+				os:       "linux",
+				arch:     "amd64",
+				expected: []string{"tool-linux-i686.tar.gz"},
+			},
+			{
+				name:    "should return error when no assets provided",
+				assets:  []string{},
+				os:      "darwin",
+				arch:    "arm64",
+				wantErr: true,
+			},
+			{
+				name: "should return error when all assets are non-binary",
+				assets: []string{
+					"checksums.txt",
+					"README.md",
+					"LICENSE",
+				},
+				os:      "darwin",
+				arch:    "arm64",
+				wantErr: true,
+			},
+			{
+				name: "should handle real-world GitHub release assets",
+				assets: []string{
+					"yq_darwin_amd64.tar.gz",
+					"yq_darwin_amd64.tar.gz.sha256",
+					"yq_darwin_arm64.tar.gz",
+					"yq_linux_386.tar.gz",
+					"yq_linux_amd64.tar.gz",
+					"yq_linux_arm.tar.gz",
+					"yq_linux_arm64.tar.gz",
+					"yq_windows_386.zip",
+					"yq_windows_amd64.zip",
+					"checksums",
+					"checksums_hashes_order",
+					"extract-checksum.sh",
+				},
+				os:       "darwin",
+				arch:     "arm64",
+				expected: []string{"yq_darwin_arm64.tar.gz"},
+			},
+			{
+				name: "should handle kubectl-style naming",
+				assets: []string{
+					"kubectl",
+					"kubectl.exe",
+					"kubectl.sha256",
+				},
+				os:       "linux",
+				arch:     "amd64",
+				expected: []string{"kubectl", "kubectl.exe"},
+			},
+		}
 
-		It("should work with OS and arch aliases", func() {
-			assets := []AssetInfo{
-				{Name: "kubectl-macos-x86_64.tar.gz"},
-				{Name: "kubectl-linux-amd64.tar.gz"},
-				{Name: "kubectl-win-x64.zip"},
-			}
+		for _, tt := range tests {
+			It(tt.name, func() {
+				var assets []AssetInfo
+				for _, name := range tt.assets {
+					assets = append(assets, AssetInfo{Name: name})
+				}
 
-			filtered, err := FilterAssetsByPlatform(assets, "darwin", "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("kubectl-macos-x86_64.tar.gz"))
-		})
-
-		It("should filter checksums and signatures first", func() {
-			assets := []AssetInfo{
-				{Name: "helm-darwin-arm64.tar.gz"},
-				{Name: "helm-darwin-arm64.tar.gz.sha256"},
-				{Name: "helm-darwin-arm64.tar.gz.asc"},
-				{Name: "helm-linux-amd64.tar.gz"},
-			}
-
-			filtered, err := FilterAssetsByPlatform(assets, "darwin", "arm64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("helm-darwin-arm64.tar.gz"))
-		})
-
-		It("should handle i386 mapping to x64", func() {
-			assets := []AssetInfo{
-				{Name: "legacy-tool-linux-i386"},
-				{Name: "legacy-tool-linux-arm"},
-			}
-
-			filtered, err := FilterAssetsByPlatform(assets, "linux", "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("legacy-tool-linux-i386"))
-		})
-
-		It("should handle i686 mapping to x64", func() {
-			assets := []AssetInfo{
-				{Name: "tool-linux-i686.tar.gz"},
-				{Name: "tool-linux-armv7.tar.gz"},
-			}
-
-			filtered, err := FilterAssetsByPlatform(assets, "linux", "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("tool-linux-i686.tar.gz"))
-		})
-
-		It("should return error when no assets provided", func() {
-			_, err := FilterAssetsByPlatform([]AssetInfo{}, "darwin", "arm64")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("no assets provided"))
-		})
-
-		It("should return error when all assets are non-binary", func() {
-			assets := []AssetInfo{
-				{Name: "checksums.txt"},
-				{Name: "README.md"},
-				{Name: "LICENSE"},
-			}
-
-			_, err := FilterAssetsByPlatform(assets, "darwin", "arm64")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("no assets found after filtering non-binary files"))
-		})
-
-		It("should handle real-world GitHub release assets", func() {
-			assets := []AssetInfo{
-				{Name: "yq_darwin_amd64.tar.gz"},
-				{Name: "yq_darwin_amd64.tar.gz.sha256"},
-				{Name: "yq_darwin_arm64.tar.gz"},
-				{Name: "yq_linux_386.tar.gz"},
-				{Name: "yq_linux_amd64.tar.gz"},
-				{Name: "yq_linux_arm.tar.gz"},
-				{Name: "yq_linux_arm64.tar.gz"},
-				{Name: "yq_windows_386.zip"},
-				{Name: "yq_windows_amd64.zip"},
-				{Name: "checksums"},
-				{Name: "checksums_hashes_order"},
-				{Name: "extract-checksum.sh"},
-			}
-
-			filtered, err := FilterAssetsByPlatform(assets, "darwin", "arm64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(filtered).To(HaveLen(1))
-			Expect(filtered[0].Name).To(Equal("yq_darwin_arm64.tar.gz"))
-		})
-
-		It("should handle kubectl-style naming", func() {
-			assets := []AssetInfo{
-				{Name: "kubectl"},
-				{Name: "kubectl.exe"},
-				{Name: "kubectl.sha256"},
-			}
-
-			// Without OS/arch in name, should return all binary files
-			filtered, err := FilterAssetsByPlatform(assets, "linux", "amd64")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(len(filtered)).To(BeNumerically(">", 0))
-		})
+				filtered, err := FilterAssetsByPlatform(assets, tt.os, tt.arch)
+				if tt.wantErr {
+					Expect(err).To(HaveOccurred())
+				} else {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(filtered).To(HaveLen(len(tt.expected)))
+					for i, exp := range tt.expected {
+						Expect(filtered[i].Name).To(Equal(exp))
+					}
+				}
+			})
+		}
 	})
 })
