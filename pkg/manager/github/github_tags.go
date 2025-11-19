@@ -199,11 +199,12 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 
 	// Template the asset pattern
 	templatedPattern, err := m.templateString(assetPattern, map[string]string{
-		"name":    pkg.Name,
-		"version": depstemplate.NormalizeVersion(version),
-		"tag":     tag.Name,
-		"os":      plat.OS,
-		"arch":    plat.Arch,
+		"name":               pkg.Name,
+		"version":            version,
+		"normalized_version": depstemplate.NormalizeVersion(version),
+		"tag":                tag.Name,
+		"os":                 plat.OS,
+		"arch":               plat.Arch,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
@@ -214,12 +215,13 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 
 	// Template the URL using the URL template (mandatory for github_tags)
 	downloadURL, err := m.templateString(urlTemplate, map[string]string{
-		"name":    pkg.Name,
-		"version": depstemplate.NormalizeVersion(version),
-		"tag":     tag.Name,
-		"os":      plat.OS,
-		"arch":    plat.Arch,
-		"asset":   templatedPattern,
+		"name":               pkg.Name,
+		"version":            version,
+		"normalized_version": depstemplate.NormalizeVersion(version),
+		"tag":                tag.Name,
+		"os":                 plat.OS,
+		"arch":               plat.Arch,
+		"asset":              templatedPattern,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to template URL: %w", err)

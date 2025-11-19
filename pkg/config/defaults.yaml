@@ -705,7 +705,7 @@ registry:
         name: grafana
         repo: grafana/grafana
         manager: github_tags
-        url_template: "https://grafana.com/api/grafana/versions/{{.version}}"
+        url_template: 'https://grafana.com/api/grafana/versions/{{.version | strings.TrimPrefix "v"}}'
         assets_expr: |
             json.packages.filter(p, p.os == os && p.arch == arch).size() > 0 ? {
                 'url': json.packages.filter(p, p.os == os && p.arch == arch)[0].url,
@@ -746,10 +746,3 @@ registry:
         symlinks:
             - bin/python3
             - bin/pip3
-
-settings:
-    bin_dir: ./bin
-    platform:
-        os: darwin
-        arch: arm64
-    parallel: true
