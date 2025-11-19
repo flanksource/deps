@@ -39,7 +39,7 @@ jobs:
           yq --version
           svu --version
           python3 --version
-          ct version
+          chart-testing version
 
       - name: Check action outputs
         shell: bash
