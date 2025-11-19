@@ -34,22 +34,25 @@ A modern dependency manager that goes beyond simple binary installation. `deps` 
 
 ```bash
 # Linux (amd64)
-curl -L https://github.com/flanksource/deps/releases/latest/download/deps_linux_amd64 -o deps
+curl -L https://github.com/flanksource/deps/releases/latest/download/deps-linux-amd64.tar.gz -o deps.tar.gz
+tar -xf deps.tar.gz
 chmod +x deps
 sudo mv deps /usr/local/bin/
 
 # macOS (Apple Silicon)
-curl -L https://github.com/flanksource/deps/releases/latest/download/deps_darwin_arm64 -o deps
+curl -L https://github.com/flanksource/deps/releases/latest/download/deps-darwin-arm64.tar.gz -o deps.tar.gz
+tar -xf deps.tar.gz
 chmod +x deps
 sudo mv deps /usr/local/bin/
 
 # macOS (Intel)
-curl -L https://github.com/flanksource/deps/releases/latest/download/deps_darwin_amd64 -o deps
+curl -L https://github.com/flanksource/deps/releases/latest/download/deps-darwin-amd64.tar.gz -o deps.tar.gz
+tar -xf deps.tar.gz
 chmod +x deps
 sudo mv deps /usr/local/bin/
 
 # Windows (PowerShell)
-Invoke-WebRequest -Uri https://github.com/flanksource/deps/releases/latest/download/deps_windows_amd64.exe -OutFile deps.exe
+Invoke-WebRequest -Uri https://github.com/flanksource/deps/releases/latest/download/deps-windows-amd64.exe -OutFile deps.exe
 Move-Item deps.exe C:\Windows\System32\deps.exe
 ```
 </details>
@@ -62,25 +65,7 @@ go install github.com/flanksource/deps/cmd/deps@latest
 ```
 </details>
 
-<details>
-<summary><b>From Source</b></summary>
 
-```bash
-git clone https://github.com/flanksource/deps
-cd deps
-make build
-sudo mv bin/deps /usr/local/bin/
-```
-</details>
-
-<details>
-<summary><b>Using Homebrew</b></summary>
-
-```bash
-# Coming soon
-brew install flanksource/tap/deps
-```
-</details>
 
 ### 2. Use deps
 
@@ -201,6 +186,7 @@ jobs:
 |-------|-------------|----------|---------|
 | `tools` | List of tools to install (comma-separated or multiline) | Yes | - |
 | `version` | Version of deps to use (e.g., `v1.0.0` or `latest`) | No | `latest` |
+| `GITHUB_TOKEN` | GitHub token for accessing the API and avoiding rate limit | No | - |
 
 ### Action Outputs
 
@@ -895,6 +881,17 @@ deps whoami
 
 ## Comparisons
 
+### Why deps?
+
+ Choose `deps` when:
+ - **Embeddable Go Library**: You're building Go applications and want to embed tool management directly in your binary.
+ - **Runtime Auto-Installation**: You need to run Node.js, Python, Java, or PowerShell scripts with automatic runtime and dependency installation.
+ - **Complex Transformations**: You need CEL-based post-processing for advanced package manipulation (unarchive, move, chmod, etc.).
+ - **Flexible Sources**: You require packages from diverse sources like Maven, Apache, or GitLab, not just GitHub releases.
+ - **Project-Local**: You prefer explicit, project-local configuration (`deps.yaml`) with reproducible lock files (`deps-lock.yaml`).
+ - **GitHub Action**: You want a native GitHub Action with intelligent caching and multi-platform support.
+
+
 ### vs. aqua (https://aquaproj.github.io/)
 
 **aqua strengths:**
@@ -903,64 +900,30 @@ deps whoami
 - **Lazy Installation**: Tools installed on first use with aqua-proxy
 - **Policy as Code**: Aqua Policy for governance and security controls
 
-**deps strengths:**
-- **Embeddable Go Library**: Use `deps.Install()` directly in Go applications
-- **Runtime Auto-Installation**: Automatic Node.js, Python, Java, PowerShell support with dependency management
-- **CEL Post-Processing**: Powerful transformation pipeline for complex packages
-- **Multiple Sources**: Maven, Apache, GitLab, GitHub builds beyond just GitHub releases
-- **Directory Mode**: Full application installations with symlink management
-- **GitHub Action**: Pre-built action with intelligent caching
+Choose `aqua` when:
+ - You need access to a vast registry of pre-configured packages
+ - Supply chain security verification (SLSA, Cosign) is critical
+ - You want policy-based governance and approval workflows
+ - You prefer lazy installation with proxy execution
 
-**Choose aqua when:**
-- You need access to a vast registry of pre-configured packages
-- Supply chain security verification (SLSA, Cosign) is critical
-- You want policy-based governance and approval workflows
-- You prefer lazy installation with proxy execution
-
-**Choose deps when:**
-- You're embedding tool management in a Go application
-- You need to run Node/Python/Java scripts with auto-install
-- You require flexible package sources beyond GitHub (Maven, Apache, GitLab)
-- You need CEL-based post-processing for complex transformations
-- You're building CI/CD workflows with the GitHub Action
-- You prefer project-local installations with explicit deps.yaml
-
----
 
 ### vs. mise (https://mise.jdx.dev/)
 
-**mise strengths:**
-- **System-Wide Management**: Designed for system-level tool and runtime management
-- **Environment Variables**: Built-in environment variable management per project
-- **asdf Compatibility**: Drop-in replacement for asdf with backend plugin support
-- **Version Files**: Supports .tool-versions, .mise.toml, and language-specific version files
-- **Dev Environment**: Complete development environment management
-- **Tasks**: Built-in task runner similar to Make
+ **mise strengths:**
+ - **System-Wide Management**: Designed for system-level tool and runtime management
+ - **Environment Variables**: Built-in environment variable management per project
+ - **asdf Compatibility**: Drop-in replacement for asdf with backend plugin support
+ - **Version Files**: Supports .tool-versions, .mise.toml, and language-specific version files
+ - **Dev Environment**: Complete development environment management
+ - **Tasks**: Built-in task runner similar to Make
 
-**deps strengths:**
-- **Embeddable in Go**: Use as a library in Go programs, not just a CLI
-- **Project-Local by Default**: Tools installed per-project, not system-wide
-- **GitHub Action Integration**: Native GitHub Actions support with caching
-- **CEL Transformation Pipeline**: Advanced post-processing capabilities
-- **Runtime Scripts**: Auto-install and run Node/Python/Java/PowerShell scripts
-- **Lock Files**: Strong reproducibility with deps-lock.yaml
+Choose `mise` when:
+ - You want system-wide tool version management
+ - You need environment variable management per directory
+ - You're migrating from asdf or need asdf plugin compatibility
+ - You want a task runner integrated with your tool manager
+ - You need support for .tool-versions files and per-directory environments
 
-**Choose mise when:**
-- You want system-wide tool version management
-- You need environment variable management per directory
-- You're migrating from asdf or need asdf plugin compatibility
-- You want a task runner integrated with your tool manager
-- You need support for .tool-versions files and per-directory environments
-
-**Choose deps when:**
-- You're building Go applications that need embedded dependency management
-- You want project-specific tool installations without affecting the system
-- You're using GitHub Actions and want native action support
-- You need to run runtime scripts (Node/Python/Java) with auto-dependency installation
-- You prefer explicit configuration with reproducible lock files
-- You need advanced package transformations with CEL expressions
-
----
 
 ## Contributing
 
@@ -1002,13 +965,6 @@ make test:failed
 make test:e2e
 ```
 
----
-
-## License
-
-deps is licensed under the [Apache License 2.0](LICENSE).
-
-Copyright 2024 Flanksource
 
 ---
 
