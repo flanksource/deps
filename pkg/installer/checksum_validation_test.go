@@ -240,7 +240,7 @@ var _ = Describe("Checksum Validation", func() {
 			foundChecksumLog := false
 			for _, log := range logs {
 				GinkgoWriter.Printf("Log: [%s] %s\n", log.Level, log.Message)
-				if log.Level == logger.Info && strings.Contains(log.Message, "✓ Checksum verified: SHA256:") {
+				if log.Level == logger.Info && strings.Contains(strings.ToLower(log.Message), "✓ checksum verified: sha256:") {
 					foundChecksumLog = true
 					break
 				}

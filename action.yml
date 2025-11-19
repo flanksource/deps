@@ -80,7 +80,7 @@ runs:
           echo "Installing deps binary..."
 
           # Determine platform and architecture
-          OS="${RUNNER_OS,,}"
+          OS=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
           if [ "$OS" == "macos" ]; then
             OS="darwin"
           fi
