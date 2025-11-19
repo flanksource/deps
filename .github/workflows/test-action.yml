@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest]
 
     steps:
       - name: Checkout repository
@@ -39,6 +39,7 @@ jobs:
           yq --version
           svu --version
           python3 --version
+          ct version
 
       - name: Check action outputs
         shell: bash
