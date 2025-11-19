@@ -249,7 +249,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	}
 
 	// Get installed version
-	installedVersion, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionPattern, pathInfo.Mode)
+	installedVersion, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
 	if err != nil {
 		result.Status = types.CheckStatusError
 		result.Error = fmt.Sprintf("Failed to get version: %v", err)
@@ -344,7 +344,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	}
 
 	// Try to get the installed version
-	installedVersion, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionPattern, pathInfo.Mode)
+	installedVersion, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
 	if err != nil {
 		t.V(2).Infof(err.Error())
 		return ""

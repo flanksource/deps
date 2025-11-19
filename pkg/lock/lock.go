@@ -61,7 +61,7 @@ func (g *Generator) Generate(ctx context.Context, deps map[string]string, regist
 		lockFile.Dependencies[name] = types.LockEntry{
 			Version:        "",
 			VersionCommand: pkg.VersionCommand,
-			VersionPattern: pkg.VersionPattern,
+			VersionRegex:   pkg.VersionRegex,
 			Platforms:      make(map[string]types.PlatformEntry),
 		}
 
@@ -216,7 +216,7 @@ func (g *Generator) Update(ctx context.Context, existingLock *types.LockFile, de
 			mergedLock.Dependencies[name] = types.LockEntry{
 				Version:        "",
 				VersionCommand: pkg.VersionCommand,
-				VersionPattern: pkg.VersionPattern,
+				VersionRegex:   pkg.VersionRegex,
 				Platforms:      make(map[string]types.PlatformEntry),
 			}
 		}
@@ -278,7 +278,7 @@ func (g *Generator) resolveDependency(ctx context.Context, pkg types.Package, ve
 	entry := &types.LockEntry{
 		Version:        version,
 		VersionCommand: pkg.VersionCommand,
-		VersionPattern: pkg.VersionPattern,
+		VersionRegex:   pkg.VersionRegex,
 		Platforms:      make(map[string]types.PlatformEntry),
 	}
 
@@ -338,7 +338,7 @@ func (g *Generator) resolveDependencyForPlatform(ctx context.Context, pkg types.
 	entry := &types.LockEntry{
 		Version:        version,
 		VersionCommand: pkg.VersionCommand,
-		VersionPattern: pkg.VersionPattern,
+		VersionRegex:   pkg.VersionRegex,
 		Platforms:      make(map[string]types.PlatformEntry),
 	}
 

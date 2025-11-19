@@ -15,14 +15,14 @@ registry:
             linux-arm64: jq-linux-arm64
             windows-amd64: jq-win64.exe
         version_command: --version
-        version_pattern: jq-(\d+\.\d+)
+        version_regex: jq-(\d+\.\d+)
 
     kubectl:
         name: kubectl
         manager: direct
         url_template: https://storage.googleapis.com/kubernetes-release/release/{{.version}}/bin/{{.os}}/{{.arch}}/kubectl
         version_command: version --client
-        version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
+        version_regex: Client Version:\s*v?(\d+\.\d+\.\d+)
 
     helm:
         name: helm
@@ -36,7 +36,7 @@ registry:
             windows-amd64: helm-{{.version}}-windows-amd64.zip
         checksum_file: helm-{{.version}}-checksums.txt
         version_command: version --short
-        version_pattern: v(\d+\.\d+\.\d+)
+        version_regex: v(\d+\.\d+\.\d+)
 
 settings:
     bin_dir: ./test-bin

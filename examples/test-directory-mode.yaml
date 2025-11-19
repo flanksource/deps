@@ -13,7 +13,7 @@ registry:
       linux-amd64: node-{{.tag}}-linux-x64.tar.gz
       linux-arm64: node-{{.tag}}-linux-arm64.tar.gz
     version_command: bin/node --version
-    version_pattern: v(\d+\.\d+\.\d+)
+    version_regex: v(\d+\.\d+\.\d+)
     symlinks:
       - "bin/*"
 

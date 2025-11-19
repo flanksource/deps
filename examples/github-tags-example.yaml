@@ -8,7 +8,7 @@ registry:
     repo: kubernetes/kubernetes
     url_template: "https://dl.k8s.io/release/{{.tag}}/bin/{{.os}}/{{.arch}}/{{.name}}"
     version_command: "{{.name}} version --client --output yaml"
-    version_pattern: 'gitVersion:\s*v([0-9]+\.[0-9]+\.[0-9]+)'
+    version_regex: 'gitVersion:\s*v([0-9]+\.[0-9]+\.[0-9]+)'
 
   yq:
     manager: github_tags
@@ -22,7 +22,7 @@ registry:
       windows-amd64: "yq_windows_amd64.exe"
     checksum_file: "https://github.com/mikefarah/yq/releases/download/{{.tag}}/checksums"
     version_command: "{{.name}} --version"
-    version_pattern: 'yq\s+(?:version\s+)?v?([0-9]+\.[0-9]+\.[0-9]+)'
+    version_regex: 'yq\s+(?:version\s+)?v?([0-9]+\.[0-9]+\.[0-9]+)'
 
 settings:
   bin_dir: ./bin
