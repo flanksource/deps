@@ -117,7 +117,7 @@ func normalizeOS(os string) string {
 // normalizeArch converts architecture names to standard forms
 func normalizeArch(arch string) string {
 	switch strings.ToLower(arch) {
-	case "x86_64", "x64", "amd64":
+	case "x86_64", "x64", "x86-64", "amd64", "64bit", "64-bit":
 		return "amd64"
 	case "aarch64", "arm64":
 		return "arm64"
