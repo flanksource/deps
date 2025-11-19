@@ -72,7 +72,7 @@ func initRun(cmd *cobra.Command, args []string) error {
 			Manager:        "direct",
 			URLTemplate:    "https://storage.googleapis.com/kubernetes-release/release/{{.version}}/bin/{{.os}}/{{.arch}}/kubectl",
 			VersionCommand: "version --client",
-			VersionPattern: `Client Version:\s*v?(\d+\.\d+\.\d+)`,
+			VersionRegex:   `Client Version:\s*v?(\d+\.\d+\.\d+)`,
 		},
 	}
 

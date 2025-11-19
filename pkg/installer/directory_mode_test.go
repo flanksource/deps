@@ -47,7 +47,7 @@ var _ = Describe("Directory Mode Installation", func() {
 			Mode:           "directory",
 			URLTemplate:    "https://nodejs.org/download/release/{{.tag}}/node-{{.tag}}-{{.os}}-{{.arch}}.tar.gz",
 			VersionCommand: "bin/node --version",
-			VersionPattern: "v(\\d+\\.\\d+\\.\\d+)",
+			VersionRegex:   "v(\\d+\\.\\d+\\.\\d+)",
 		}
 
 		Expect(pkg.Mode).To(Equal("directory"))

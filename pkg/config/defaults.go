@@ -79,8 +79,8 @@ func mergePackage(defaultPkg, userPkg types.Package) types.Package {
 	if userPkg.VersionCommand != "" {
 		merged.VersionCommand = userPkg.VersionCommand
 	}
-	if userPkg.VersionPattern != "" {
-		merged.VersionPattern = userPkg.VersionPattern
+	if userPkg.VersionRegex != "" {
+		merged.VersionRegex = userPkg.VersionRegex
 	}
 	if userPkg.BinaryName != "" {
 		merged.BinaryName = userPkg.BinaryName

@@ -40,7 +40,7 @@ type Package struct {
 	ChecksumExpr   string                 `json:"checksum_expr,omitempty" yaml:"checksum_expr,omitempty"`     // CEL expression to extract checksum from file contents
 	AssetsExpr     string                 `json:"assets_expr,omitempty" yaml:"assets_expr,omitempty"`         // CEL expression for JSON asset discovery (returns {url, checksum})
 	VersionCommand string                 `json:"version_command,omitempty" yaml:"version_command,omitempty"` // Command to get version
-	VersionPattern string                 `json:"version_pattern,omitempty" yaml:"version_pattern,omitempty"` // Regex to extract version
+	VersionRegex   string                 `json:"version_regex,omitempty" yaml:"version_regex,omitempty"`     // Regex to extract version
 	VersionExpr    string                 `json:"version_expr,omitempty" yaml:"version_expr,omitempty"`       // CEL expression to filter and map versions
 	BinaryName     string                 `json:"binary_name,omitempty" yaml:"binary_name,omitempty"`         // Custom binary name
 	BinaryPath     string                 `json:"binary_path,omitempty" yaml:"binary_path,omitempty"`         // Path within archive (supports CEL expressions)
@@ -119,7 +119,7 @@ type PlatformEntry struct {
 type LockEntry struct {
 	Version        string                   `json:"version" yaml:"version"`
 	VersionCommand string                   `json:"version_command,omitempty" yaml:"version_command,omitempty"`
-	VersionPattern string                   `json:"version_pattern,omitempty" yaml:"version_pattern,omitempty"`
+	VersionRegex   string                   `json:"version_regex,omitempty" yaml:"version_regex,omitempty"`
 	Platforms      map[string]PlatformEntry `json:"platforms" yaml:"platforms"`
 	GitHub         *GitHubLockInfo          `json:"github,omitempty" yaml:"github,omitempty"`
 }

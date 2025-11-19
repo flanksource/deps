@@ -3,7 +3,7 @@ dependencies:
     jq:
         version: jq-1.8.1
         version_command: --version
-        version_pattern: jq-(\d+\.\d+)
+        version_regex: jq-(\d+\.\d+)
         platforms:
             darwin-amd64:
                 url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-osx-amd64
@@ -19,7 +19,7 @@ dependencies:
     kubectl:
         version: 1.28.2
         version_command: version --client
-        version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
+        version_regex: Client Version:\s*v?(\d+\.\d+\.\d+)
         platforms:
             darwin-amd64:
                 url: https://storage.googleapis.com/kubernetes-release/release/v1.28.2/bin/darwin/amd64/kubectl
@@ -32,7 +32,7 @@ dependencies:
     helm:
         version: 3.13.3
         version_command: version --short
-        version_pattern: v(\d+\.\d+\.\d+)
+        version_regex: v(\d+\.\d+\.\d+)
         platforms:
             darwin-amd64:
                 url: https://github.com/helm/helm/releases/download/v3.13.3/helm-v3.13.3-darwin-amd64.tar.gz

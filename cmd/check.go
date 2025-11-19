@@ -155,8 +155,8 @@ func runCheckWithTask(args []string, t *task.Task) error {
 			if pkg.VersionCommand != "" {
 				fmt.Printf("  Version command: %s\n", pkg.VersionCommand)
 			}
-			if pkg.VersionPattern != "" {
-				fmt.Printf("  Version pattern: %s\n", pkg.VersionPattern)
+			if pkg.VersionRegex != "" {
+				fmt.Printf("  Version pattern: %s\n", pkg.VersionRegex)
 			}
 		}
 

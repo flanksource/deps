@@ -125,8 +125,8 @@ func checkToolVersion(toolName string, opts VersionOptions, t *task.Task, depsCo
 			if lockEntry.VersionCommand != "" && pkg.VersionCommand == "" {
 				pkg.VersionCommand = lockEntry.VersionCommand
 			}
-			if lockEntry.VersionPattern != "" && pkg.VersionPattern == "" {
-				pkg.VersionPattern = lockEntry.VersionPattern
+			if lockEntry.VersionRegex != "" && pkg.VersionRegex == "" {
+				pkg.VersionRegex = lockEntry.VersionRegex
 			}
 		}
 	}

@@ -2,9 +2,9 @@
 # Uses small, stable packages with known good versions
 
 dependencies:
-  jq: "1.7"        # Stable version, small binary
-  yq: "v4.35.2"    # Stable version, lightweight
-  postgres: "16.1.0"  # Stable PostgreSQL embedded binary from Maven
+  jq: "1.7" # Stable version, small binary
+  yq: "v4.35.2" # Stable version, lightweight
+  postgres: "16.1.0" # Stable PostgreSQL embedded binary from Maven
 
 registry:
   # jq - Small JSON processor with stable releases
@@ -16,7 +16,7 @@ registry:
       darwin-amd64: jq-osx-amd64
       linux-amd64: jq-linux64
     version_command: --version
-    version_pattern: jq-(\d+\.\d+)
+    version_regex: jq-(\d+\.\d+)
 
   # yq - Lightweight YAML processor
   yq:

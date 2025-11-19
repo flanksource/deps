@@ -268,7 +268,7 @@ func getCurrentInstalledVersion(name string, pkg types.Package) (string, error) 
 	outputStr := string(output)
 
 	// Use version pattern from package or default
-	versionPattern := pkg.VersionPattern
+	versionPattern := pkg.VersionRegex
 	if versionPattern == "" {
 		// Default pattern to match semantic versions
 		versionPattern = `v?(\d+\.\d+\.\d+)`

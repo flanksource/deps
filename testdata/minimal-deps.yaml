@@ -10,7 +10,7 @@ registry:
             darwin-amd64: jq-osx-amd64
             linux-amd64: jq-linux64
         version_command: --version
-        version_pattern: jq-(\d+\.\d+)
+        version_regex: jq-(\d+\.\d+)
 
 settings:
     bin_dir: ./test-bin

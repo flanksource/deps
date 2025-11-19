@@ -22,7 +22,7 @@ registry:
             windows-amd64: helm-{{.tag}}-windows-amd64.zip
         checksum_file: https://get.helm.sh/helm-{{.tag}}-{{.os}}-{{.arch}}.tar.gz.sha256sum
         version_command: version --short
-        version_pattern: v(\d+\.\d+\.\d+)
+        version_regex: v(\d+\.\d+\.\d+)
     jq:
         name: jq
         repo: jqlang/jq
@@ -33,13 +33,14 @@ registry:
             linux-arm64: jq-linux-arm64
             windows-amd64: jq-win64.exe
         version_command: --version
-        version_pattern: jq-(\d+\.\d+)
+        version_regex: jq-(\d+\.\d+)
+
     kubectl:
         name: kubectl
         repo: kubernetes/kubernetes
         url_template: https://dl.k8s.io/release/{{.tag}}/bin/{{.os}}/{{.arch}}/kubectl
         version_command: version --client
-        version_pattern: Client Version:\s*v?(\d+\.\d+\.\d+)
+        version_regex: Client Version:\s*v?(\d+\.\d+\.\d+)
 
     commons-lang3:
         name: commons-lang3
@@ -154,7 +155,7 @@ registry:
             linux-arm64: yq_linux_arm64
             windows-amd64: yq_windows_amd64.exe
         version_command: --version
-        version_pattern: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
+        version_regex: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
         checksum_file: checksums,checksums_hashes_order
         checksum_expr: |
             'sha256:' + checksums.split('\n').filter(line, line.startsWith(filename + ' '))[0].replace('  ', ' ').split(' ')[
@@ -169,7 +170,7 @@ registry:
             linux-amd64: svu_{{.version}}_linux_amd64.tar.gz
             linux-arm64: svu_{{.version}}_linux_arm64.tar.gz
         version_command: --version
-        version_pattern: svu\s+version\s+v?(\d+\.\d+\.\d+)
+        version_regex: svu\s+version\s+v?(\d+\.\d+\.\d+)
     canary-checker:
         name: canary-checker
 
@@ -197,7 +198,7 @@ registry:
         checksum_file: trivy_{{.version}}_checksums.txt
         url_template: https://get.trivy.dev/trivy?type=tar.gz&version={{.version}}&os={{.os}}&arch={{.arch}}
         version_command: version
-        version_pattern: .*Version:\s+v?(\d+\.\d+\.\d+)
+        version_regex: .*Version:\s+v?(\d+\.\d+\.\d+)
     postgrest:
         name: postgrest
 
@@ -209,7 +210,7 @@ registry:
             linux-arm64: postgrest-{{.tag}}-ubuntu-aarch64.tar.xz
             windows-amd64: postgrest-{{.tag}}-windows-x86-64.zip
         version_command: --help
-        version_pattern: .*PostgREST\s+v?(\d+\.\d+\.\d+)
+        version_regex: .*PostgREST\s+v?(\d+\.\d+\.\d+)
     wal-g:
         name: wal-g
 
@@ -218,14 +219,14 @@ registry:
             linux-amd64: wal-g-pg-ubuntu-20.04-amd64.tar.gz
             linux-arm64: wal-g-pg-ubuntu-20.04-aarch64.tar.gz
         version_command: --version
-        version_pattern: wal-g\s+version\s+v?(\d+\.\d+\.\d+)
+        version_regex: wal-g\s+version\s+v?(\d+\.\d+\.\d+)
 
     terraform:
         repo: hashicorp/terraform
         url_template: https://releases.hashicorp.com/terraform/{{.version}}/terraform_{{.version}}_{{.os}}_{{.arch}}.zip
         checksum_file: https://releases.hashicorp.com/terraform/{{.version}}/terraform_{{.version}}_SHA256SUMS
         version_command: version
-        version_pattern: Terraform\s+v?(\d+\.\d+\.\d+)
+        version_regex: Terraform\s+v?(\d+\.\d+\.\d+)
     # go-getter:
     #     name: go-getter
     #     manager: direct
@@ -241,7 +242,7 @@ registry:
         url_template: https://releases.hashicorp.com/packer/{{.version}}/packer_{{.version}}_{{.os}}_{{.arch}}.zip
         checksum_file: https://releases.hashicorp.com/packer/{{.version}}/packer_{{.version}}_SHA256SUMS
         version_command: version
-        version_pattern: Packer\s+v?(\d+\.\d+\.\d+)
+        version_regex: Packer\s+v?(\d+\.\d+\.\d+)
     aws-iam-authenticator:
         name: aws-iam-authenticator
         repo: kubernetes-sigs/aws-iam-authenticator
@@ -262,7 +263,7 @@ registry:
             linux-arm64: etcd-{{.tag}}-linux-arm64.tar.gz
             windows-amd64: etcd-{{.tag}}-windows-amd64.zip
         version_command: --version
-        version_pattern: etcd\s+Version:\s+(\d+\.\d+\.\d+)
+        version_regex: etcd\s+Version:\s+(\d+\.\d+\.\d+)
     envtest:
         name: envtest
         repo: kubernetes-sigs/controller-tools
@@ -283,7 +284,7 @@ registry:
         checksum_file: |
             os == "linux" ? "{{.asset}}.sha256" : "https://raw.githubusercontent.com/kubernetes-sigs/controller-tools/master/envtest-releases.yaml"
         version_command: --version
-        version_pattern: GitVersion:"v(\d+\.\d+\.\d+)"
+        version_regex: GitVersion:"v(\d+\.\d+\.\d+)"
     gojsontoyaml:
         name: gojsontoyaml
 
@@ -309,7 +310,7 @@ registry:
             linux-arm64: caddy_{{.version}}_linux_arm64.tar.gz
             windows-amd64: caddy_{{.version}}_windows_amd64.zip
         version_command: version
-        version_pattern: v(\d+\.\d+\.\d+)
+        version_regex: v(\d+\.\d+\.\d+)
 
     firecracker:
         name: firecracker
@@ -326,7 +327,7 @@ registry:
             linux-amd64: node_exporter-{{.version}}.linux-amd64.tar.gz
             linux-arm64: node_exporter-{{.version}}.linux-arm64.tar.gz
         version_command: --version
-        version_pattern: node_exporter.*version\s+(\d+\.\d+\.\d+)
+        version_regex: node_exporter.*version\s+(\d+\.\d+\.\d+)
 
     # Apache Archives packages
     maven-apache:
@@ -336,7 +337,7 @@ registry:
             "*": "apache-maven-{{.version}}-bin.tar.gz"
         checksum_file: "apache-maven-{{.version}}-bin.tar.gz.sha256"
         version_command: "--version"
-        version_pattern: "Apache Maven (\\d+\\.\\d+\\.\\d+)"
+        version_regex: "Apache Maven (\\d+\\.\\d+\\.\\d+)"
         binary_path: "apache-maven-{{.version}}/bin/mvn"
 
     ant:
@@ -349,7 +350,7 @@ registry:
         version_command: bin/ant -version
         symlinks:
             - bin/ant
-        version_pattern: "Apache Ant\\(TM\\) version (\\d+\\.\\d+\\.\\d+)"
+        version_regex: "Apache Ant\\(TM\\) version (\\d+\\.\\d+\\.\\d+)"
 
     prometheus:
         name: prometheus
@@ -358,7 +359,7 @@ registry:
         asset_patterns:
             "*": prometheus-{{.version}}.{{.os}}-{{.arch}}.tar.gz
         version_command: --version
-        version_pattern: prometheus.*version\s+(\d+\.\d+\.\d+)
+        version_regex: prometheus.*version\s+(\d+\.\d+\.\d+)
     registry:
         name: registry
         repo: distribution/distribution
@@ -376,7 +377,7 @@ registry:
             linux-arm64: "binary: Linux arm"
             windows-amd64: "binary: Windows amd64"
         version_command: --version
-        version_pattern: gitlab-runner\s+(\d+\.\d+\.\d+)
+        version_regex: gitlab-runner\s+(\d+\.\d+\.\d+)
         checksum_file: release.sha256
     kubebuilder:
         name: kubebuilder
@@ -390,7 +391,7 @@ registry:
             linux-ppc64le: kubebuilder_linux_ppc64le
             linux-s390x: kubebuilder_linux_s390x
         version_command: version
-        version_pattern: Version:\s*v?(\d+\.\d+\.\d+)
+        version_regex: Version:\s*v?(\d+\.\d+\.\d+)
 
     # System-level development tools
     node:
@@ -404,7 +405,7 @@ registry:
             linux-amd64: node-{{.tag}}-linux-x64.tar.gz
             linux-arm64: node-{{.tag}}-linux-arm64.tar.gz
         version_command: bin/node --version
-        version_pattern: v(\d+\.\d+\.\d+)
+        version_regex: v(\d+\.\d+\.\d+)
         symlinks:
             - bin/node
             - bin/npm
@@ -422,7 +423,7 @@ registry:
             linux-amd64: "{{.version}}.linux-amd64.tar.gz"
             linux-arm64: "{{.version}}.linux-arm64.tar.gz"
         version_command: bin/go version
-        version_pattern: go version go(\d+\.\d+\.\d+)
+        version_regex: go version go(\d+\.\d+\.\d+)
         version_expr: 'tag.startsWith("go") ? tag.substring(2) : tag'
 
     powershell:
@@ -435,7 +436,7 @@ registry:
             linux-amd64: powershell-{{.version}}-linux-x64.tar.gz
             linux-arm64: powershell-{{.version}}-linux-arm64.tar.gz
         version_command: ./pwsh --version
-        version_pattern: PowerShell (\S+)
+        version_regex: PowerShell (\S+)
         post_process:
             - chmod("pwsh", "0755")
         symlinks:
@@ -452,14 +453,14 @@ registry:
             windows-amd64: task_windows_amd64.zip
         checksum_file: task_checksums.txt
         version_command: --version
-        version_pattern: 'Task version:\s+v?(\d+\.\d+\.\d+)'
+        version_regex: 'Task version:\s+v?(\d+\.\d+\.\d+)'
 
     azure-cli:
         repo: Azure/azure-cli
         asset_patterns:
             "*": azure-cli-{{.version}}-x64.zip
         version_command: --version
-        version_pattern: 'azure-cli\s+(\d+\.\d+\.\d+)'
+        version_regex: 'azure-cli\s+(\d+\.\d+\.\d+)'
         version_expr: 'tag.startsWith("azure-cli-") ? tag.substring(10) : tag'
 
     aws-cli:
@@ -473,7 +474,7 @@ registry:
             linux-arm64: awscli-exe-linux-aarch64-{{.tag}}.zip
             windows-amd64: AWSCLIV2-{{.tag}}.msi
         version_command: --version
-        version_pattern: 'aws-cli/(\d+\.\d+\.\d+)'
+        version_regex: 'aws-cli/(\d+\.\d+\.\d+)'
 
     gcloud-cli:
         name: gcloud
@@ -488,7 +489,7 @@ registry:
             linux-arm64: google-cloud-cli-{{.version}}-linux-arm.tar.gz
             windows-amd64: google-cloud-cli-{{.version}}-windows-x86_64.zip
         version_command: gcloud version
-        version_pattern: Google Cloud SDK (\d+\.\d+\.\d+)
+        version_regex: Google Cloud SDK (\d+\.\d+\.\d+)
         symlinks:
             - bin/gcloud
             - bin/gsutil
@@ -521,7 +522,7 @@ registry:
             linux-amd64: OpenJDK17U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK17U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java -version
-        version_pattern: '([\d.]+\+\d+)'
+        version_regex: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
@@ -537,7 +538,7 @@ registry:
             linux-amd64: OpenJDK11U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK11U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java -version
-        version_pattern: '([\d.]+\+\d+)'
+        version_regex: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
@@ -553,7 +554,7 @@ registry:
             linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java -version
-        version_pattern: '([\d.]+\+\d+)'
+        version_regex: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk") ? tag.substring(3).replaceAll("-", "") : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
@@ -569,7 +570,7 @@ registry:
             linux-amd64: OpenJDK21U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK21U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: java -version
-        version_pattern: '([\d.]+\+\d+)'
+        version_regex: '([\d.]+\+\d+)'
         version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : tag'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
@@ -585,7 +586,7 @@ registry:
             linux-amd64: OpenJDK21U-jre_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
             linux-arm64: OpenJDK21U-jre_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
         version_command: bin/java -version
-        version_pattern: '([\d.]+\+\d+)'
+        version_regex: '([\d.]+\+\d+)'
         symlinks:
             - bin/java
 
@@ -606,7 +607,7 @@ registry:
             "*": tomee-{{.version}}/apache-tomee-{{.version}}-plume.zip
         checksum_file: "{{.asset}}.sha512"
         version_command: bash -c 'bin/tomee version 2>/dev/null | grep TomEE'
-        version_pattern: 'Server version:.*TomEE/([\\d\\.]+)'
+        version_regex: 'Server version:.*TomEE/([\\d\\.]+)'
         symlinks:
             - tomee->bin/catalina.sh
         post_process:
@@ -622,7 +623,7 @@ registry:
             "*": apache-activemq-{{.version}}-bin.zip
         checksum_file: "{{.asset}}.sha512"
         version_command: bin/activemq --version
-        version_pattern: 'ActiveMQ\\s+(\\d+\\.\\d+\\.\\d+)'
+        version_regex: 'ActiveMQ\\s+(\\d+\\.\\d+\\.\\d+)'
         symlinks:
             - bin/activemq
         post_process:
@@ -641,7 +642,7 @@ registry:
             "*": apache-artemis-{{.version}}-bin.tar.gz
         checksum_file: apache-artemis-{{.version}}-bin.tar.gz.sha512
         version_command: bin/artemis version
-        version_pattern: 'ActiveMQ Artemis\\s+(\\d+\\.\\d+\\.\\d+)'
+        version_regex: 'ActiveMQ Artemis\\s+(\\d+\\.\\d+\\.\\d+)'
         symlinks:
             - bin/artemis
 
@@ -669,7 +670,7 @@ registry:
         asset_patterns:
             "*": arthas-bin.zip
         version_command: cat VERSION
-        version_pattern: '(\\d+\\.\\d+\\.\\d+)'
+        version_regex: '(\\d+\\.\\d+\\.\\d+)'
         symlinks:
             - as.sh->arthas
 
@@ -687,7 +688,7 @@ registry:
             - bin/opensearch
             - bin/opensearch-plugin
         version_command: bin/opensearch --version
-        version_pattern: 'Version: (\d+\.\d+\.\d+)'
+        version_regex: 'Version: (\d+\.\d+\.\d+)'
 
     loki:
         name: loki
@@ -699,7 +700,7 @@ registry:
             linux-arm64: loki-linux-arm64.zip
             windows-amd64: loki-windows-amd64.exe.zip
         version_command: --version
-        version_pattern: 'loki, version (\d+\.\d+\.\d+)'
+        version_regex: 'loki, version (\d+\.\d+\.\d+)'
 
     grafana:
         name: grafana
@@ -712,7 +713,7 @@ registry:
                 'checksum': 'sha256:' + json.packages.filter(p, p.os == os && p.arch == arch)[0].sha256
             } : {}
         version_command: --version
-        version_pattern: 'Version (\d+\.\d+\.\d+)'
+        version_regex: 'Version (\d+\.\d+\.\d+)'
         binary_path: grafana
 
     localstack:
@@ -725,7 +726,7 @@ registry:
             linux-arm64: localstack-cli-{{.version}}-linux-arm64-onefile.tar.gz
             windows-amd64: localstack-cli-{{.version}}-windows-amd64-onefile.zip
         version_command: --version
-        version_pattern: 'localstack (\d+\.\d+\.\d+)'
+        version_regex: 'localstack (\d+\.\d+\.\d+)'
 
     ginkgo:
         name: ginkgo
@@ -734,7 +735,7 @@ registry:
         extra:
             import_path: github.com/onsi/ginkgo/v2/ginkgo
         version_command: version
-        version_pattern: 'Ginkgo Version (\d+\.\d+\.\d+)'
+        version_regex: 'Ginkgo Version (\d+\.\d+\.\d+)'
 
     python:
         name: python
@@ -742,7 +743,7 @@ registry:
         manager: github_build
         mode: directory
         version_command: bin/python3 --version
-        version_pattern: 'Python (\d+\.\d+\.\d+)'
+        version_regex: 'Python (\d+\.\d+\.\d+)'
         symlinks:
             - bin/python3
             - bin/pip3
