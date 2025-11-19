@@ -161,22 +161,37 @@ var _ = Describe("Asset Filtering", func() {
 	Describe("getArchAliases", func() {
 		It("should return amd64 aliases including x86 variants", func() {
 			aliases := getArchAliases("amd64")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "i386", "i686", "x86", "386"))
+			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
 		})
 
 		It("should return amd64 aliases for x86_64", func() {
 			aliases := getArchAliases("x86_64")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "i386", "i686", "x86", "386"))
+			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
 		})
 
 		It("should return amd64 aliases for i386", func() {
 			aliases := getArchAliases("i386")
-			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "i386", "i686", "x86", "386"))
+			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
+		})
+
+		It("should return amd64 aliases for x86-64", func() {
+			aliases := getArchAliases("x86-64")
+			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
+		})
+
+		It("should return amd64 aliases for 64bit", func() {
+			aliases := getArchAliases("64bit")
+			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
+		})
+
+		It("should return amd64 aliases for 64-bit", func() {
+			aliases := getArchAliases("64-bit")
+			Expect(aliases).To(ConsistOf("amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"))
 		})
 
 		It("should return arm64 aliases", func() {
 			aliases := getArchAliases("arm64")
-			Expect(aliases).To(ConsistOf("arm64", "aarch64"))
+			Expect(aliases).To(ConsistOf("arm64", "aarch64", "arm"))
 		})
 
 		It("should return arm aliases", func() {
@@ -237,6 +252,42 @@ var _ = Describe("Asset Filtering", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(filtered).To(HaveLen(1))
 			Expect(filtered[0].Name).To(Equal("tool-linux-i386"))
+		})
+
+		It("should filter by amd64 using x86-64 alias", func() {
+			assets := []AssetInfo{
+				{Name: "tool-linux-x86-64.tar.gz"},
+				{Name: "tool-linux-arm64.tar.gz"},
+			}
+
+			filtered, err := filterByArch(assets, "amd64")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(filtered).To(HaveLen(1))
+			Expect(filtered[0].Name).To(Equal("tool-linux-x86-64.tar.gz"))
+		})
+
+		It("should filter by amd64 using 64bit alias", func() {
+			assets := []AssetInfo{
+				{Name: "binary-windows-64bit.exe"},
+				{Name: "binary-windows-arm64.exe"},
+			}
+
+			filtered, err := filterByArch(assets, "amd64")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(filtered).To(HaveLen(1))
+			Expect(filtered[0].Name).To(Equal("binary-windows-64bit.exe"))
+		})
+
+		It("should filter by amd64 using 64-bit alias", func() {
+			assets := []AssetInfo{
+				{Name: "tool-darwin-64-bit"},
+				{Name: "tool-darwin-arm64"},
+			}
+
+			filtered, err := filterByArch(assets, "amd64")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(filtered).To(HaveLen(1))
+			Expect(filtered[0].Name).To(Equal("tool-darwin-64-bit"))
 		})
 
 		It("should filter by arm64 using aarch64 alias", func() {

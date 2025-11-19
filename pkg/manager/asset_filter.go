@@ -142,7 +142,7 @@ func filterByOS(assets []AssetInfo, os string) ([]AssetInfo, error) {
 // getArchAliases returns all aliases for a given architecture
 func getArchAliases(arch string) []string {
 	aliases := map[string][]string{
-		"amd64": {"amd64", "x86_64", "x64", "i386", "i686", "x86", "386"},
+		"amd64": {"amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"},
 		"arm64": {"arm64", "aarch64", "arm"},
 		"arm":   {"arm", "armv7", "armv7l"},
 	}
