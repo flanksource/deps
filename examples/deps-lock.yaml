@@ -3,7 +3,7 @@ dependencies:
     jq:
         version: 1.8.0
         version_command: --version
-        version_pattern: jq-(\d+\.\d+)
+        version_regex: jq-(\d+\.\d+)
         platforms:
             darwin-arm64:
                 url: https://github.com/jqlang/jq/releases/download/jq-1.8.0/jq-macos-arm64
@@ -14,7 +14,7 @@ dependencies:
     yq:
         version: v4.16.2
         version_command: --version
-        version_pattern: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
+        version_regex: yq\s+.*version\s+v?(\d+\.\d+\.\d+)
         platforms:
             darwin-arm64:
                 url: https://github.com/mikefarah/yq/releases/download/v4.16.2/yq_darwin_arm64
