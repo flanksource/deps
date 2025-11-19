@@ -693,6 +693,7 @@ registry:
     loki:
         name: loki
         repo: grafana/loki
+        version_expr: 'tag.startsWith("v")' # ignore non-v tags like operator/v0.9.0
         asset_patterns:
             darwin-amd64: loki-darwin-amd64.zip
             darwin-arm64: loki-darwin-arm64.zip

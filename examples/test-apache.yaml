@@ -10,4 +10,4 @@ registry:
             "*": "apache-maven-{{.version}}-bin.tar.gz"
         checksum_file: "apache-maven-{{.version}}-bin.tar.gz.sha256"
         version_command: "--version"
-        version_pattern: "Apache Maven (\\d+\\.\\d+\\.\\d+)"
+        version_regex: "Apache Maven (\\d+\\.\\d+\\.\\d+)"
