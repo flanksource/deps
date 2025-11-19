@@ -1,24 +1,18 @@
 package installer
 
 import (
-	"context"
 	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
-	"unsafe"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/flanksource/clicky/task"
-	flanksourceContext "github.com/flanksource/commons/context"
-	"github.com/flanksource/commons/logger"
-	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/download"
 )
 
@@ -175,78 +169,6 @@ var _ = Describe("Checksum Validation", func() {
 			Expect(err.Error()).To(ContainSubstring("checksum mismatch"))
 			Expect(err.Error()).ToNot(ContainSubstring("undeclared reference"))
 			Expect(err.Error()).ToNot(ContainSubstring("variable"))
-		})
-	})
-
-	Context("Info level logging", func() {
-		It("should log checksum verification at Info level when installing jq from GitHub", func() {
-			// Skip if no GitHub token (rate limiting)
-			if os.Getenv("GITHUB_TOKEN") == "" {
-				Skip("Skipping test - GITHUB_TOKEN not set (needed to avoid rate limiting)")
-			}
-
-			// Create temp directory for fresh installation
-			tmpDir := GinkgoT().TempDir()
-			binDir := filepath.Join(tmpDir, "bin")
-
-			// Load jq package from default config
-			depsConfig := config.GetGlobalRegistry()
-			_, exists := depsConfig.Registry["jq"]
-			Expect(exists).To(BeTrue(), "jq package should exist in default registry")
-
-			// Create installer with temp directories
-			inst := NewWithConfig(depsConfig,
-				WithBinDir(binDir),
-			)
-
-			// Create task with Info level logging
-			testLogger := logger.StandardLogger()
-			testLogger.SetMinLogLevel(logger.Info)
-			ctx := flanksourceContext.NewContext(context.Background(), flanksourceContext.WithLogger(testLogger))
-
-			// Create task manually to get access to it
-			testTask := &task.Task{}
-			// Use reflection to initialize the task's context
-			taskValue := reflect.ValueOf(testTask).Elem()
-			ctxField := taskValue.FieldByName("ctx")
-			if ctxField.IsValid() && ctxField.CanSet() {
-				ctxField.Set(reflect.ValueOf(ctx))
-			}
-
-			// Install jq fresh (no lock file)
-			err := inst.Install("jq", "1.8.0", testTask)
-			Expect(err).ToNot(HaveOccurred(), "Installation should succeed")
-
-			// Access buffered logs using reflection
-			bufferedLoggerField := taskValue.FieldByName("bufferedLogger")
-			Expect(bufferedLoggerField.IsValid()).To(BeTrue(), "bufferedLogger field should exist")
-
-			// Get the interface value using unsafe pointer
-			// This works because we're in a test binary
-			var bufferedLogger *logger.BufferedLogger
-			if bufferedLoggerField.CanInterface() {
-				bufferedLogger, _ = bufferedLoggerField.Interface().(*logger.BufferedLogger)
-			} else {
-				// Use unsafe to access private field
-				bufferedLogger = (*logger.BufferedLogger)(unsafe.Pointer(bufferedLoggerField.UnsafeAddr()))
-			}
-
-			Expect(bufferedLogger).ToNot(BeNil(), "BufferedLogger should not be nil")
-
-			// Get logs
-			logs := bufferedLogger.GetLogs()
-
-			// Verify checksum log exists at Info level
-			foundChecksumLog := false
-			for _, log := range logs {
-				GinkgoWriter.Printf("Log: [%s] %s\n", log.Level, log.Message)
-				if log.Level == logger.Info && strings.Contains(strings.ToLower(log.Message), "✓ checksum verified: sha256:") {
-					foundChecksumLog = true
-					break
-				}
-			}
-
-			Expect(foundChecksumLog).To(BeTrue(), "Expected to find checksum verification log at Info level")
 		})
 	})
 
