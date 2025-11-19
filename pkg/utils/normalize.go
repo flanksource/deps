@@ -20,6 +20,21 @@ func Normalize(version string) string {
 	version = strings.TrimPrefix(version, "v")
 	version = strings.TrimPrefix(version, "V")
 
+	// Strip package name prefix if present (e.g., "jq-1.7" -> "1.7")
+	// Pattern: {word}-{version} or {word}_{version}
+	// Only strip if what follows looks like a version
+	if idx := strings.IndexAny(version, "-_"); idx > 0 {
+		possibleVersion := version[idx+1:]
+		// Check if the part after separator looks like a version
+		if looksLikeVersion(possibleVersion) {
+			version = possibleVersion
+		}
+	}
+
+	// Remove common suffixes
+	version = strings.TrimSuffix(version, "-release")
+	version = strings.TrimSuffix(version, "-Release")
+
 	return version
 }
 
