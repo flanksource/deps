@@ -304,6 +304,32 @@ var _ = Describe("Asset Filtering", func() {
 				arch:     "amd64",
 				expected: []string{"universal-binary"},
 			},
+			{
+				name: "should prefer arm64 over arm when both exist",
+				assets: []string{
+					"yq_linux_arm.tar.gz",
+					"yq_linux_arm64.tar.gz",
+				},
+				arch:     "arm64",
+				expected: []string{"yq_linux_arm64.tar.gz"},
+			},
+			{
+				name: "should fallback to arm when only arm exists and arm64 requested",
+				assets: []string{
+					"tool-linux-arm.tar.gz",
+				},
+				arch:     "arm64",
+				expected: []string{"tool-linux-arm.tar.gz"},
+			},
+			{
+				name: "should prefer aarch64 over arm when both exist",
+				assets: []string{
+					"tool-linux-aarch64.tar.gz",
+					"tool-linux-arm.tar.gz",
+				},
+				arch:     "arm64",
+				expected: []string{"tool-linux-aarch64.tar.gz"},
+			},
 		}
 
 		for _, tt := range tests {

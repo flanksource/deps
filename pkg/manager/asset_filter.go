@@ -143,7 +143,7 @@ func filterByOS(assets []AssetInfo, os string) ([]AssetInfo, error) {
 func getArchAliases(arch string) []string {
 	aliases := map[string][]string{
 		"amd64": {"amd64", "x86_64", "x64", "x86-64", "i386", "i686", "x86", "386", "64bit", "64-bit"},
-		"arm64": {"arm64", "aarch64", "arm"},
+		"arm64": {"arm64", "aarch64"},
 		"arm":   {"arm", "armv7", "armv7l"},
 	}
 
@@ -171,8 +171,12 @@ func filterByArch(assets []AssetInfo, arch string) ([]AssetInfo, error) {
 	}
 
 	aliases := getArchAliases(arch)
-	var filtered []AssetInfo
+	// For arm64, also include "arm" as fallback alias
+	if arch == "arm64" {
+		aliases = append(aliases, "arm")
+	}
 
+	var filtered []AssetInfo
 	for _, asset := range assets {
 		nameLower := strings.ToLower(asset.Name)
 		for _, alias := range aliases {
@@ -188,10 +192,26 @@ func filterByArch(assets []AssetInfo, arch string) ([]AssetInfo, error) {
 		return assets, nil
 	}
 
-	if len(filtered) == 0 {
-		return nil, fmt.Errorf("no assets found matching architecture '%s' (tried: %s)",
-			arch, strings.Join(aliases, ", "))
+	// For arm64, prefer explicit arm64/aarch64 assets over arm-only assets
+	if arch == "arm64" {
+		filtered = preferArm64Assets(filtered)
 	}
 
 	return filtered, nil
+}
+
+// preferArm64Assets filters to prefer arm64/aarch64 assets over arm-only assets.
+// If explicit arm64 assets exist, returns only those. Otherwise returns all (fallback to arm).
+func preferArm64Assets(assets []AssetInfo) []AssetInfo {
+	var arm64Assets []AssetInfo
+	for _, asset := range assets {
+		nameLower := strings.ToLower(asset.Name)
+		if strings.Contains(nameLower, "arm64") || strings.Contains(nameLower, "aarch64") {
+			arm64Assets = append(arm64Assets, asset)
+		}
+	}
+	if len(arm64Assets) > 0 {
+		return arm64Assets
+	}
+	return assets
 }
