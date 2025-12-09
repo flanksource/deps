@@ -96,7 +96,7 @@ func Extract(archivePath, extractDir string, t *task.Task, opts ...ExtractOption
 		return "", fmt.Errorf("failed to extract archive: %w", err)
 	}
 	if t != nil {
-		t.Debugf("Extracted %d files from %s", len(extractResult.Files), filepath.Base(archivePath))
+		t.Infof("%s", extractResult.Pretty().ANSI())
 	}
 
 	// Verify extraction destination

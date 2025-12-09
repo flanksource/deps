@@ -288,7 +288,6 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	if err != nil {
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
-	logger.V(3).Infof("Resolved asset %s", templatedPattern)
 
 	// Debug: GitHub asset pattern templated: %s -> %s
 
@@ -326,8 +325,6 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 
 		// Debug: GitHub templated URL: %s
 	} else {
-		// Find the matching asset using GraphQL with name filter
-		logger.V(3).Infof("Searching for asset: %s", templatedPattern)
 
 		// First try to fetch the asset by exact name using GraphQL
 		asset, err := m.fetchReleaseAssetByName(ctx, owner, repo, tagName, templatedPattern)
@@ -359,7 +356,6 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			filtered, filterErr := manager.FilterAssetsByPlatform(filterAssets, plat.OS, plat.Arch)
 			if filterErr == nil && len(filtered) == 1 {
 				// Found exactly one asset through filtering - use it
-				logger.Tracef("Found asset through iterative filtering: %s", filtered[0].Name)
 				downloadURL = filtered[0].DownloadURL
 				isArchive = isArchiveFile(filtered[0].Name)
 				assetSHA256 = filtered[0].SHA256
@@ -439,6 +435,9 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		logger.Infof("\033[31mNo digest available from GraphQL for asset %s (repo: %s, tag: %s) - will try checksum files\033[0m",
 			githubAsset.AssetName, githubAsset.Repo, githubAsset.Tag)
 	}
+
+	// Find the matching asset using GraphQL with name filter
+	logger.Debugf("Resolved %s", resolution.Pretty().ANSI())
 
 	return resolution, nil
 }

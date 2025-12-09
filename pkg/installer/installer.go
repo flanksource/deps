@@ -310,7 +310,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return fmt.Errorf("failed to get package manager for %s: %w", name, err)
 	}
 
-	t.Debugf("Install: selected package manager %s for package %s", mgr.Name(), name)
+	t.Tracef("Install: selected package manager %s for package %s", mgr.Name(), name)
 
 	// Step 1: Resolve and validate version
 	resolvedVersion, alreadyInstalled, err := i.resolveAndValidateVersion(ctx, mgr, name, version, pkg, t)

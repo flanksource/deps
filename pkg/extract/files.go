@@ -18,7 +18,10 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/samber/lo"
 
+	"github.com/flanksource/clicky/api"
+	"github.com/flanksource/clicky/api/icons"
 	"github.com/flanksource/commons/logger"
 	"github.com/ulikunitz/xz"
 )
@@ -38,6 +41,30 @@ type Archive struct {
 	CompressedSize   int64   // Size of the archive file
 	ExtractedSize    int64   // Total size of extracted content
 	CompressionRatio float64 // Ratio of extracted to compressed size
+}
+
+func (a Archive) Pretty() api.Text {
+	t := api.Text{}.Append(filepath.Base(a.Source)).Append(icons.ArrowDoubleRight, "text-muted").Space().Append(a.Destination, "bold")
+	if len(a.Files) > 3 {
+		t = t.Append(fmt.Sprintf(" (%d files)", len(a.Files)), "text-muted")
+	} else {
+		files := a.Files
+		if len(files) > 3 {
+			files = a.Files[:3]
+		}
+		for _, file := range files {
+			t = t.NewLine().Space().Add(icons.Circle).Space().Append(file)
+			if lo.Contains(a.Overwritten, file) {
+				t = t.Append(" (overwritten)", "text-red-500")
+			}
+		}
+	}
+
+	for _, err := range a.Errors {
+		t = t.NewLine().Space().Append("Error: "+err.Error(), "text-red-500")
+	}
+
+	return t
 }
 
 // UnarchiveOptions configures archive extraction behavior
@@ -241,7 +268,7 @@ func Unarchive(src, dest string, options ...UnarchiveOption) (*Archive, error) {
 		option(opts)
 	}
 
-	logger.Debugf("Unarchiving %s to %s (overwrite=%v)", src, dest, opts.Overwrite)
+	logger.Tracef("Unarchiving %s to %s (overwrite=%v)", src, dest, opts.Overwrite)
 	if strings.HasSuffix(src, ".zip") || strings.HasSuffix(src, ".jar") {
 		return unzipWithResult(src, dest, opts)
 	} else if IsTar(src) {
