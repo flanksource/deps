@@ -18,7 +18,10 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/samber/lo"
 
+	"github.com/flanksource/clicky/api"
+	"github.com/flanksource/clicky/api/icons"
 	"github.com/flanksource/commons/logger"
 	"github.com/ulikunitz/xz"
 )
@@ -38,6 +41,30 @@ type Archive struct {
 	CompressedSize   int64   // Size of the archive file
 	ExtractedSize    int64   // Total size of extracted content
 	CompressionRatio float64 // Ratio of extracted to compressed size
+}
+
+func (a Archive) Pretty() api.Text {
+	t := api.Text{}.Append(filepath.Base(a.Source)).Append(icons.ArrowDoubleRight, "text-muted").Space().Append(a.Destination, "bold")
+	if len(a.Files) > 3 {
+		t = t.Append(fmt.Sprintf(" (%d files)", len(a.Files)), "text-muted")
+	} else {
+		files := a.Files
+		if len(files) > 3 {
+			files = a.Files[:3]
+		}
+		for _, file := range files {
+			t = t.NewLine().Space().Add(icons.Circle).Space().Append(file)
+			if lo.Contains(a.Overwritten, file) {
+				t = t.Append(" (overwritten)", "text-red-500")
+			}
+		}
+	}
+
+	for _, err := range a.Errors {
+		t = t.NewLine().Space().Append("Error: "+err.Error(), "text-red-500")
+	}
+
+	return t
 }
 
 // UnarchiveOptions configures archive extraction behavior
@@ -241,7 +268,7 @@ func Unarchive(src, dest string, options ...UnarchiveOption) (*Archive, error) {
 		option(opts)
 	}
 
-	logger.Debugf("Unarchiving %s to %s (overwrite=%v)", src, dest, opts.Overwrite)
+	logger.Tracef("Unarchiving %s to %s (overwrite=%v)", src, dest, opts.Overwrite)
 	if strings.HasSuffix(src, ".zip") || strings.HasSuffix(src, ".jar") {
 		return unzipWithResult(src, dest, opts)
 	} else if IsTar(src) {
@@ -289,7 +316,7 @@ func Unxz(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// decompress buffer and write output to stdout
 	r, err := xz.NewReader(reader)
@@ -300,7 +327,7 @@ func Unxz(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 	if _, err = io.Copy(writer, r); err != nil {
 		return err
 	}
@@ -313,20 +340,20 @@ func Ungzip(source, target string) error {
 	if err != nil {
 		return err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	archive, err := gzip.NewReader(reader)
 	if err != nil {
 		return err
 	}
-	defer archive.Close()
+	defer func() { _ = archive.Close() }()
 
 	target = filepath.Join(target, archive.Name)
 	writer, err := os.Create(target)
 	if err != nil {
 		return err
 	}
-	defer writer.Close()
+	defer func() { _ = writer.Close() }()
 
 	_, err = io.Copy(writer, archive)
 	return err
@@ -369,7 +396,7 @@ func unzipWithResult(src, dest string, opts *UnarchiveOptions) (*Archive, error)
 	if err != nil {
 		return archive, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return archive, fmt.Errorf("failed to create target directory %s: %w", absDest, err)
@@ -380,7 +407,7 @@ func unzipWithResult(src, dest string, opts *UnarchiveOptions) (*Archive, error)
 	if err != nil {
 		return archive, fmt.Errorf("failed to open target directory as root %s: %w", absDest, err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 
 	for _, f := range r.File {
 		if err := ValidatePath(f.Name); err != nil {
@@ -553,7 +580,7 @@ func UntarWithFilterAndResult(tarball, target string, filter FileFilter, opts *U
 	if err != nil {
 		return archive, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	reader = file
 
 	// Detect and handle compression
@@ -582,7 +609,7 @@ func UntarWithFilterAndResult(tarball, target string, filter FileFilter, opts *U
 	if err != nil {
 		return archive, fmt.Errorf("failed to open target directory as root %s: %w", absTarget, err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 
 	for {
 		header, err := tarReader.Next()
@@ -774,13 +801,13 @@ func Copy(src string, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 
 	destination, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer destination.Close()
+	defer func() { _ = destination.Close() }()
 	_, err = io.Copy(destination, source)
 	return err
 }
@@ -794,7 +821,7 @@ func CopyFromReader(src io.Reader, dst string, mode os.FileMode) (int64, error) 
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	nBytes, err := io.Copy(f, src)
 	return nBytes, err
 }
@@ -840,10 +867,10 @@ func Zip(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	w := zip.NewWriter(f)
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 
 	walker := func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -856,7 +883,7 @@ func Zip(src, dst string) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		f, err := w.Create(path)
 		if err != nil {

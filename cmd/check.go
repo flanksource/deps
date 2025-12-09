@@ -227,11 +227,11 @@ func displayCheckResults(results []types.CheckResult, summary types.CheckSummary
 
 	// Print header
 	if hasChecksums {
-		fmt.Fprintln(w, "Tool\tInstalled\tExpected\tStatus\tChecksum")
-		fmt.Fprintln(w, "────\t─────────\t────────\t──────\t────────")
+		_, _ = fmt.Fprintln(w, "Tool\tInstalled\tExpected\tStatus\tChecksum")
+		_, _ = fmt.Fprintln(w, "────\t─────────\t────────\t──────\t────────")
 	} else {
-		fmt.Fprintln(w, "Tool\tInstalled\tExpected\tStatus")
-		fmt.Fprintln(w, "────\t─────────\t────────\t──────")
+		_, _ = fmt.Fprintln(w, "Tool\tInstalled\tExpected\tStatus")
+		_, _ = fmt.Fprintln(w, "────\t─────────\t────────\t──────")
 	}
 
 	// Print results
@@ -260,13 +260,13 @@ func displayCheckResults(results []types.CheckResult, summary types.CheckSummary
 
 		if hasChecksums {
 			checksumStatus := verify.FormatChecksumStatus(result.ChecksumStatus)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", result.Tool, installed, expected, status, checksumStatus)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", result.Tool, installed, expected, status, checksumStatus)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", result.Tool, installed, expected, status)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", result.Tool, installed, expected, status)
 		}
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	// Print summary
 	fmt.Printf("\nSummary:\n")

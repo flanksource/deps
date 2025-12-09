@@ -40,7 +40,7 @@ var _ = Describe("URL Manager", func() {
 			It("should parse versions from JSON array", func() {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					versions := []string{"1.0.0", "1.1.0", "2.0.0"}
-					json.NewEncoder(w).Encode(versions)
+					_ = json.NewEncoder(w).Encode(versions)
 				}))
 				defer server.Close()
 
@@ -60,7 +60,7 @@ var _ = Describe("URL Manager", func() {
 			It("should respect limit parameter", func() {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					versions := []string{"1.0.0", "1.1.0", "2.0.0", "3.0.0"}
-					json.NewEncoder(w).Encode(versions)
+					_ = json.NewEncoder(w).Encode(versions)
 				}))
 				defer server.Close()
 
@@ -82,7 +82,7 @@ var _ = Describe("URL Manager", func() {
 						{"version": "1.0.0", "tag": "v1.0.0"},
 						{"version": "2.0.0", "tag": "v2.0.0", "prerelease": true},
 					}
-					json.NewEncoder(w).Encode(versions)
+					_ = json.NewEncoder(w).Encode(versions)
 				}))
 				defer server.Close()
 
@@ -129,7 +129,7 @@ var _ = Describe("URL Manager", func() {
 
 			It("should error on invalid JSON", func() {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Write([]byte("invalid json"))
+					_, _ = w.Write([]byte("invalid json"))
 				}))
 				defer server.Close()
 

@@ -119,11 +119,6 @@ func (m *DirectURLManager) Verify(ctx context.Context, binaryPath string, pkg ty
 	return nil, fmt.Errorf("verify not implemented yet")
 }
 
-// templateURL templates a URL with version and platform variables using flanksource/gomplate
-func (m *DirectURLManager) templateURL(urlTemplate, version string, plat platform.Platform) (string, error) {
-	return depstemplate.TemplateURL(urlTemplate, version, plat.OS, plat.Arch)
-}
-
 // templateURLWithAsset templates a URL with version, platform, and asset variables
 func (m *DirectURLManager) templateURLWithAsset(urlTemplate, version string, plat platform.Platform, asset string) (string, error) {
 	return depstemplate.TemplateURLWithAsset(urlTemplate, version, plat.OS, plat.Arch, asset)

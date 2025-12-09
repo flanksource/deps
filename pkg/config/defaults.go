@@ -88,7 +88,7 @@ func mergePackage(defaultPkg, userPkg types.Package) types.Package {
 	if len(userPkg.AssetPatterns) > 0 {
 		merged.AssetPatterns = userPkg.AssetPatterns
 	}
-	if userPkg.Extra != nil && len(userPkg.Extra) > 0 {
+	if len(userPkg.Extra) > 0 {
 		if merged.Extra == nil {
 			merged.Extra = make(map[string]interface{})
 		}

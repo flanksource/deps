@@ -39,7 +39,7 @@ var _ = Describe("Wrapper Script Creation", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	Describe("createWrapperScript", func() {
@@ -178,12 +178,12 @@ func TestWrapperScriptCreation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		defer func() { _ = os.RemoveAll(tmpDir) }()
 
 		binDir := filepath.Join(tmpDir, "bin")
 		appDir := filepath.Join(tmpDir, "opt")
-		os.MkdirAll(binDir, 0755)
-		os.MkdirAll(appDir, 0755)
+		_ = os.MkdirAll(binDir, 0755)
+		_ = os.MkdirAll(appDir, 0755)
 
 		installer := New(WithBinDir(binDir), WithAppDir(appDir))
 		testTask := &task.Task{}

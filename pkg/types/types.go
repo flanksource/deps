@@ -11,6 +11,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/utils"
 	"github.com/flanksource/gomplate/v3"
+	"github.com/samber/lo"
 )
 
 // VersionCheckMode defines how version checking should be performed
@@ -129,6 +130,31 @@ type Resolution struct {
 	BinaryPath string `json:"binary_path,omitempty" yaml:"binary_path,omitempty"`
 	// GitHubAsset contains GitHub-specific metadata if this is a GitHub release
 	GitHubAsset *GitHubAsset `json:"github_asset,omitempty" yaml:"github_asset,omitempty"`
+}
+
+func (r Resolution) Pretty() api.Text {
+	text := clicky.Text("").Append(r.Package.Name, "bold")
+
+	if r.Version != "" {
+		text = text.Append("@" + r.Version)
+	}
+
+	if r.Platform.OS != "" || r.Platform.Arch != "" {
+		text = text.Append(" (" + r.Platform.String() + ")")
+	}
+
+	if r.DownloadURL != "" {
+		text = text.Append(" -> ", "text-muted").Append(r.DownloadURL, "text-underline")
+	}
+
+	if r.Checksum != "" {
+		text = text.Append(" checksum:", "muted").Append(lo.Ellipsis(r.Checksum, 10))
+	}
+	if r.GitHubAsset != nil {
+		text = text.Append(" from ", "text-muted").Append(r.GitHubAsset.Repo + "@" + r.GitHubAsset.Tag)
+	}
+
+	return text
 }
 
 // GitHubAsset contains GitHub-specific metadata

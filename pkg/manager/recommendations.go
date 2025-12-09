@@ -63,7 +63,7 @@ func SuggestClosestVersion(requestedVersion string, availableVersions []types.Ve
 	}
 
 	var closest *types.Version
-	var minDiff uint64 = ^uint64(0) // Max uint64
+	minDiff := ^uint64(0) // Max uint64
 
 	for i := range availableVersions {
 		v := &availableVersions[i]
@@ -156,6 +156,9 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 		return fmt.Errorf("%w\n\nNo assets found for %s", originalErr, packageName)
 	}
 
+	// Filter assets to only show those for the target OS
+	filteredAssets := filterAssetsByTargetOS(availableAssets, platform)
+
 	// Sort assets by Levenshtein distance (most similar first) and calculate distances
 	type assetWithDistance struct {
 		name     string
@@ -163,8 +166,8 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 		score    int
 	}
 
-	assetsWithDist := make([]assetWithDistance, len(availableAssets))
-	for i, asset := range availableAssets {
+	assetsWithDist := make([]assetWithDistance, len(filteredAssets))
+	for i, asset := range filteredAssets {
 		dist := levenshtein.ComputeDistance(strings.ToLower(assetPattern), strings.ToLower(asset))
 		score := calculateAssetSimilarity(assetPattern, asset)
 		assetsWithDist[i] = assetWithDistance{
@@ -236,6 +239,66 @@ func SuggestClosestAsset(targetAsset string, availableAssets []string) string {
 	}
 
 	return ""
+}
+
+// filterAssetsByTargetOS filters assets to exclude those from other OSes
+func filterAssetsByTargetOS(assets []string, platform string) []string {
+	parts := strings.Split(platform, "-")
+	if len(parts) == 0 {
+		return assets
+	}
+	targetOS := strings.ToLower(parts[0])
+
+	// OS patterns with word boundary awareness
+	// Each key is the canonical OS, values are patterns that identify it
+	osPatterns := map[string][]string{
+		"darwin":  {"darwin", "macos", "osx"},         // "mac" is too short and ambiguous
+		"linux":   {"linux"},
+		"windows": {"windows", "win32", "win64"},      // "win" alone matches "darwin"
+	}
+
+	// Also add "-mac-" and "-win-" patterns for word-boundary matching
+	wordBoundaryPatterns := map[string][]string{
+		"darwin":  {"-mac-", "_mac_", "-mac.", "_mac."},
+		"windows": {"-win-", "_win_", "-win.", "_win."},
+	}
+
+	// Check if an asset matches a specific OS
+	matchesOS := func(assetLower string, osKey string) bool {
+		// Check exact patterns
+		for _, pattern := range osPatterns[osKey] {
+			if strings.Contains(assetLower, pattern) {
+				return true
+			}
+		}
+		// Check word-boundary patterns
+		for _, pattern := range wordBoundaryPatterns[osKey] {
+			if strings.Contains(assetLower, pattern) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var filtered []string
+	for _, asset := range assets {
+		assetLower := strings.ToLower(asset)
+		exclude := false
+		for os := range osPatterns {
+			if os != targetOS && matchesOS(assetLower, os) {
+				exclude = true
+				break
+			}
+		}
+		if !exclude {
+			filtered = append(filtered, asset)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return assets
+	}
+	return filtered
 }
 
 // calculateAssetSimilarity calculates similarity between two asset names using Levenshtein distance

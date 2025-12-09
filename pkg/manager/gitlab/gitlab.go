@@ -442,7 +442,7 @@ func (m *GitLabReleaseManager) fetchReleases(ctx context.Context, repo string) (
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GitLab GraphQL API returned status %d", resp.StatusCode)

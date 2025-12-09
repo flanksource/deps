@@ -261,66 +261,6 @@ func (g *Generator) Update(ctx context.Context, existingLock *types.LockFile, de
 	return mergedLock, nil
 }
 
-// resolveDependency resolves a single dependency for all specified platforms
-func (g *Generator) resolveDependency(ctx context.Context, pkg types.Package, versionConstraint string, platforms []platform.Platform, opts types.LockOptions, existingEntry *types.LockEntry, t *task.Task) (*types.LockEntry, error) {
-	// Get the package manager
-	mgr, err := g.managers.GetForPackage(pkg)
-	if err != nil {
-		return nil, err
-	}
-
-	// Resolve version constraint
-	version, err := g.resolveVersionConstraint(ctx, mgr, pkg, versionConstraint)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve version constraint %s for %s: %w", versionConstraint, formatPackageIdentifier(pkg), err)
-	}
-
-	entry := &types.LockEntry{
-		Version:        version,
-		VersionCommand: pkg.VersionCommand,
-		VersionRegex:   pkg.VersionRegex,
-		Platforms:      make(map[string]types.PlatformEntry),
-	}
-
-	// Preserve existing platforms if they exist
-	if existingEntry != nil {
-		for platformStr, platformEntry := range existingEntry.Platforms {
-			entry.Platforms[platformStr] = platformEntry
-		}
-		// Also preserve GitHub info if it exists
-		if existingEntry.GitHub != nil {
-			entry.GitHub = existingEntry.GitHub
-		}
-	}
-
-	// Add GitHub-specific info if applicable
-	if mgr.Name() == "github_release" {
-		entry.GitHub = &types.GitHubLockInfo{
-			Repo:         pkg.Repo,
-			Tag:          version, // This might need normalization
-			ChecksumFile: pkg.ChecksumFile,
-		}
-	}
-
-	var platformSuccessCount int
-	if opts.Parallel {
-		platformSuccessCount, err = g.resolvePlatformsParallel(ctx, mgr, pkg, version, platforms, entry, opts, t)
-	} else {
-		platformSuccessCount, err = g.resolvePlatformsSequential(ctx, mgr, pkg, version, platforms, entry, opts, t)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	// If no platforms were successfully resolved, treat it as a failure
-	if platformSuccessCount == 0 && len(platforms) > 0 {
-		return nil, fmt.Errorf("failed to resolve %s for any of the %d requested platforms", pkg.Name, len(platforms))
-	}
-
-	return entry, nil
-}
-
 // resolveDependencyForPlatform resolves a single dependency for a single platform
 func (g *Generator) resolveDependencyForPlatform(ctx context.Context, pkg types.Package, versionConstraint string, plat platform.Platform, opts types.LockOptions, t *task.Task) (*types.LockEntry, error) {
 	// Get the package manager
@@ -359,56 +299,6 @@ func (g *Generator) resolveDependencyForPlatform(ctx context.Context, pkg types.
 
 	entry.Platforms[plat.String()] = *platformEntry
 	return entry, nil
-}
-
-// resolvePlatformsSequential resolves platforms one by one
-func (g *Generator) resolvePlatformsSequential(ctx context.Context, mgr manager.PackageManager, pkg types.Package, version string, platforms []platform.Platform, entry *types.LockEntry, opts types.LockOptions, t *task.Task) (int, error) {
-	successCount := 0
-	for _, plat := range platforms {
-		platformEntry, err := g.resolvePlatform(ctx, mgr, pkg, version, plat, opts)
-		if err != nil {
-			t.Warnf("Failed to resolve %s for %s: %v", pkg.Name, plat, err)
-			continue
-		}
-
-		// Update the platform entry (overwriting existing if present)
-		entry.Platforms[plat.String()] = *platformEntry
-		successCount++
-	}
-	return successCount, nil
-}
-
-// resolvePlatformsParallel resolves platforms concurrently
-func (g *Generator) resolvePlatformsParallel(ctx context.Context, mgr manager.PackageManager, pkg types.Package, version string, platforms []platform.Platform, entry *types.LockEntry, opts types.LockOptions, t *task.Task) (int, error) {
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	results := make(map[string]types.PlatformEntry)
-
-	for _, plat := range platforms {
-		wg.Add(1)
-		go func(p platform.Platform) {
-			defer wg.Done()
-
-			platformEntry, err := g.resolvePlatform(ctx, mgr, pkg, version, p, opts)
-			if err != nil {
-				t.Warnf("Failed to resolve %s for %s: %v", pkg.Name, p, err)
-				return
-			}
-
-			mu.Lock()
-			results[p.String()] = *platformEntry
-			mu.Unlock()
-		}(plat)
-	}
-
-	wg.Wait()
-
-	// Update only the platforms we resolved (preserving existing ones)
-	for platform, platformEntry := range results {
-		entry.Platforms[platform] = platformEntry
-	}
-
-	return len(results), nil
 }
 
 // resolvePlatform resolves a single platform

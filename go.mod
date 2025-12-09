@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/agnivade/levenshtein v1.2.1
 	github.com/bmatcuk/doublestar/v4 v4.9.1
-	github.com/flanksource/clicky v1.11.1
+	github.com/flanksource/clicky v1.12.0
 	github.com/flanksource/commons v1.43.2
 	github.com/flanksource/gomplate/v3 v3.24.60
 	github.com/google/cel-go v0.26.1
@@ -33,7 +33,6 @@ require (
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/boombuler/barcode v1.1.0 // indirect
 	github.com/cert-manager/cert-manager v1.19.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.3.3 // indirect
@@ -49,7 +48,6 @@ require (
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/emirpasic/gods/v2 v2.0.0-alpha // indirect
-	github.com/f-amaral/go-async v0.3.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/flanksource/is-healthy v1.0.82 // indirect
 	github.com/flanksource/kubectl-neat v1.0.4 // indirect
@@ -76,9 +74,6 @@ require (
 	github.com/hairyhenderson/toml v0.4.2-0.20210923231440-40456b8e66cf // indirect
 	github.com/hairyhenderson/yaml v0.0.0-20220618171115-2d35fca545ce // indirect
 	github.com/henvic/httpretty v0.1.4 // indirect
-	github.com/hhrutter/lzw v1.0.0 // indirect
-	github.com/hhrutter/pkcs7 v0.2.0 // indirect
-	github.com/hhrutter/tiff v1.0.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/itchyny/gojq v0.12.17 // indirect
 	github.com/itchyny/timefmt-go v0.1.7 // indirect
@@ -86,7 +81,6 @@ require (
 	github.com/jmespath/go-jmespath v0.4.1-0.20220621161143-b0104c826a24 // indirect
 	github.com/johnfercher/go-tree v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/jung-kurt/gofpdf v1.16.2 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lmittmann/tint v1.1.2 // indirect
@@ -103,10 +97,12 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ohler55/ojg v1.27.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
+	github.com/olekukonko/errors v1.1.0 // indirect
+	github.com/olekukonko/ll v0.0.9 // indirect
+	github.com/olekukonko/tablewriter v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pdfcpu/pdfcpu v0.11.1 // indirect
-	github.com/phpdave11/gofpdi v1.0.15 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/playwright-community/playwright-go v0.5200.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -151,7 +147,6 @@ require (
 	go.opentelemetry.io/otel v1.38.0 // indirect
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
-	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.44.0 // indirect
@@ -183,6 +178,5 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-// replace github.com/flanksource/commons => /Users/moshe/go/src/github.com/flanksource/commons
-
-// replace github.com/flanksource/clicky => /Users/moshe/go/src/github.com/flanksource/clicky
+// replace github.com/flanksource/commons => ../commons
+// replace github.com/flanksource/clicky => ../clicky

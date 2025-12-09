@@ -202,7 +202,7 @@ var _ = Describe("CEL Pipeline Evaluator", func() {
 				// Setup files
 				for filename, content := range tc.setupFiles {
 					filePath := filepath.Join(workDir, filename)
-					os.MkdirAll(filepath.Dir(filePath), 0755)
+					_ = os.MkdirAll(filepath.Dir(filePath), 0755)
 					Expect(os.WriteFile(filePath, []byte(content), 0644)).To(Succeed())
 				}
 

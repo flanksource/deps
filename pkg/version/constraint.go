@@ -106,16 +106,17 @@ func (c *PartialVersionConstraint) Check(version string) bool {
 	// Check if version matches the pattern
 	dotCount := strings.Count(c.pattern, ".")
 
-	if dotCount == 0 {
+	switch dotCount {
+	case 0:
 		// Major only: "2" should match "2.x.x"
 		return versionSemver.Major() == patternSemver.Major()
-	} else if dotCount == 1 {
+	case 1:
 		// Major.minor: "1.5" should match "1.5.x"
 		return versionSemver.Major() == patternSemver.Major() &&
 			versionSemver.Minor() == patternSemver.Minor()
+	default:
+		return false
 	}
-
-	return false
 }
 
 func (c *PartialVersionConstraint) String() string {
@@ -127,13 +128,14 @@ func (c *PartialVersionConstraint) parsePatternAsSemver() (*semver.Version, erro
 	dotCount := strings.Count(c.pattern, ".")
 
 	var fullVersion string
-	if dotCount == 0 {
+	switch dotCount {
+	case 0:
 		// Major only: "2" -> "2.0.0"
 		fullVersion = c.pattern + ".0.0"
-	} else if dotCount == 1 {
+	case 1:
 		// Major.minor: "1.5" -> "1.5.0"
 		fullVersion = c.pattern + ".0"
-	} else {
+	default:
 		return nil, fmt.Errorf("invalid partial version pattern: %s", c.pattern)
 	}
 

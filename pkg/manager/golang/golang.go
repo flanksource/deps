@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/flanksource/deps/pkg/manager/github"
@@ -123,7 +122,7 @@ func (m *GoManager) Verify(ctx context.Context, binaryPath string, pkg types.Pac
 
 func (m *GoManager) getImportPath(pkg types.Package) (string, error) {
 	if pkg.Extra == nil {
-		return "", fmt.Errorf("Go package requires 'extra' configuration with 'import_path'")
+		return "", fmt.Errorf("go package requires 'extra' configuration with 'import_path'")
 	}
 
 	importPath, exists := pkg.Extra["import_path"]
@@ -147,9 +146,4 @@ func (m *GoManager) getBinaryName(pkg types.Package) string {
 	}
 
 	return pkg.Name
-}
-
-func (m *GoManager) getBinaryPath(installDir string, pkg types.Package) string {
-	binaryName := m.getBinaryName(pkg)
-	return filepath.Join(installDir, binaryName)
 }

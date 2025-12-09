@@ -19,7 +19,7 @@ var _ = Describe("Directory Mode Installation", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	It("should support directory mode in package definition", func() {

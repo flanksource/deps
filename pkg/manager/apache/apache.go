@@ -294,7 +294,7 @@ func (m *ApacheManager) fetchVersionsFromURL(ctx context.Context, pkg types.Pack
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch directory listing from %s: HTTP %d", url, resp.StatusCode)
@@ -491,7 +491,7 @@ func (m *ApacheManager) fetchChecksum(ctx context.Context, checksumURL string) (
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("checksum file not found: %s", checksumURL)

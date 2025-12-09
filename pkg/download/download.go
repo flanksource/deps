@@ -191,7 +191,7 @@ func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task) (checks
 	if err != nil {
 		return "", "", nil, fmt.Errorf("failed to download checksum file %s: %w", checksumURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", "", nil, fmt.Errorf("checksum file not found at %s: status %d", checksumURL, resp.StatusCode)
@@ -226,7 +226,7 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 		if err != nil {
 			return "", "", "", nil, fmt.Errorf("failed to download checksum file %s: %w", checksumURL, err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return "", "", "", nil, fmt.Errorf("checksum file not found at %s: status %d", checksumURL, resp.StatusCode)
@@ -358,8 +358,8 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 				if err == nil {
 					f, err := os.Open(cachePath)
 					if err == nil {
-						defer f.Close()
-						io.Copy(hasher, f)
+						defer func() { _ = f.Close() }()
+						_, _ = io.Copy(hasher, f)
 						actualChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
 
 						if actualChecksum == config.expectedChecksum {
@@ -396,7 +396,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 				// Log no checksum warning for cached file
 				if t != nil {
 					msg := api.Text{Content: "✗ No checksum available - copied from cache without validation", Style: "text-red-500"}
-					t.Infof(msg.ANSI())
+					t.Infof("%s", msg.ANSI())
 					t.SetDescription(fmt.Sprintf("Copied from cache (%s)", utils.FormatBytes(0)))
 				}
 				return nil
@@ -417,10 +417,10 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		return fmt.Errorf("failed to create temp file %s: %w", tempFile, err)
 	}
 	defer func() {
-		out.Close()
+		_ = out.Close()
 		// Clean up temp file if it still exists (not renamed)
 		if _, err := os.Stat(tempFile); err == nil {
-			os.Remove(tempFile)
+			_ = os.Remove(tempFile)
 		}
 	}()
 
@@ -466,7 +466,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	if err != nil {
 		return fmt.Errorf("failed to download from %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Capture final URL after redirects for checksum verification
 	// This ensures we match against the actual filename, not the original URL with query params
@@ -559,7 +559,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 
 	// Close the temp file before verification/rename
-	out.Close()
+	_ = out.Close()
 
 	// Fetch checksum from URL if configured (takes precedence over expectedChecksum)
 	// Skip if we already fetched it pre-download (prediscoveredChecksum is set)
@@ -608,7 +608,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			if err != nil {
 				return fmt.Errorf("failed to open file for hashing: %w", err)
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			hasher, err := checksum.CreateHasher(checksum.HashType(config.checksumType))
 			if err != nil {
@@ -657,7 +657,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		// No checksum available - log warning at Info level with red color
 		if t != nil {
 			msg := api.Text{Content: "✗ No checksum available - downloaded without validation", Style: "text-red-500"}
-			t.Infof(msg.ANSI())
+			t.Infof("%s", msg.ANSI())
 		}
 	}
 
@@ -690,15 +690,6 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	return nil
 }
 
-// getChecksumFileNames returns a slice of the checksum file names for debugging
-func getChecksumFileNames(checksumContents map[string]string) []string {
-	var names []string
-	for name := range checksumContents {
-		names = append(names, name)
-	}
-	return names
-}
-
 // formatDuration formats duration into human-readable format
 func formatDuration(d time.Duration) string {
 	if d < time.Second {
@@ -723,7 +714,7 @@ func SimpleDownload(url, dest string) (*http.Response, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to download from %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Return response for status check
 	if resp.StatusCode != http.StatusOK {

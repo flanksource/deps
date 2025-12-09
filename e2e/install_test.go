@@ -55,5 +55,33 @@ var _ = Describe("Installation tests", func() {
 				}
 			})
 		}
+
+		It("should install flux", func() {
+			tempDir, err := os.MkdirTemp("", "")
+			Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
+
+			result, err := deps.Install("fluxcd/flux2", "stable",
+				deps.WithOS(testOS, arch),
+				deps.WithAppDir(filepath.Join(tempDir, "app")),
+				deps.WithBinDir(filepath.Join(tempDir, "bin")))
+			Expect(err).ToNot(HaveOccurred(), "Installation should not error")
+			if result != nil {
+				GinkgoWriter.Printf("%s\n", result.Pretty().ANSI())
+			}
+		})
+		It("should install stern", func() {
+			tempDir, err := os.MkdirTemp("", "")
+			Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
+
+			result, err := deps.Install("stern/stern", "stable",
+				deps.WithOS(testOS, arch),
+				deps.WithAppDir(filepath.Join(tempDir, "app")),
+				deps.WithBinDir(filepath.Join(tempDir, "bin")))
+			Expect(err).ToNot(HaveOccurred(), "Installation should not error")
+			if result != nil {
+				GinkgoWriter.Printf("%s\n", result.Pretty().ANSI())
+			}
+		})
 	})
+
 })

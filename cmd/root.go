@@ -74,7 +74,7 @@ It can download and install various tools like kubectl, helm, terraform, and mor
 			return
 		}
 		// Show help if no version flag and no subcommand
-		cmd.Help()
+		_ = cmd.Help()
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Handle --version flag for subcommands
@@ -126,11 +126,8 @@ func init() {
 	clicky.BindAllFlags(rootCmd.PersistentFlags(), "tasks", "!format")
 	home := "/usr/local"
 	if os.Geteuid() != 0 {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			home = "/usr/local"
-		} else {
-			home = filepath.Join(home, ".local")
+		if userHome, err := os.UserHomeDir(); err == nil {
+			home = filepath.Join(userHome, ".local")
 		}
 	}
 

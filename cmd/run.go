@@ -50,7 +50,7 @@ Examples:
 				fmt.Println(result.Stdout)
 			}
 			if result.Stderr != "" {
-				fmt.Fprintln(cmd.ErrOrStderr(), result.Stderr)
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), result.Stderr)
 			}
 			return err
 		}
@@ -62,7 +62,7 @@ Examples:
 
 		// Print stderr to stderr
 		if result.Stderr != "" {
-			fmt.Fprintln(cmd.ErrOrStderr(), result.Stderr)
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), result.Stderr)
 		}
 
 		return nil

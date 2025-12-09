@@ -310,7 +310,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return fmt.Errorf("failed to get package manager for %s: %w", name, err)
 	}
 
-	t.Debugf("Install: selected package manager %s for package %s", mgr.Name(), name)
+	t.Tracef("Install: selected package manager %s for package %s", mgr.Name(), name)
 
 	// Step 1: Resolve and validate version
 	resolvedVersion, alreadyInstalled, err := i.resolveAndValidateVersion(ctx, mgr, name, version, pkg, t)
@@ -347,8 +347,8 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
 	}
 
-	// Step 3: Download package
-	resolution, downloadPath, err := i.downloadPackage(ctx, mgr, name, resolvedVersion, pkg, t)
+	// Step 3: Download package (resolution already obtained above)
+	downloadPath, err := i.downloadPackage(ctx, name, resolvedVersion, resolution, t)
 	if err != nil {
 		return err
 	}
@@ -464,8 +464,8 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		return nil
 	}
 
-	// Step 3: Download package
-	resolution, downloadPath, err := i.downloadPackage(ctx, mgr, name, resolvedVersion, pkg, t)
+	// Step 3: Download package (resolution already obtained above)
+	downloadPath, err := i.downloadPackage(ctx, name, resolvedVersion, resolution, t)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
 		return err
@@ -637,30 +637,16 @@ func (i *Installer) resolveAndValidateVersion(ctx context.Context, mgr manager.P
 	return resolvedVersion, false, nil // false indicates needs installation
 }
 
-// downloadPackage handles package resolution and download
-func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageManager, name, resolvedVersion string, pkg types.Package, t *task.Task) (*types.Resolution, string, error) {
-	// Create platform info (now using global overrides set from CLI)
-	plat := platform.Current()
-
-	// Resolve the package
-	t.V(3).Infof("Resolving URL for %s@%s (%s) using %s", name, resolvedVersion, plat, mgr.Name())
-	t.V(5).Infof("Asset patterns: %+v", pkg.AssetPatterns)
-	t.V(5).Infof("Version expr: %s", pkg.VersionExpr)
-
-	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to resolve package %s: %w", name, err)
-	}
-
-	// Add detailed logging for debugging URL construction
-	t.Debugf("Resolved %s, IsArchive=%t, BinaryPath=%s",
-		resolution.DownloadURL, resolution.IsArchive, resolution.BinaryPath)
+// downloadPackage handles package download using an already-resolved resolution
+func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion string, resolution *types.Resolution, t *task.Task) (string, error) {
+	plat := resolution.Platform
+	pkg := resolution.Package
 
 	t.Infof("Downloading %s@%s (%s/%s) from %s", name, resolvedVersion, plat.OS, plat.Arch, resolution.DownloadURL)
 
 	// Create bin directory if it doesn't exist
 	if err := os.MkdirAll(i.options.BinDir, 0755); err != nil {
-		return nil, "", fmt.Errorf("failed to create bin directory: %w", err)
+		return "", fmt.Errorf("failed to create bin directory: %w", err)
 	}
 
 	var downloadPath string
@@ -675,13 +661,13 @@ func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageMana
 
 		// Download with checksum verification if available
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
-			return nil, "", err
+			return "", err
 		}
 	} else if pkg.WrapperScript != "" {
 		// File with wrapper script - download to app directory
 		appPath := filepath.Join(i.options.AppDir, name)
 		if err := os.MkdirAll(appPath, 0755); err != nil {
-			return nil, "", fmt.Errorf("failed to create app directory: %w", err)
+			return "", fmt.Errorf("failed to create app directory: %w", err)
 		}
 
 		// Extract filename from URL and download to app-dir
@@ -690,7 +676,7 @@ func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageMana
 		t.SetDescription("Downloading")
 
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
-			return nil, "", fmt.Errorf("failed to download %s: %w", name, err)
+			return "", fmt.Errorf("failed to download %s: %w", name, err)
 		}
 	} else {
 		// Direct binary download - download directly to bin directory
@@ -698,11 +684,11 @@ func (i *Installer) downloadPackage(ctx context.Context, mgr manager.PackageMana
 		t.SetDescription("Downloading")
 
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
-			return nil, "", fmt.Errorf("failed to download %s: %w", name, err)
+			return "", fmt.Errorf("failed to download %s: %w", name, err)
 		}
 	}
 
-	return resolution, downloadPath, nil
+	return downloadPath, nil
 }
 
 // executePostProcessing runs the post-processing pipeline if configured
@@ -716,7 +702,6 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 	filteredPostProcess := manager.FilterEntriesByPlatform(pkg.PostProcess, plat)
 
 	if len(filteredPostProcess) == 0 {
-		t.V(3).Infof("No post-process commands for platform %s", plat.String())
 		return nil
 	}
 

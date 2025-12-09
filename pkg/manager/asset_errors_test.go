@@ -16,7 +16,7 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 		expectedCount    int // Expected number of assets shown
 	}{
 		{
-			name:         "Basic asset not found with suggestions",
+			name:         "Basic asset not found with suggestions (filtered by OS)",
 			packageName:  "example/tool",
 			assetPattern: "tool-linux-amd64",
 			platform:     "linux-amd64",
@@ -28,16 +28,13 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 			},
 			expectedContains: []string{
 				"Asset not found: tool-linux-amd64 for linux-amd64 in package example/tool",
-				"Available assets (4 total):",
-				// Note: Assets will be sorted by Levenshtein distance and show distance/score
+				"Available assets (2 total):", // Only linux + universal (checksums.txt)
 				"tool-linux-arm64",
-				"tool-darwin-amd64",
-				"tool-windows-amd64.exe",
 				"checksums.txt",
 				"Searched for pattern: tool-linux-amd64",
 				"Did you mean:", // Just check that it suggests something
 			},
-			expectedCount: 4,
+			expectedCount: 2, // Only linux-arm64 and checksums.txt (no OS marker)
 		},
 		{
 			name:         "Many assets with truncation",
@@ -78,13 +75,15 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 			platform:     "linux-amd64",
 			availableAssets: []string{
 				"tool-linux-amd64.tar.gz", // Very similar, should be suggested
-				"tool-darwin-amd64.tar.gz",
+				"tool-linux-arm64.tar.gz",
+				"tool-darwin-amd64.tar.gz", // Will be filtered out
 			},
 			expectedContains: []string{
+				"Available assets (2 total):", // darwin filtered out
 				"tool-linux-amd64.tar.gz",
 				"Did you mean: tool-linux-amd64.tar.gz?",
 			},
-			expectedCount: 2,
+			expectedCount: 2, // Only linux assets shown
 		},
 	}
 
@@ -177,6 +176,98 @@ func TestSuggestClosestAsset(t *testing.T) {
 			suggestion := SuggestClosestAsset(tt.target, tt.availableAssets)
 			if suggestion != tt.expectedSuggestion {
 				t.Errorf("Expected suggestion %q, got %q", tt.expectedSuggestion, suggestion)
+			}
+		})
+	}
+}
+
+func TestFilterAssetsByTargetOS(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		assets   []string
+		expected []string
+	}{
+		{
+			name:     "should filter out other OSes when showing darwin assets",
+			platform: "darwin-arm64",
+			assets: []string{
+				"tool-darwin-arm64.tar.gz",
+				"tool-darwin-amd64.tar.gz",
+				"tool-linux-arm64.tar.gz",
+				"tool-linux-amd64.tar.gz",
+				"tool-windows-amd64.zip",
+			},
+			expected: []string{
+				"tool-darwin-arm64.tar.gz",
+				"tool-darwin-amd64.tar.gz",
+			},
+		},
+		{
+			name:     "should filter out other OSes when showing linux assets",
+			platform: "linux-amd64",
+			assets: []string{
+				"tool-linux-amd64",
+				"tool-darwin-amd64",
+				"tool-windows-amd64.exe",
+				"tool-macos-amd64",
+			},
+			expected: []string{
+				"tool-linux-amd64",
+			},
+		},
+		{
+			name:     "should keep universal assets (no OS in name)",
+			platform: "linux-amd64",
+			assets: []string{
+				"tool-linux-amd64",
+				"universal-binary",
+				"checksums.txt",
+				"tool-windows-amd64.exe",
+			},
+			expected: []string{
+				"tool-linux-amd64",
+				"universal-binary",
+				"checksums.txt",
+			},
+		},
+		{
+			name:     "should return all assets if filtering removes everything",
+			platform: "freebsd-amd64",
+			assets: []string{
+				"tool-linux-amd64",
+				"tool-darwin-amd64",
+			},
+			expected: []string{
+				"tool-linux-amd64",
+				"tool-darwin-amd64",
+			},
+		},
+		{
+			name:     "should handle empty platform",
+			platform: "",
+			assets: []string{
+				"tool-linux-amd64",
+				"tool-darwin-amd64",
+			},
+			expected: []string{
+				"tool-linux-amd64",
+				"tool-darwin-amd64",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filtered := filterAssetsByTargetOS(tt.assets, tt.platform)
+			if len(filtered) != len(tt.expected) {
+				t.Errorf("Expected %d assets, got %d: %v", len(tt.expected), len(filtered), filtered)
+				return
+			}
+			for i, exp := range tt.expected {
+				if filtered[i] != exp {
+					t.Errorf("Expected asset[%d] = %q, got %q", i, exp, filtered[i])
+				}
 			}
 		})
 	}
