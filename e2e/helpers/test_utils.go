@@ -14,7 +14,7 @@ import (
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
-	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega" //nolint:staticcheck
 )
 
 // TestContext holds the context and resources for a single test
@@ -36,7 +36,7 @@ func CreateTestEnvironment(packageName, version string) (*TestContext, error) {
 	// Save current working directory
 	oldWD, err := os.Getwd()
 	if err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
@@ -56,19 +56,19 @@ settings:
 
 	configFile := filepath.Join(tempDir, "deps.yaml")
 	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	// Change to test directory
 	if err := os.Chdir(tempDir); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to change directory: %w", err)
 	}
 
 	cleanup := func() {
 		_ = os.Chdir(oldWD)
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		// Reset global platform overrides
 		platform.SetGlobalOverrides("", "")
 	}
@@ -176,14 +176,14 @@ func CreateInstallTestEnvironment() (*TestContext, error) {
 	// Save current working directory
 	oldWD, err := os.Getwd()
 	if err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
 	// Create test-bin directory for installations
 	binDir := filepath.Join(tempDir, "test-bin")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to create bin dir: %w", err)
 	}
 
@@ -200,25 +200,25 @@ func CreateInstallTestEnvironment() (*TestContext, error) {
 
 	configFile := filepath.Join(tempDir, "deps.yaml")
 	if err := os.WriteFile(configFile, []byte(configContent), 0644); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	// Change to test directory
 	if err := os.Chdir(tempDir); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to change directory: %w", err)
 	}
 
 	// Force reload of global registry to pick up our new deps.yaml
 	if err := reloadGlobalRegistry(); err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to reload global registry: %w", err)
 	}
 
 	cleanup := func() {
 		_ = os.Chdir(oldWD)
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		// Reset global platform overrides
 		platform.SetGlobalOverrides("", "")
 	}
@@ -260,51 +260,6 @@ func CreateInstallTestEnvironment() (*TestContext, error) {
 // 	// For cross-platform installs, just verify the binary exists and has correct format
 // 	return validateBinaryFormat(result.BinaryPath, testOS)
 // }
-
-// validateBinaryVersion runs version command and validates output pattern
-func validateBinaryVersion(binaryPath, versionCommand, versionPattern string) error {
-	// Make binary executable
-	if err := os.Chmod(binaryPath, 0755); err != nil {
-		return fmt.Errorf("failed to make binary executable: %w", err)
-	}
-
-	// Run version command (basic implementation - could be enhanced)
-	// For now, just verify the binary is executable
-	_, err := os.Stat(binaryPath)
-	if err != nil {
-		return fmt.Errorf("binary not executable: %w", err)
-	}
-
-	return nil
-}
-
-// validateBinaryFormat validates binary format for target platform
-func validateBinaryFormat(binaryPath, targetOS string) error {
-	// Check if file exists and is not empty
-	info, err := os.Stat(binaryPath)
-	if err != nil {
-		return fmt.Errorf("binary validation failed: %w", err)
-	}
-
-	if info.Size() == 0 {
-		return fmt.Errorf("binary is empty")
-	}
-
-	// Basic format validation based on target OS
-	switch targetOS {
-	case "windows":
-		if !strings.HasSuffix(strings.ToLower(binaryPath), ".exe") {
-			return fmt.Errorf("Windows binary should have .exe extension")
-		}
-	case "darwin", "linux":
-		// Unix-like binaries should be executable files
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("binary should be a regular file")
-		}
-	}
-
-	return nil
-}
 
 // reloadGlobalRegistry forces a reload of the global registry for testing
 // This is a workaround since the init() function only runs once per program

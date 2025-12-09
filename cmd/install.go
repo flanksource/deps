@@ -139,7 +139,6 @@ func runPostInstallCheck(args []string, t *task.Task) error {
 	}
 
 	// Check each tool
-	var results []types.CheckResult
 	var hasErrors bool
 	var checksumIssues bool
 
@@ -167,8 +166,6 @@ func runPostInstallCheck(args []string, t *task.Task) error {
 			result.ChecksumError = checksumResult.ChecksumError
 			result.ChecksumSource = checksumResult.ChecksumSource
 		}
-
-		results = append(results, result)
 
 		// Show results with both version and checksum status
 		versionOK := result.Status == types.CheckStatusOK

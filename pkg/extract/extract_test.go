@@ -14,7 +14,7 @@ func TestExtractArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Test with non-existent archive - should fail gracefully
 	_, err = Extract("/nonexistent/archive.tar.gz", tempDir, (*task.Task)(nil), WithBinaryPath(""))
@@ -31,7 +31,7 @@ func TestExtractFullArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Test with non-existent archive - should fail gracefully
 	_, err = Extract("/nonexistent/archive.tar.xz", tempDir, (*task.Task)(nil), WithFullExtract())
@@ -48,7 +48,7 @@ func TestExtractDirectoryCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	nonExistentDir := filepath.Join(tempDir, "subdir")
 

@@ -214,7 +214,7 @@ func (m *MavenManager) GetChecksums(ctx context.Context, pkg types.Package, vers
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("checksum file not found: %s", checksumURL)
@@ -248,7 +248,7 @@ func (m *MavenManager) parseCoordinates(pkg types.Package) (*MavenCoordinates, e
 	}
 
 	if pkg.Extra == nil {
-		return nil, fmt.Errorf("Maven package requires 'extra' configuration")
+		return nil, fmt.Errorf("maven package requires 'extra' configuration")
 	}
 
 	extra := pkg.Extra
@@ -361,7 +361,7 @@ func (m *MavenManager) fetchMetadata(ctx context.Context, url string) (*MavenMet
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch metadata from %s: HTTP %d", url, resp.StatusCode)
@@ -388,7 +388,7 @@ func (m *MavenManager) verifyArtifactExists(ctx context.Context, url string) err
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Debug: Maven artifact check response: %s returned HTTP %d
 

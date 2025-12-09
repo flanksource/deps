@@ -82,7 +82,7 @@ func TestGitLabReleaseManager_fetchReleases(t *testing.T) {
 
 		// Return mock response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(mockGraphQLResponse)
+		_ = json.NewEncoder(w).Encode(mockGraphQLResponse)
 	}))
 	defer server.Close()
 
@@ -150,7 +150,7 @@ func testFetchReleases(m *GitLabReleaseManager, endpoint string, ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var graphQLResp GraphQLResponse
 	if err := json.NewDecoder(resp.Body).Decode(&graphQLResp); err != nil {

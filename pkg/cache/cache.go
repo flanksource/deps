@@ -101,7 +101,7 @@ func ValidateCachedFile(cachePath, expectedChecksum string, hasher func() (strin
 	if err != nil {
 		return false, fmt.Errorf("failed to open cached file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Compute checksum
 	actualChecksum, err := hasher()
@@ -118,7 +118,7 @@ func ComputeFileChecksum(path string, hasher io.Writer) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := io.Copy(hasher, f); err != nil {
 		return "", fmt.Errorf("failed to compute checksum: %w", err)

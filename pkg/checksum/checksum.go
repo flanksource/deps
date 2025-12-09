@@ -150,7 +150,7 @@ func CalculateBinaryChecksum(filePath string, hashType HashType) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("failed to open file %s: %w", filePath, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	hasher, err := CreateHasher(hashType)
 	if err != nil {
@@ -223,7 +223,7 @@ func CalculateFileChecksum(ctx context.Context, url string) (string, int64, erro
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to download file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", 0, fmt.Errorf("failed to download file from %s: status %d", url, resp.StatusCode)
@@ -272,7 +272,7 @@ func (g *GoreleaserStrategy) parseChecksumFile(ctx context.Context, url string) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("checksum file not found at %s: status %d", url, resp.StatusCode)
@@ -346,7 +346,7 @@ func (h *HashiCorpStrategy) parseChecksumFile(ctx context.Context, url string) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("checksum file not found at %s: status %d", url, resp.StatusCode)
@@ -395,7 +395,7 @@ func (i *IndividualFileStrategy) FindChecksums(ctx context.Context, resolution *
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("individual checksum file not found")
@@ -520,7 +520,7 @@ func EvaluateCELExpression(vars map[string]interface{}, expr string) (value stri
 					return "", "", "", fmt.Errorf("failed to parse checksum from Go map result: %w", err)
 				}
 			} else {
-				return "", "", "", fmt.Errorf("Go map result missing 'checksum' field")
+				return "", "", "", fmt.Errorf("go map result missing 'checksum' field")
 			}
 
 			// Extract optional URL
@@ -701,7 +701,10 @@ func isValidChecksumFormat(input string) bool {
 // isHexString checks if a string contains only hexadecimal characters
 func isHexString(s string) bool {
 	for _, r := range s {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+		isDigit := r >= '0' && r <= '9'
+		isLowerHex := r >= 'a' && r <= 'f'
+		isUpperHex := r >= 'A' && r <= 'F'
+		if !isDigit && !isLowerHex && !isUpperHex {
 			return false
 		}
 	}
@@ -832,7 +835,7 @@ func DownloadChecksumFiles(ctx context.Context, checksumURLs []string) (map[stri
 		if err != nil {
 			return nil, fmt.Errorf("failed to download checksum file %s: %w", url, err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("failed to download checksum file from %s: status %d", url, resp.StatusCode)

@@ -3,7 +3,6 @@ package runtime
 import (
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -66,38 +65,6 @@ func searchPath(binaryName string) (string, error) {
 	return "", err
 }
 
-// isExecutable checks if a file is executable
-// On Unix, checks execute permissions; on Windows, checks if file exists
-func isExecutable(path string) bool {
-	info, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-
-	if platform.isWindows {
-		// On Windows, just check if it's a regular file
-		return info.Mode().IsRegular()
-	}
-
-	// On Unix, check execute permissions
-	return info.Mode()&0111 != 0
-}
-
-// makeExecutable sets execute permissions on Unix (no-op on Windows)
-func makeExecutable(path string) error {
-	if platform.isWindows {
-		return nil // No-op on Windows
-	}
-
-	// On Unix, add execute permissions
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-
-	return os.Chmod(path, info.Mode()|0111)
-}
-
 // findBinaryInPath searches for a binary name in PATH, trying multiple variants
 // For example, for Python: python3, python, python.exe
 func findBinaryInPath(variants ...string) (string, error) {
@@ -108,9 +75,4 @@ func findBinaryInPath(variants ...string) (string, error) {
 	}
 
 	return "", exec.ErrNotFound
-}
-
-// joinPath joins path elements using the correct separator for the platform
-func joinPath(elem ...string) string {
-	return filepath.Join(elem...)
 }

@@ -19,7 +19,7 @@ func init() {
 			for _, entry := range entries {
 				if entry.IsDir() {
 					binPath := filepath.Join(localOptDir, entry.Name())
-					os.Setenv("PATH", binPath+string(os.PathListSeparator)+os.Getenv("PATH"))
+					_ = os.Setenv("PATH", binPath+string(os.PathListSeparator)+os.Getenv("PATH"))
 				}
 			}
 		}

@@ -172,15 +172,16 @@ func IsPartialVersion(s string) bool {
 	// Check if it's a valid version prefix
 	// For major only: "2" should be valid
 	// For major.minor: "1.5" should be valid
-	if dotCount == 0 {
+	switch dotCount {
+	case 0:
 		// Major only - try parsing as "major.0.0"
 		_, err := semver.NewVersion(normalized + ".0.0")
 		return err == nil
-	} else if dotCount == 1 {
+	case 1:
 		// Major.minor - try parsing as "major.minor.0"
 		_, err := semver.NewVersion(normalized + ".0")
 		return err == nil
+	default:
+		return false
 	}
-
-	return false
 }

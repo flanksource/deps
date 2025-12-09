@@ -19,7 +19,7 @@ var _ = Describe("Installer", func() {
 		It("should return true when using custom temp directory", func() {
 			customTmpDir, err := os.MkdirTemp("", "custom-tmp-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.RemoveAll(customTmpDir)
+			defer func() { _ = os.RemoveAll(customTmpDir) }()
 
 			inst := New(WithTmpDir(customTmpDir))
 			Expect(inst.shouldSkipCleanup()).To(BeTrue())
@@ -44,7 +44,7 @@ var _ = Describe("Installer", func() {
 			// Create a custom tmp directory
 			customTmpDir, err := os.MkdirTemp("", "deps-test-tmp-*")
 			Expect(err).NotTo(HaveOccurred())
-			defer os.RemoveAll(customTmpDir)
+			defer func() { _ = os.RemoveAll(customTmpDir) }()
 
 			// Create installer with custom tmp dir
 			inst := New(WithTmpDir(customTmpDir))
@@ -59,7 +59,7 @@ var _ = Describe("Installer", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Clean up test file
-			os.Remove(testFile)
+			_ = os.Remove(testFile)
 		})
 	})
 })
@@ -78,7 +78,7 @@ func TestTmpDirFunctionality(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create custom temp dir: %v", err)
 		}
-		defer os.RemoveAll(customTmpDir)
+		defer func() { _ = os.RemoveAll(customTmpDir) }()
 
 		inst2 := New(WithTmpDir(customTmpDir))
 		if !inst2.shouldSkipCleanup() {

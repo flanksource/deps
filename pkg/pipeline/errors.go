@@ -8,14 +8,6 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 )
 
-// formatCELError formats CEL errors consistently with proper line breaks
-func formatCELError(operation, expression string, err error) error {
-	errMsg := err.Error()
-
-	// Start CEL errors on a new line for better readability
-	return fmt.Errorf("CEL %s failed for expression '%s':\n%s", operation, expression, errMsg)
-}
-
 // newCELError creates a properly formatted CEL error for CEL wrapper functions
 func newCELError(operation string, err error) ref.Val {
 	errMsg := err.Error()
@@ -31,18 +23,6 @@ func handleFunctionError(ctx *PipelineContext, funcName string, err error) {
 
 	// Fail pipeline with clean error message (no redundant "failed" prefix)
 	ctx.FailPipeline(err.Error())
-}
-
-// wrapWithContext adds context to an error without duplication
-func wrapWithContext(err error, context string) error {
-	errMsg := err.Error()
-
-	// Avoid duplication if error already contains the context
-	if strings.Contains(strings.ToLower(errMsg), strings.ToLower(context)) {
-		return err
-	}
-
-	return fmt.Errorf("%s: %w", context, err)
 }
 
 // cleanErrorMessage removes redundant prefixes and formatting from error messages

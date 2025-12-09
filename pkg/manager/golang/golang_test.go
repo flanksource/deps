@@ -1,6 +1,8 @@
 package golang
 
 import (
+	"context"
+
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 	. "github.com/onsi/ginkgo/v2"
@@ -97,7 +99,7 @@ var _ = Describe("GoManager", func() {
 				Arch: "arm64",
 			}
 
-			resolution, err := manager.Resolve(nil, pkg, "v2.23.2", plat)
+			resolution, err := manager.Resolve(context.TODO(), pkg, "v2.23.2", plat)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Go packages don't have a download URL - Install() handles everything

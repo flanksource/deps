@@ -63,7 +63,7 @@ func SuggestClosestVersion(requestedVersion string, availableVersions []types.Ve
 	}
 
 	var closest *types.Version
-	var minDiff uint64 = ^uint64(0) // Max uint64
+	minDiff := ^uint64(0) // Max uint64
 
 	for i := range availableVersions {
 		v := &availableVersions[i]

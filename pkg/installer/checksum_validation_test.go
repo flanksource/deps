@@ -224,13 +224,13 @@ func createSimpleTestEnvironment() (*testContext, error) {
 	// Save current working directory
 	oldWD, err := os.Getwd()
 	if err != nil {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 		return nil, fmt.Errorf("failed to get working directory: %w", err)
 	}
 
 	cleanup := func() {
 		_ = os.Chdir(oldWD)
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	}
 
 	return &testContext{

@@ -456,16 +456,14 @@ func (f *functions) move(src, dst string) (string, error) {
 	}
 
 	srcType := "file"
-	srcSize := srcInfo.Size()
 	if srcInfo.IsDir() {
 		srcType = "directory"
 		// For directories, calculate number of entries
 		if entries, err := os.ReadDir(srcPath); err == nil {
-			srcSize = int64(len(entries))
 			f.ctx.LogDebug(fmt.Sprintf("Source directory contains %d entries", len(entries)))
 		}
 	} else {
-		f.ctx.LogDebug(fmt.Sprintf("Source file size: %d bytes", srcSize))
+		f.ctx.LogDebug(fmt.Sprintf("Source file size: %d bytes", srcInfo.Size()))
 	}
 
 	// Create destination directory if needed
@@ -1002,7 +1000,7 @@ func (f *functions) promoteDirectoryContents(targetDir string) error {
 	defer func() {
 		absTempDir, _ := filepath.Abs(tempDir)
 		f.ctx.LogDebug(fmt.Sprintf("Cleaning up temporary directory: %s", absTempDir))
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	}()
 
 	absTempDir, _ := filepath.Abs(tempDir)

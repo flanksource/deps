@@ -185,11 +185,8 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 
 	// Use common asset pattern resolution
 	if pkg.AssetPatterns != nil {
-		var err error
-		assetPattern, err = manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
-		if err != nil {
-			// Continue with empty assetPattern to fall back to default
-		}
+		assetPattern, _ = manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+		// Continue with empty assetPattern to fall back to default if error
 	}
 
 	// If no asset pattern found, use default pattern
@@ -235,7 +232,7 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 		// Download the URL to check if it's JSON
 		resp, err := m.client.Get(downloadURL)
 		if err == nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Check Content-Type
 			contentType := resp.Header.Get("Content-Type")

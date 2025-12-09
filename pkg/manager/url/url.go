@@ -67,7 +67,7 @@ func (m *URLManager) DiscoverVersions(ctx context.Context, pkg types.Package, pl
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch versions from %s: %w", pkg.VersionsURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch versions: HTTP %d", resp.StatusCode)

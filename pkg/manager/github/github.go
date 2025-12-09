@@ -75,19 +75,6 @@ type releaseByTagQuery struct {
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
-// releaseAssetsQuery fetches all asset names for error messages
-type releaseAssetsQuery struct {
-	Repository struct {
-		Release struct {
-			ReleaseAssets struct {
-				Nodes []struct {
-					Name string
-				}
-			} `graphql:"releaseAssets(first: 100)"`
-		} `graphql:"release(tagName: $tagName)"`
-	} `graphql:"repository(owner: $owner, name: $name)"`
-}
-
 // releaseAllAssetsQuery fetches ALL assets from a release with SHA256 digests and pagination
 type releaseAllAssetsQuery struct {
 	Repository struct {
@@ -740,21 +727,6 @@ func (m *GitHubReleaseManager) fetchReleaseAssetByName(ctx context.Context, owne
 		ID:                 0, // AssetID not available in GraphQL schema and not used
 		SHA256:             stripChecksumPrefix(node.Digest),
 	}, nil
-}
-
-// fetchAllReleaseAssets queries GraphQL for all asset names (for error messages)
-func (m *GitHubReleaseManager) fetchAllReleaseAssets(ctx context.Context, owner, repo, tagName string) ([]string, error) {
-	assets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
-	if err != nil {
-		return nil, err
-	}
-
-	assetNames := make([]string, 0, len(assets))
-	for _, asset := range assets {
-		assetNames = append(assetNames, asset.Name)
-	}
-
-	return assetNames, nil
 }
 
 // fetchAllReleaseAssetsWithDigests queries GraphQL for ALL assets with SHA256 digests and pagination

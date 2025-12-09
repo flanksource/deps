@@ -22,7 +22,7 @@ func init() {
 	}
 
 	// Load cache from disk on startup
-	loadCacheFromDisk()
+	_ = loadCacheFromDisk()
 }
 
 // getCachedRuntime retrieves cached runtime info for a language

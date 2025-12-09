@@ -301,7 +301,7 @@ func promptForUpdates(available []UpdateInfo) ([]UpdateInfo, error) {
 		fmt.Printf("\nUpdate %s from %s to %s? (y/n/a/q): ", info.Name, info.Current, info.Available)
 
 		var response string
-		fmt.Scanln(&response)
+		_, _ = fmt.Scanln(&response)
 		response = strings.ToLower(strings.TrimSpace(response))
 
 		switch response {
