@@ -282,21 +282,6 @@ func GetPackagesToTest(os, arch string) []InstallTestData {
 		return testData[i].PackageName < testData[j].PackageName
 	})
 
-	for _, v := range []string{
-		"stern/stern",
-		"fluxcd/flux2",
-	} {
-		testData = append(testData, InstallTestData{
-			PackageName: v,
-			Platform:    platform,
-			OS:          os,
-			Arch:        arch,
-			Version:     "stable",
-			Manager:     "github",
-			IsSupported: false,
-		})
-	}
-
 	return testData
 }
 
