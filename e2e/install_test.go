@@ -60,7 +60,7 @@ var _ = Describe("Installation tests", func() {
 			tempDir, err := os.MkdirTemp("", "")
 			Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
 
-			result, err := deps.Install("fluxcd/flux2", "stable",
+			result, err := deps.Install("flux2/flux", "stable",
 				deps.WithOS(testOS, arch),
 				deps.WithAppDir(filepath.Join(tempDir, "app")),
 				deps.WithBinDir(filepath.Join(tempDir, "bin")))
