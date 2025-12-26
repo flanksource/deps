@@ -748,3 +748,40 @@ registry:
         symlinks:
             - bin/python3
             - bin/pip3
+
+    uv:
+        name: uv
+        manager: url
+        versions_url: https://pypi.org/pypi/uv/json
+        versions_expr: |
+            "[" + json.releases.keys().map(v, "{\"version\":\"" + v + "\"}").join(",") + "]"
+        version_expr: "!prerelease"
+        url_template: https://github.com/astral-sh/uv/releases/download/{{.version}}/{{.asset}}
+        asset_patterns:
+            darwin-amd64: uv-x86_64-apple-darwin.tar.gz
+            darwin-arm64: uv-aarch64-apple-darwin.tar.gz
+            linux-amd64: uv-x86_64-unknown-linux-gnu.tar.gz
+            linux-arm64: uv-aarch64-unknown-linux-gnu.tar.gz
+            linux-386: uv-i686-unknown-linux-gnu.tar.gz
+            windows-amd64: uv-x86_64-pc-windows-msvc.zip
+            windows-arm64: uv-aarch64-pc-windows-msvc.zip
+            windows-386: uv-i686-pc-windows-msvc.zip
+        version_command: --version
+        version_regex: '^uv (\d+\.\d+\.\d+)'
+
+    bun:
+        name: bun
+        manager: url
+        versions_url: https://registry.npmjs.org/bun
+        versions_expr: |
+            "[" + json.versions.keys().map(v, "{\"version\":\"" + v + "\"}").join(",") + "]"
+        version_expr: '!tag.contains("canary")'
+        url_template: https://github.com/oven-sh/bun/releases/download/bun-v{{.version}}/{{.asset}}
+        asset_patterns:
+            darwin-amd64: bun-darwin-x64.zip
+            darwin-arm64: bun-darwin-aarch64.zip
+            linux-amd64: bun-linux-x64.zip
+            linux-arm64: bun-linux-aarch64.zip
+            windows-amd64: bun-windows-x64.zip
+        version_command: --version
+        version_regex: '(\\d+\\.\\d+\\.\\d+)'
