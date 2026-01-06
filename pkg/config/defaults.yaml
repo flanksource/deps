@@ -418,10 +418,10 @@ registry:
         mode: directory
         url_template: https://go.dev/dl/{{.asset}}
         asset_patterns:
-            darwin-amd64: "{{.version}}.darwin-amd64.tar.gz"
-            darwin-arm64: "{{.version}}.darwin-arm64.tar.gz"
-            linux-amd64: "{{.version}}.linux-amd64.tar.gz"
-            linux-arm64: "{{.version}}.linux-arm64.tar.gz"
+            darwin-amd64: "go{{.version}}.darwin-amd64.tar.gz"
+            darwin-arm64: "go{{.version}}.darwin-arm64.tar.gz"
+            linux-amd64: "go{{.version}}.linux-amd64.tar.gz"
+            linux-arm64: "go{{.version}}.linux-arm64.tar.gz"
         version_command: bin/go version
         version_regex: go version go(\d+\.\d+\.\d+)
         version_expr: 'tag.startsWith("go") ? tag.substring(2) : tag'
