@@ -748,3 +748,39 @@ registry:
         symlinks:
             - bin/python3
             - bin/pip3
+
+    flux:
+        name: flux
+        repo: fluxcd/flux2
+        asset_patterns:
+            darwin-amd64: flux_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: flux_{{.version}}_darwin_arm64.tar.gz
+            linux-amd64: flux_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: flux_{{.version}}_linux_arm64.tar.gz
+            windows-amd64: flux_{{.version}}_windows_amd64.zip
+        version_command: --version
+        version_regex: 'flux version (\d+\.\d+\.\d+)'
+
+    helm-docs:
+        name: helm-docs
+        repo: norwoodj/helm-docs
+        asset_patterns:
+            darwin-amd64: helm-docs_{{.version}}_Darwin_x86_64.tar.gz
+            darwin-arm64: helm-docs_{{.version}}_Darwin_arm64.tar.gz
+            linux-amd64: helm-docs_{{.version}}_Linux_x86_64.tar.gz
+            linux-arm64: helm-docs_{{.version}}_Linux_arm64.tar.gz
+            windows-amd64: helm-docs_{{.version}}_Windows_x86_64.tar.gz
+        version_command: --version
+        version_regex: 'helm-docs version (\d+\.\d+\.\d+)'
+
+    helm-schema:
+        name: helm-schema
+        repo: dadav/helm-schema
+        asset_patterns:
+            darwin-amd64: helm-schema_{{.tag}}_Darwin_x86_64.tar.gz
+            darwin-arm64: helm-schema_{{.tag}}_Darwin_arm64.tar.gz
+            linux-amd64: helm-schema_{{.tag}}_Linux_x86_64.tar.gz
+            linux-arm64: helm-schema_{{.tag}}_Linux_arm64.tar.gz
+            windows-amd64: helm-schema_{{.tag}}_Windows_x86_64.zip
+        version_command: --version
+        version_regex: 'helm-schema version (\S+)'
