@@ -784,3 +784,15 @@ registry:
             windows-amd64: helm-schema_{{.tag}}_Windows_x86_64.zip
         version_command: --version
         version_regex: 'helm-schema version (\S+)'
+
+    stern:
+        name: stern
+        repo: stern/stern
+        asset_patterns:
+            darwin-amd64: stern_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: stern_{{.version}}_darwin_arm64.tar.gz
+            linux-amd64: stern_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: stern_{{.version}}_linux_arm64.tar.gz
+            windows-amd64: stern_{{.version}}_windows_amd64.zip
+        version_command: --version
+        version_regex: 'stern version (\d+\.\d+\.\d+)'
