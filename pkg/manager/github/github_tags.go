@@ -68,7 +68,8 @@ func (m *GitHubTagsManager) Name() string {
 	return "github_tags"
 }
 
-// DiscoverVersions returns the most recent versions from GitHub tags
+// DiscoverVersions returns the most recent versions from GitHub tags using git HTTP protocol.
+// Falls back to GraphQL if git HTTP fails.
 func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Package, plat platform.Platform, limit int) ([]types.Version, error) {
 	if pkg.Repo == "" {
 		return nil, fmt.Errorf("repo is required for GitHub tags")
@@ -80,6 +81,34 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 	}
 	owner, repo := parts[0], parts[1]
 
+	// Use git HTTP protocol with fallback to GraphQL
+	versions, err := DiscoverVersionsViaGitWithFallback(ctx, owner, repo, limit, func() ([]types.Version, error) {
+		return m.discoverVersionsViaGraphQL(ctx, owner, repo, pkg, limit)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply version expression filtering if specified
+	if pkg.VersionExpr != "" {
+		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
+		}
+		versions = filteredVersions
+		logger.V(4).Infof("GitHub Tags: After version_expr filtering: %d versions", len(versions))
+	}
+
+	// Apply limit if specified
+	if limit > 0 && len(versions) > limit {
+		versions = versions[:limit]
+	}
+
+	return versions, nil
+}
+
+// discoverVersionsViaGraphQL fetches versions using GitHub GraphQL API (fallback method)
+func (m *GitHubTagsManager) discoverVersionsViaGraphQL(ctx context.Context, owner, repo string, pkg types.Package, limit int) ([]types.Version, error) {
 	// Set appropriate page size based on limit
 	first := limit
 	if first <= 0 || first > 100 {
@@ -99,7 +128,7 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 	err := graphql.Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
-		return nil, fmt.Errorf("failed to query tags for %s: %w", pkg.Repo, err)
+		return nil, fmt.Errorf("failed to query tags for %s/%s: %w", owner, repo, err)
 	}
 
 	// Extract tag information from GraphQL response
@@ -135,31 +164,11 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 			Published:  commitDate,
 			Prerelease: isPrerelease,
 		})
-
 	}
 
 	// Log all tags returned from GraphQL API at V(4) level
-	logger.V(4).Infof("GitHub Tags: Found %d total tags for %s", len(tagNames), pkg.Repo)
+	logger.V(4).Infof("GitHub Tags: Found %d total tags for %s/%s", len(tagNames), owner, repo)
 	logger.V(4).Infof("GitHub Tags: Found %d valid semantic version tags", len(versions))
-	logger.V(4).Infof("GitHub Tags: Raw tag names: %v", tagNames)
-
-	// Apply version expression filtering if specified
-	if pkg.VersionExpr != "" {
-		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
-		}
-		versions = filteredVersions
-		logger.V(4).Infof("GitHub Tags: After version_expr filtering: %d versions", len(versions))
-	}
-
-	// Tags are already sorted by commit date (DESC) from GraphQL query
-	// and filtered to only valid semantic versions
-
-	// Apply limit if specified (should not be needed as GraphQL query handles this)
-	if limit > 0 && len(versions) > limit {
-		versions = versions[:limit]
-	}
 
 	return versions, nil
 }

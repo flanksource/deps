@@ -121,7 +121,8 @@ func (m *GitHubReleaseManager) Name() string {
 	return "github_release"
 }
 
-// DiscoverVersions returns the most recent versions from GitHub releases using GraphQL
+// DiscoverVersions returns the most recent versions from GitHub using git HTTP protocol.
+// Falls back to GraphQL if git HTTP fails.
 func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.Package, plat platform.Platform, limit int) ([]types.Version, error) {
 	if pkg.Repo == "" {
 		return nil, fmt.Errorf("repo is required for GitHub releases")
@@ -133,6 +134,33 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 	}
 	owner, repo := parts[0], parts[1]
 
+	// Use git HTTP protocol with fallback to GraphQL
+	versions, err := DiscoverVersionsViaGitWithFallback(ctx, owner, repo, limit, func() ([]types.Version, error) {
+		return m.discoverVersionsViaGraphQL(ctx, owner, repo, pkg, limit)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply version expression filtering if specified
+	if pkg.VersionExpr != "" {
+		filteredVersions, err := versionpkg.ApplyVersionExpr(versions, pkg.VersionExpr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
+		}
+		versions = filteredVersions
+	}
+
+	// Apply limit if specified (git HTTP returns all, so we need to limit)
+	if limit > 0 && len(versions) > limit {
+		versions = versions[:limit]
+	}
+
+	return versions, nil
+}
+
+// discoverVersionsViaGraphQL fetches versions using GitHub GraphQL API (fallback method)
+func (m *GitHubReleaseManager) discoverVersionsViaGraphQL(ctx context.Context, owner, repo string, pkg types.Package, limit int) ([]types.Version, error) {
 	// Set appropriate page size based on limit
 	first := limit
 	if first <= 0 || first > 100 {
@@ -150,7 +178,7 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 	err := graphql.Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
-		return nil, fmt.Errorf("failed to list releases for %s: %w", pkg.Repo, err)
+		return nil, fmt.Errorf("failed to list releases for %s/%s: %w", owner, repo, err)
 	}
 
 	// Extract version information from GraphQL response
@@ -166,15 +194,6 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		versions = append(versions, version)
 	}
 
-	// Apply version expression filtering if specified
-	if pkg.VersionExpr != "" {
-		filteredVersions, err := versionpkg.ApplyVersionExpr(versions, pkg.VersionExpr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
-		}
-		versions = filteredVersions
-	}
-
 	// Sort versions in descending order (newest first)
 	sort.Slice(versions, func(i, j int) bool {
 		v1, err1 := semver.NewVersion(versions[i].Version)
@@ -187,11 +206,6 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 
 		return v1.GreaterThan(v2)
 	})
-
-	// Apply limit if specified
-	if limit > 0 && len(versions) > limit {
-		versions = versions[:limit]
-	}
 
 	return versions, nil
 }
