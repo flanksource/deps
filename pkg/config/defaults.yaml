@@ -749,39 +749,38 @@ registry:
             - bin/python3
             - bin/pip3
 
-    uv:
-        name: uv
-        manager: url
-        versions_url: https://pypi.org/pypi/uv/json
-        versions_expr: |
-            "[" + json.releases.keys().map(v, "{\"version\":\"" + v + "\"}").join(",") + "]"
-        version_expr: "!prerelease"
-        url_template: https://github.com/astral-sh/uv/releases/download/{{.version}}/{{.asset}}
+    flux:
+        name: flux
+        repo: fluxcd/flux2
         asset_patterns:
-            darwin-amd64: uv-x86_64-apple-darwin.tar.gz
-            darwin-arm64: uv-aarch64-apple-darwin.tar.gz
-            linux-amd64: uv-x86_64-unknown-linux-gnu.tar.gz
-            linux-arm64: uv-aarch64-unknown-linux-gnu.tar.gz
-            linux-386: uv-i686-unknown-linux-gnu.tar.gz
-            windows-amd64: uv-x86_64-pc-windows-msvc.zip
-            windows-arm64: uv-aarch64-pc-windows-msvc.zip
-            windows-386: uv-i686-pc-windows-msvc.zip
+            darwin-amd64: flux_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: flux_{{.version}}_darwin_arm64.tar.gz
+            linux-amd64: flux_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: flux_{{.version}}_linux_arm64.tar.gz
+            windows-amd64: flux_{{.version}}_windows_amd64.zip
         version_command: --version
-        version_regex: '^uv (\d+\.\d+\.\d+)'
+        version_regex: 'flux version (\d+\.\d+\.\d+)'
 
-    bun:
-        name: bun
-        manager: url
-        versions_url: https://registry.npmjs.org/bun
-        versions_expr: |
-            "[" + json.versions.keys().map(v, "{\"version\":\"" + v + "\"}").join(",") + "]"
-        version_expr: '!tag.contains("canary")'
-        url_template: https://github.com/oven-sh/bun/releases/download/bun-v{{.version}}/{{.asset}}
+    helm-docs:
+        name: helm-docs
+        repo: norwoodj/helm-docs
         asset_patterns:
-            darwin-amd64: bun-darwin-x64.zip
-            darwin-arm64: bun-darwin-aarch64.zip
-            linux-amd64: bun-linux-x64.zip
-            linux-arm64: bun-linux-aarch64.zip
-            windows-amd64: bun-windows-x64.zip
+            darwin-amd64: helm-docs_{{.version}}_Darwin_x86_64.tar.gz
+            darwin-arm64: helm-docs_{{.version}}_Darwin_arm64.tar.gz
+            linux-amd64: helm-docs_{{.version}}_Linux_x86_64.tar.gz
+            linux-arm64: helm-docs_{{.version}}_Linux_arm64.tar.gz
+            windows-amd64: helm-docs_{{.version}}_Windows_x86_64.tar.gz
         version_command: --version
-        version_regex: '(\\d+\\.\\d+\\.\\d+)'
+        version_regex: 'helm-docs version (\d+\.\d+\.\d+)'
+
+    helm-schema:
+        name: helm-schema
+        repo: dadav/helm-schema
+        asset_patterns:
+            darwin-amd64: helm-schema_{{.tag}}_Darwin_x86_64.tar.gz
+            darwin-arm64: helm-schema_{{.tag}}_Darwin_arm64.tar.gz
+            linux-amd64: helm-schema_{{.tag}}_Linux_x86_64.tar.gz
+            linux-arm64: helm-schema_{{.tag}}_Linux_arm64.tar.gz
+            windows-amd64: helm-schema_{{.tag}}_Windows_x86_64.zip
+        version_command: --version
+        version_regex: 'helm-schema version (\S+)'
