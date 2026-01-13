@@ -159,19 +159,22 @@ func FilterVersions(versions []string, constraint Constraint) []string {
 
 // IsPrerelease checks if a version is a pre-release
 func IsPrerelease(version string) bool {
-	v, err := semver.NewVersion(Normalize(version))
-	if err != nil {
-		// Try to detect pre-release patterns manually
-		lower := strings.ToLower(version)
-		prereleaseParts := []string{"alpha", "beta", "rc", "pre", "dev", "snapshot"}
-		for _, part := range prereleaseParts {
-			if strings.Contains(lower, part) {
-				return true
-			}
+	// Always check for prerelease patterns in the version string
+	// This catches cases like "17.0.18+1-ea-beta" where semver treats "+1-ea-beta" as build metadata
+	lower := strings.ToLower(version)
+	prereleaseParts := []string{"alpha", "beta", "rc", "pre", "dev", "nightly", "snapshot"}
+	for _, part := range prereleaseParts {
+		if strings.Contains(lower, part) {
+			return true
 		}
-		return false
 	}
-	return v.Prerelease() != ""
+
+	// Also check semver's prerelease field for standard semver prereleases like "1.0.0-beta.1"
+	v, err := semver.NewVersion(Normalize(version))
+	if err == nil && v.Prerelease() != "" {
+		return true
+	}
+	return false
 }
 
 // GetLatestVersion returns the latest version from a list, optionally excluding pre-releases
@@ -266,6 +269,30 @@ func FilterValidVersions(tags []string) []string {
 		}
 	}
 	return valid
+}
+
+// FilterToValidSemver filters versions to only those with valid semantic versions.
+// This is applied after version_expr transformation to remove versions that
+// couldn't be normalized to valid semver (e.g., nightly builds like "jdk21u-2025-07-02-08-50-beta").
+// Returns original list if no valid versions found (fallback).
+func FilterToValidSemver(versions []types.Version) []types.Version {
+	if len(versions) == 0 {
+		return versions
+	}
+
+	var validVersions []types.Version
+	for _, v := range versions {
+		if IsValidSemanticVersion(v.Version) {
+			validVersions = append(validVersions, v)
+		}
+	}
+
+	// If no valid versions found, return original list (fallback)
+	if len(validVersions) == 0 {
+		return versions
+	}
+
+	return validVersions
 }
 
 // ProcessTags converts raw tag names to Version structs with proper metadata

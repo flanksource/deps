@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/deps/pkg/checksum"
 	"github.com/flanksource/deps/pkg/manager"
@@ -151,6 +149,9 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		versions = filteredVersions
 	}
 
+	// Filter out versions that are not valid semantic versions after transformation
+	versions = versionpkg.FilterToValidSemver(versions)
+
 	// Apply limit if specified (git HTTP returns all, so we need to limit)
 	if limit > 0 && len(versions) > limit {
 		versions = versions[:limit]
@@ -195,17 +196,7 @@ func (m *GitHubReleaseManager) discoverVersionsViaGraphQL(ctx context.Context, o
 	}
 
 	// Sort versions in descending order (newest first)
-	sort.Slice(versions, func(i, j int) bool {
-		v1, err1 := semver.NewVersion(versions[i].Version)
-		v2, err2 := semver.NewVersion(versions[j].Version)
-
-		if err1 != nil || err2 != nil {
-			// Fallback to string comparison
-			return versions[i].Version > versions[j].Version
-		}
-
-		return v1.GreaterThan(v2)
-	})
+	versionpkg.SortVersions(versions)
 
 	return versions, nil
 }

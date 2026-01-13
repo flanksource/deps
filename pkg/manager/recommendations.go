@@ -156,8 +156,18 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 		return fmt.Errorf("%w\n\nNo assets found for %s", originalErr, packageName)
 	}
 
-	// Filter assets to only show those for the target OS
-	filteredAssets := filterAssetsByTargetOS(availableAssets, platform)
+	// Extract OS from platform string (e.g., "darwin-arm64" -> "darwin")
+	targetOS := ""
+	if parts := strings.Split(platform, "-"); len(parts) > 0 {
+		targetOS = strings.ToLower(parts[0])
+	}
+
+	// Filter out non-binary files first (.sig, .json, .txt, .msi for non-Windows)
+	filteredAssets := FilterNonBinaryAssetNames(availableAssets, targetOS)
+
+	// Then filter by target OS and architecture
+	filteredAssets = filterAssetsByTargetOS(filteredAssets, platform)
+	filteredAssets = filterAssetsByTargetArch(filteredAssets, platform)
 
 	// Sort assets by Levenshtein distance (most similar first) and calculate distances
 	type assetWithDistance struct {
@@ -286,6 +296,69 @@ func filterAssetsByTargetOS(assets []string, platform string) []string {
 		exclude := false
 		for os := range osPatterns {
 			if os != targetOS && matchesOS(assetLower, os) {
+				exclude = true
+				break
+			}
+		}
+		if !exclude {
+			filtered = append(filtered, asset)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return assets
+	}
+	return filtered
+}
+
+// filterAssetsByTargetArch filters assets to exclude those from other architectures
+func filterAssetsByTargetArch(assets []string, platform string) []string {
+	parts := strings.Split(platform, "-")
+	if len(parts) < 2 {
+		return assets
+	}
+	targetArch := strings.ToLower(parts[1])
+
+	// Architecture patterns - each key is a canonical arch, values identify assets for that arch
+	// Order matters for matching - check longer patterns first to avoid false positives
+	archPatterns := map[string][]string{
+		"amd64":   {"amd64", "x86_64", "x86-64"},
+		"arm64":   {"arm64", "aarch64"},
+		"arm":     {"armv7", "armv7l", "armv6"},
+		"386":     {"i386", "i686"},
+		"ppc64le": {"ppc64le"},
+		"ppc64":   {"ppc64"},
+		"s390x":   {"s390x"},
+		"riscv64": {"riscv64"},
+	}
+
+	// Word-boundary patterns for short arch names that could match falsely
+	wordBoundaryPatterns := map[string][]string{
+		"arm":   {"_arm_", "-arm-", "_arm.", "-arm."},
+		"amd64": {"_x64_", "-x64-", "_x64.", "-x64."},
+		"386":   {"_x86_", "-x86-", "_x86.", "-x86.", "_386_", "-386-", "_386.", "-386."},
+	}
+
+	matchesArch := func(assetLower string, archKey string) bool {
+		for _, pattern := range archPatterns[archKey] {
+			if strings.Contains(assetLower, pattern) {
+				return true
+			}
+		}
+		for _, pattern := range wordBoundaryPatterns[archKey] {
+			if strings.Contains(assetLower, pattern) {
+				return true
+			}
+		}
+		return false
+	}
+
+	var filtered []string
+	for _, asset := range assets {
+		assetLower := strings.ToLower(asset)
+		exclude := false
+		for arch := range archPatterns {
+			if arch != targetArch && matchesArch(assetLower, arch) {
 				exclude = true
 				break
 			}

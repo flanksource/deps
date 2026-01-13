@@ -215,3 +215,37 @@ func preferArm64Assets(assets []AssetInfo) []AssetInfo {
 	}
 	return assets
 }
+
+// FilterNonBinaryAssetNames filters asset name strings removing non-binary files.
+// Removes .sig, .json, .txt, .yaml, etc. and .msi for non-Windows platforms.
+func FilterNonBinaryAssetNames(assets []string, os string) []string {
+	nonBinaryExtensions := []string{
+		".asc", ".sig", ".gpg", ".pem", // Signature files
+		".sha1", ".sha256", ".sha512", // Checksum files
+		".md5", ".checksum", // More checksum files
+		".txt", ".json", ".yaml", ".yml", // Text/config files
+	}
+
+	var filtered []string
+	for _, asset := range assets {
+		nameLower := strings.ToLower(asset)
+
+		isNonBinary := false
+		for _, ext := range nonBinaryExtensions {
+			if strings.HasSuffix(nameLower, ext) {
+				isNonBinary = true
+				break
+			}
+		}
+
+		// .msi files are only valid for Windows
+		if !isNonBinary && strings.HasSuffix(nameLower, ".msi") && os != "windows" {
+			isNonBinary = true
+		}
+
+		if !isNonBinary {
+			filtered = append(filtered, asset)
+		}
+	}
+	return filtered
+}

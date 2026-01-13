@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -607,6 +608,32 @@ func (i *Installer) moveAllContents(workDir, targetDir string, entries []os.DirE
 
 // resolveAndValidateVersion handles version resolution and existing installation check
 func (i *Installer) resolveAndValidateVersion(ctx context.Context, mgr manager.PackageManager, name string, version string, pkg types.Package, t *task.Task) (string, bool, error) {
+	// Handle @any: check if binary exists anywhere (PATH or bin-dir) before resolving version
+	if version == "any" {
+		binaryName := name
+		if pkg.BinaryName != "" {
+			binaryName = pkg.BinaryName
+		}
+
+		// Check PATH first
+		if path, err := exec.LookPath(binaryName); err == nil {
+			t.Infof("Found %s on PATH: %s", name, path)
+			t.Success()
+			return "", true, nil
+		}
+
+		// Check bin-dir
+		binPath := filepath.Join(i.options.BinDir, binaryName)
+		if _, err := os.Stat(binPath); err == nil {
+			t.Infof("Found %s in bin-dir: %s", name, binPath)
+			t.Success()
+			return "", true, nil
+		}
+
+		// Not found anywhere, fall back to latest
+		version = "latest"
+	}
+
 	// If no version specified, resolve it
 	if version == "" {
 		version = "latest"

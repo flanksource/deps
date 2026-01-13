@@ -99,6 +99,12 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 		logger.V(4).Infof("GitHub Tags: After version_expr filtering: %d versions", len(versions))
 	}
 
+	// Filter out versions that are not valid semantic versions after transformation
+	versions = version.FilterToValidSemver(versions)
+
+	// Re-sort by transformed version (needed after version_expr transforms tags)
+	version.SortVersions(versions)
+
 	// Apply limit if specified
 	if limit > 0 && len(versions) > limit {
 		versions = versions[:limit]

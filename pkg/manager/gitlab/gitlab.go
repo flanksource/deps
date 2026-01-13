@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -188,12 +187,11 @@ func (m *GitLabReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		versions = filteredVersions
 	}
 
+	// Filter out versions that are not valid semantic versions after transformation
+	versions = version.FilterToValidSemver(versions)
+
 	// Sort versions in descending order (newest first)
-	sort.Slice(versions, func(i, j int) bool {
-		vi, _ := semver.NewVersion(versions[i].Version)
-		vj, _ := semver.NewVersion(versions[j].Version)
-		return vi.GreaterThan(vj)
-	})
+	version.SortVersions(versions)
 
 	// Apply limit if specified
 	if limit > 0 && limit < len(versions) {

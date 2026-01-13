@@ -159,6 +159,47 @@ var _ = Describe("Asset Resolution", func() {
 		})
 	})
 
+	Describe("FilterNonBinaryAssetNames", func() {
+		It("should filter out signature files", func() {
+			assets := []string{"tool.tar.gz", "tool.tar.gz.sig", "tool.tar.gz.asc"}
+			filtered := FilterNonBinaryAssetNames(assets, "linux")
+			Expect(filtered).To(Equal([]string{"tool.tar.gz"}))
+		})
+
+		It("should filter out checksum files", func() {
+			assets := []string{"tool.zip", "tool.zip.sha256", "checksums.txt", "tool.zip.md5"}
+			filtered := FilterNonBinaryAssetNames(assets, "linux")
+			Expect(filtered).To(Equal([]string{"tool.zip"}))
+		})
+
+		It("should filter out json/yaml/txt files", func() {
+			assets := []string{"tool.tar.gz", "metadata.json", "config.yaml", "notes.txt"}
+			filtered := FilterNonBinaryAssetNames(assets, "linux")
+			Expect(filtered).To(Equal([]string{"tool.tar.gz"}))
+		})
+
+		It("should filter out .msi for non-Windows", func() {
+			assets := []string{"tool.tar.gz", "tool.msi", "tool.zip"}
+			filtered := FilterNonBinaryAssetNames(assets, "linux")
+			Expect(filtered).To(Equal([]string{"tool.tar.gz", "tool.zip"}))
+
+			filtered = FilterNonBinaryAssetNames(assets, "darwin")
+			Expect(filtered).To(Equal([]string{"tool.tar.gz", "tool.zip"}))
+		})
+
+		It("should keep .msi for Windows", func() {
+			assets := []string{"tool.tar.gz", "tool.msi", "tool.zip"}
+			filtered := FilterNonBinaryAssetNames(assets, "windows")
+			Expect(filtered).To(Equal([]string{"tool.tar.gz", "tool.msi", "tool.zip"}))
+		})
+
+		It("should be case insensitive", func() {
+			assets := []string{"tool.ZIP", "tool.TXT", "tool.JSON"}
+			filtered := FilterNonBinaryAssetNames(assets, "linux")
+			Expect(filtered).To(Equal([]string{"tool.ZIP"}))
+		})
+	})
+
 	Describe("NormalizeURLTemplate", func() {
 		Context("URL ending with /", func() {
 			It("should append {{.asset}} when URL ends with /", func() {

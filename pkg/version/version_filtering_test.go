@@ -20,7 +20,7 @@ var _ = Describe("Version Filtering Functions", func() {
 			Entry("empty string", "", false),
 			Entry("feature branch", "feature-xyz", false),
 			Entry("dev branch", "dev-branch", false),
-			Entry("nightly build with date", "nightly-20240101", true), // normalized to 20240101 which is valid semver
+			Entry("nightly build with date", "nightly-20240101", false), // not valid - 20240101 lacks MAJOR.MINOR format
 			Entry("random text", "random-text", false),
 			Entry("just letters", "abcdef", false),
 			Entry("partial version", "v1", true), // This is valid semver as 1.0.0
@@ -38,14 +38,14 @@ var _ = Describe("Version Filtering Functions", func() {
 				"feature-branch",
 				"v2.0.0-alpha.1",
 				"dev-xyz",
-				"nightly-20240101", // This becomes valid (normalized to 20240101)
+				"nightly-20240101", // Not valid - 20240101 lacks MAJOR.MINOR format
 				"3.1.4",
 				"random-text",
 			}
 
 			result := FilterValidVersions(input)
 
-			Expect(result).To(ConsistOf("v1.2.3", "1.0.0", "v2.0.0-alpha.1", "nightly-20240101", "3.1.4"))
+			Expect(result).To(ConsistOf("v1.2.3", "1.0.0", "v2.0.0-alpha.1", "3.1.4"))
 		})
 
 		It("should handle empty input", func() {
