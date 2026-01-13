@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
+	"github.com/flanksource/deps/pkg/version"
 	"github.com/shurcooL/githubv4"
 )
 
@@ -173,14 +174,7 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 	}
 
 	// Sort by semantic version (descending)
-	sort.Slice(versions, func(i, j int) bool {
-		v1, err1 := semver.NewVersion(versions[i].Version)
-		v2, err2 := semver.NewVersion(versions[j].Version)
-		if err1 != nil || err2 != nil {
-			return versions[i].Version > versions[j].Version
-		}
-		return v1.GreaterThan(v2)
-	})
+	version.SortVersions(versions)
 
 	// Apply limit
 	if limit > 0 && len(versions) > limit {
@@ -411,15 +405,8 @@ func (m *GitHubBuildManager) ResolveVersionConstraint(ctx context.Context, pkg t
 	// Try constraint matching (for "3.11" style constraints)
 	semverConstraint, err := semver.NewConstraint("~" + softwareVersion)
 	if err == nil {
-		// Sort by version descending
-		sort.Slice(versions, func(i, j int) bool {
-			v1, err1 := semver.NewVersion(versions[i].Version)
-			v2, err2 := semver.NewVersion(versions[j].Version)
-			if err1 != nil || err2 != nil {
-				return versions[i].Version > versions[j].Version
-			}
-			return v1.GreaterThan(v2)
-		})
+		// Sort by version descending, v-prefixed tags first
+		version.SortVersions(versions)
 
 		// Find first matching version
 		for _, v := range versions {

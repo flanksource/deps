@@ -11,6 +11,25 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 )
 
+// SortVersions sorts versions in descending order (newest first).
+// Uses SortVersionStructs from constraint.go for consistent semver sorting.
+func SortVersions(versions []types.Version) {
+	if len(versions) <= 1 {
+		return
+	}
+
+	sort.Slice(versions, func(i, j int) bool {
+		v1, err1 := semver.NewVersion(versions[i].Version)
+		v2, err2 := semver.NewVersion(versions[j].Version)
+
+		if err1 != nil || err2 != nil {
+			return versions[i].Version > versions[j].Version
+		}
+
+		return v1.GreaterThan(v2)
+	})
+}
+
 // PackageManager defines the minimal interface needed for version resolution
 type PackageManager interface {
 	// Name returns the manager type identifier
@@ -81,7 +100,7 @@ func (r *VersionResolver) ResolveConstraint(ctx context.Context, pkg types.Packa
 // getOptimalLimit returns the optimal number of versions to fetch for a given constraint
 func (r *VersionResolver) getOptimalLimit(constraint string) int {
 	switch constraint {
-	case "latest":
+	case "latest", "any":
 		return 10 // Only need most recent stable version
 	case "stable":
 		return 20 // Need to find latest non-prerelease
@@ -111,7 +130,7 @@ func (r *VersionResolver) selectBestVersion(pkg types.Package, versions []types.
 
 	// Handle special constraints
 	switch constraint {
-	case "latest":
+	case "latest", "any":
 		return r.getLatestVersion(versions, false), nil // Include prereleases if no stable
 	case "stable":
 		latest := r.getLatestVersion(versions, true) // Stable only
@@ -160,7 +179,25 @@ func (r *VersionResolver) selectBestVersion(pkg types.Package, versions []types.
 		return cmp > 0 // Higher version comes first
 	})
 
-	return candidates[0].Tag, nil // Return original tag, not normalized version
+	return getBestVersionString(candidates[0]), nil
+}
+
+// getBestVersionString returns the most appropriate version string for a Version.
+// For packages where Tag and Version differ fundamentally (e.g., github_build), returns Version.
+// For regular packages where Tag is the version tag (possibly with v prefix), returns Tag.
+func getBestVersionString(v types.Version) string {
+	// For regular packages, Tag is the version tag (e.g., "v1.2.3")
+	if v.Tag != "" {
+		// Check if Tag and Version are the same version (ignoring v prefix)
+		normalizedTag := strings.TrimPrefix(v.Tag, "v")
+		if normalizedTag == v.Version || v.Tag == v.Version {
+			return v.Tag // Return original tag format
+		}
+		// If they differ fundamentally (e.g., Tag is build date like "20251010"),
+		// return the actual software version
+		return v.Version
+	}
+	return v.Version
 }
 
 // getLatestVersion returns the latest version, optionally excluding prereleases
@@ -169,7 +206,7 @@ func (r *VersionResolver) getLatestVersion(versions []types.Version, stableOnly 
 		if stableOnly && v.Prerelease {
 			continue
 		}
-		return v.Tag // Return original tag format
+		return getBestVersionString(v)
 	}
 
 	// If no stable versions found and stable required, return empty
@@ -179,7 +216,7 @@ func (r *VersionResolver) getLatestVersion(versions []types.Version, stableOnly 
 
 	// Return latest version even if prerelease
 	if len(versions) > 0 {
-		return versions[0].Tag
+		return getBestVersionString(versions[0])
 	}
 
 	return ""
@@ -191,7 +228,7 @@ func (r *VersionResolver) findExactVersion(pkg types.Package, versions []types.V
 
 	for _, v := range versions {
 		if v.Version == normalizedTarget || v.Tag == target {
-			return v.Tag, nil // Return original tag format
+			return getBestVersionString(v), nil
 		}
 	}
 
@@ -244,7 +281,7 @@ func (r *VersionResolver) findLatestInRange(pkg types.Package, versions []types.
 		return cmp > 0 // Higher version comes first
 	})
 
-	return candidates[0].Tag, nil // Return original tag, not normalized version
+	return getBestVersionString(candidates[0]), nil
 }
 
 // needsMoreVersions determines if we should fetch more versions based on the error

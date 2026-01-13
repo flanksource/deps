@@ -78,6 +78,21 @@ var _ = Describe("Version Resolver", func() {
 				Expect(result).To(Equal("v2.1.0"))
 			})
 
+			It("should resolve any constraint same as latest", func() {
+				mgr := &mockPackageManager{
+					name:     "test",
+					versions: testVersions,
+				}
+
+				resolver := NewResolver(mgr)
+				pkg := types.Package{Name: "test-pkg"}
+				plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+				result, err := resolver.ResolveConstraint(context.Background(), pkg, "any", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v2.1.0"))
+			})
+
 			It("should resolve exact version constraint", func() {
 				mgr := &mockPackageManager{
 					name:     "test",
@@ -361,6 +376,7 @@ var _ = Describe("Version Resolver", func() {
 				Expect(result).To(Equal(expectedLimit))
 			},
 			Entry("latest constraint", "latest", 10),
+			Entry("any constraint", "any", 10),
 			Entry("stable constraint", "stable", 20),
 			Entry("exact version with v", "v1.2.3", 200),
 			Entry("exact version without v", "1.2.3", 200),
@@ -383,6 +399,12 @@ var _ = Describe("Version Resolver", func() {
 		Context("with valid scenarios", func() {
 			It("should select latest with stable versions", func() {
 				result, err := resolver.selectBestVersion(types.Package{}, testVersions, "latest")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v2.1.0"))
+			})
+
+			It("should treat any constraint same as latest", func() {
+				result, err := resolver.selectBestVersion(types.Package{}, testVersions, "any")
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v2.1.0"))
 			})

@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/Masterminds/semver/v3"
 	"github.com/flanksource/commons/logger"
 	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/types"
@@ -27,7 +25,7 @@ type GitRef struct {
 // DiscoverVersionsViaGit fetches tags from a GitHub repository using the git HTTP protocol.
 // This avoids GitHub API rate limits by using the git-upload-pack protocol.
 // URL format: https://github.com/{owner}/{repo}.git/info/refs?service=git-upload-pack
-func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, limit int) ([]types.Version, error) {
+func DiscoverVersionsViaGit(ctx context.Context, owner, repo string) ([]types.Version, error) {
 	url := fmt.Sprintf("https://github.com/%s/%s.git/info/refs?service=git-upload-pack", owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -54,49 +52,57 @@ func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, limit int) 
 		return nil, fmt.Errorf("failed to parse git refs: %w", err)
 	}
 
-	// Filter to only tags
-	var versions []types.Version
+	// Filter to only refs/tags/
+	type rawTag struct {
+		tagName string
+		sha     string
+	}
+	var rawTags []rawTag
 	for _, ref := range refs {
 		if !strings.HasPrefix(ref.Name, "refs/tags/") {
 			continue
 		}
-
 		// Skip peeled refs (^{} suffix indicates dereferenced tag)
 		if strings.HasSuffix(ref.Name, "^{}") {
 			continue
 		}
-
 		tagName := strings.TrimPrefix(ref.Name, "refs/tags/")
-		normalizedVersion := version.Normalize(tagName)
+		rawTags = append(rawTags, rawTag{tagName: tagName, sha: ref.SHA})
+	}
+
+	// Count valid semantic versions to detect mixed tag scenarios
+	validCount := 0
+	for _, t := range rawTags {
+		if version.IsValidSemanticVersion(t.tagName) {
+			validCount++
+		}
+	}
+
+	// If we have mixed versions (some valid, some invalid), filter to only valid semver tags
+	filterInvalid := validCount > 0 && validCount < len(rawTags)
+	if filterInvalid {
+		logger.V(3).Infof("Git HTTP: Detected %d valid semver tags out of %d total for %s/%s, filtering invalid tags", validCount, len(rawTags), owner, repo)
+	}
+
+	var versions []types.Version
+	for _, t := range rawTags {
+		if filterInvalid && !version.IsValidSemanticVersion(t.tagName) {
+			continue
+		}
+
+		normalizedVersion := version.Normalize(t.tagName)
 		isPrerelease := version.IsPrerelease(normalizedVersion)
 
 		versions = append(versions, types.Version{
-			Tag:        tagName,
+			Tag:        t.tagName,
 			Version:    normalizedVersion,
-			SHA:        ref.SHA,
+			SHA:        t.sha,
 			Prerelease: isPrerelease,
 		})
 	}
 
 	// Sort versions in descending order (newest first)
-	sort.Slice(versions, func(i, j int) bool {
-		v1, err1 := semver.NewVersion(versions[i].Version)
-		v2, err2 := semver.NewVersion(versions[j].Version)
-
-		if err1 != nil || err2 != nil {
-			// Fallback to string comparison
-			return versions[i].Version > versions[j].Version
-		}
-
-		return v1.GreaterThan(v2)
-	})
-
-	// Apply limit if specified
-	if limit > 0 && len(versions) > limit {
-		versions = versions[:limit]
-	}
-
-	logger.V(3).Infof("Git HTTP: Found %d tags for %s/%s", len(versions), owner, repo)
+	version.SortVersions(versions)
 
 	return versions, nil
 }
@@ -188,7 +194,7 @@ func parseGitUploadPackRefs(r io.Reader) ([]GitRef, error) {
 // DiscoverVersionsViaGitWithFallback tries git HTTP protocol first, falls back to GraphQL
 func DiscoverVersionsViaGitWithFallback(ctx context.Context, owner, repo string, limit int, graphqlFallback func() ([]types.Version, error)) ([]types.Version, error) {
 	// Try git HTTP protocol first (no rate limits)
-	versions, err := DiscoverVersionsViaGit(ctx, owner, repo, limit)
+	versions, err := DiscoverVersionsViaGit(ctx, owner, repo)
 	if err == nil {
 		return versions, nil
 	}
@@ -205,7 +211,7 @@ func DiscoverVersionsViaGitWithFallback(ctx context.Context, owner, repo string,
 
 // FindTagByVersionViaGit searches for a specific version tag using git HTTP protocol
 func FindTagByVersionViaGit(ctx context.Context, owner, repo, targetVersion, versionExpr string) (string, string, error) {
-	versions, err := DiscoverVersionsViaGit(ctx, owner, repo, 0)
+	versions, err := DiscoverVersionsViaGit(ctx, owner, repo)
 	if err != nil {
 		return "", "", err
 	}
@@ -272,7 +278,7 @@ func DiscoverVersionsViaGitCached(ctx context.Context, owner, repo string, limit
 	}
 
 	// Fetch fresh data
-	versions, err := DiscoverVersionsViaGit(ctx, owner, repo, 0) // Get all, cache full list
+	versions, err := DiscoverVersionsViaGit(ctx, owner, repo) // Get all, cache full list
 	if err != nil {
 		return nil, err
 	}

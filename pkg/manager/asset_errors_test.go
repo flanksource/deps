@@ -24,17 +24,16 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 				"tool-darwin-amd64",
 				"tool-linux-arm64",
 				"tool-windows-amd64.exe",
-				"checksums.txt",
+				"checksums.txt", // Filtered out as non-binary (.txt)
 			},
 			expectedContains: []string{
 				"Asset not found: tool-linux-amd64 for linux-amd64 in package example/tool",
-				"Available assets (2 total):", // Only linux + universal (checksums.txt)
+				"Available assets (1 total):", // Only linux assets, checksums.txt filtered
 				"tool-linux-arm64",
-				"checksums.txt",
 				"Searched for pattern: tool-linux-amd64",
 				"Did you mean:", // Just check that it suggests something
 			},
-			expectedCount: 2, // Only linux-arm64 and checksums.txt (no OS marker)
+			expectedCount: 1, // Only linux-arm64 (checksums.txt filtered as non-binary)
 		},
 		{
 			name:         "Many assets with truncation",
@@ -75,15 +74,15 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 			platform:     "linux-amd64",
 			availableAssets: []string{
 				"tool-linux-amd64.tar.gz", // Very similar, should be suggested
-				"tool-linux-arm64.tar.gz",
-				"tool-darwin-amd64.tar.gz", // Will be filtered out
+				"tool-linux-arm64.tar.gz", // Filtered out (wrong arch)
+				"tool-darwin-amd64.tar.gz", // Filtered out (wrong OS)
 			},
 			expectedContains: []string{
-				"Available assets (2 total):", // darwin filtered out
+				"Available assets (1 total):", // darwin and arm64 filtered out
 				"tool-linux-amd64.tar.gz",
 				"Did you mean: tool-linux-amd64.tar.gz?",
 			},
-			expectedCount: 2, // Only linux assets shown
+			expectedCount: 1, // Only linux-amd64 assets shown
 		},
 	}
 
@@ -222,13 +221,11 @@ func TestFilterAssetsByTargetOS(t *testing.T) {
 			assets: []string{
 				"tool-linux-amd64",
 				"universal-binary",
-				"checksums.txt",
 				"tool-windows-amd64.exe",
 			},
 			expected: []string{
 				"tool-linux-amd64",
 				"universal-binary",
-				"checksums.txt",
 			},
 		},
 		{
@@ -260,6 +257,112 @@ func TestFilterAssetsByTargetOS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filtered := filterAssetsByTargetOS(tt.assets, tt.platform)
+			if len(filtered) != len(tt.expected) {
+				t.Errorf("Expected %d assets, got %d: %v", len(tt.expected), len(filtered), filtered)
+				return
+			}
+			for i, exp := range tt.expected {
+				if filtered[i] != exp {
+					t.Errorf("Expected asset[%d] = %q, got %q", i, exp, filtered[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFilterAssetsByTargetArch(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		assets   []string
+		expected []string
+	}{
+		{
+			name:     "should filter out other architectures when showing amd64 assets",
+			platform: "linux-amd64",
+			assets: []string{
+				"tool-linux-amd64.tar.gz",
+				"tool-linux-x86_64.tar.gz",
+				"tool-linux-arm64.tar.gz",
+				"tool-linux-aarch64.tar.gz",
+				"tool-linux-ppc64le.tar.gz",
+				"tool-linux-s390x.tar.gz",
+			},
+			expected: []string{
+				"tool-linux-amd64.tar.gz",
+				"tool-linux-x86_64.tar.gz",
+			},
+		},
+		{
+			name:     "should filter out other architectures when showing arm64 assets",
+			platform: "darwin-arm64",
+			assets: []string{
+				"tool-darwin-arm64.tar.gz",
+				"tool-darwin-aarch64.tar.gz",
+				"tool-darwin-amd64.tar.gz",
+				"tool-darwin-x86_64.tar.gz",
+			},
+			expected: []string{
+				"tool-darwin-arm64.tar.gz",
+				"tool-darwin-aarch64.tar.gz",
+			},
+		},
+		{
+			name:     "should keep universal assets (no arch in name)",
+			platform: "linux-amd64",
+			assets: []string{
+				"tool-linux-amd64.tar.gz",
+				"universal-binary",
+				"tool-linux-arm64.tar.gz",
+			},
+			expected: []string{
+				"tool-linux-amd64.tar.gz",
+				"universal-binary",
+			},
+		},
+		{
+			name:     "should return all assets if filtering removes everything",
+			platform: "linux-riscv32",
+			assets: []string{
+				"tool-linux-amd64.tar.gz",
+				"tool-linux-arm64.tar.gz",
+			},
+			expected: []string{
+				"tool-linux-amd64.tar.gz",
+				"tool-linux-arm64.tar.gz",
+			},
+		},
+		{
+			name:     "should handle empty platform",
+			platform: "",
+			assets: []string{
+				"tool-linux-amd64",
+				"tool-linux-arm64",
+			},
+			expected: []string{
+				"tool-linux-amd64",
+				"tool-linux-arm64",
+			},
+		},
+		{
+			name:     "should handle OpenJDK naming convention",
+			platform: "linux-amd64",
+			assets: []string{
+				"OpenJDK17U-jdk_x64_linux_hotspot.tar.gz",
+				"OpenJDK17U-jdk_aarch64_linux_hotspot.tar.gz",
+				"OpenJDK17U-jdk_arm_linux_hotspot.tar.gz",
+				"OpenJDK17U-jdk_ppc64le_linux_hotspot.tar.gz",
+				"OpenJDK17U-jdk_s390x_linux_hotspot.tar.gz",
+			},
+			expected: []string{
+				"OpenJDK17U-jdk_x64_linux_hotspot.tar.gz",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filtered := filterAssetsByTargetArch(tt.assets, tt.platform)
 			if len(filtered) != len(tt.expected) {
 				t.Errorf("Expected %d assets, got %d: %v", len(tt.expected), len(filtered), filtered)
 				return

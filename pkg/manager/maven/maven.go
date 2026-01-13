@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"text/template"
 
-	"github.com/Masterminds/semver/v3"
 	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
@@ -102,18 +100,11 @@ func (m *MavenManager) DiscoverVersions(ctx context.Context, pkg types.Package, 
 		versions = filteredVersions
 	}
 
+	// Filter out versions that are not valid semantic versions after transformation
+	versions = version.FilterToValidSemver(versions)
+
 	// Sort versions in descending order (newest first)
-	sort.Slice(versions, func(i, j int) bool {
-		v1, err1 := semver.NewVersion(versions[i].Version)
-		v2, err2 := semver.NewVersion(versions[j].Version)
-
-		if err1 != nil || err2 != nil {
-			// Fallback to string comparison
-			return versions[i].Version > versions[j].Version
-		}
-
-		return v1.GreaterThan(v2)
-	})
+	version.SortVersions(versions)
 
 	// Apply limit if specified
 	if limit > 0 && len(versions) > limit {
