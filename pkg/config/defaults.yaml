@@ -549,13 +549,14 @@ registry:
         repo: adoptium/temurin8-binaries
         mode: directory
         asset_patterns:
-            darwin-amd64: OpenJDK8U-jdk_x64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-            darwin-arm64: OpenJDK8U-jdk_aarch64_mac_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-            linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
-            linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.version | replaceAll "+" "_"}}.tar.gz
+            darwin-amd64: OpenJDK8U-jdk_x64_mac_hotspot_{{.tag | strings.TrimPrefix "jdk" | strings.ReplaceAll "-" ""}}.tar.gz
+            darwin-arm64: OpenJDK8U-jdk_aarch64_mac_hotspot_{{.tag | strings.TrimPrefix "jdk" | strings.ReplaceAll "-" ""}}.tar.gz
+            linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.tag | strings.TrimPrefix "jdk" | strings.ReplaceAll "-" ""}}.tar.gz
+            linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.tag | strings.TrimPrefix "jdk" | strings.ReplaceAll "-" ""}}.tar.gz
         version_command: java -version
-        version_regex: '([\d.]+\+\d+)'
-        version_expr: 'tag.startsWith("jdk") ? tag.substring(3).replaceAll("-", "") : tag'
+        version_regex: '8u(\d+)'
+        # Transform jdk8u472-b08 -> 8.0.472+8 for semver sorting, exclude beta and non-jdk8u tags
+        version_expr: 'tag.startsWith("jdk8u") && !tag.contains("beta") ? "8.0." + tag.split("-")[0].substring(5) + "+" + tag.split("-")[1].substring(1) : ""'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
@@ -667,12 +668,13 @@ registry:
         name: arthas
         repo: alibaba/arthas
         mode: directory
+        version_expr: 'tag.startsWith("arthas-all-") && !tag.contains("qlexpress") ? tag.substring(11) : ""'
         asset_patterns:
             "*": arthas-bin.zip
-        version_command: cat VERSION
-        version_regex: '(\\d+\\.\\d+\\.\\d+)'
+        version_command: arthas -h
+        version_regex: '(\d+\.\d+\.\d+)'
         symlinks:
-            - as.sh->arthas
+            - arthas->as.sh
 
     opensearch:
         name: opensearch

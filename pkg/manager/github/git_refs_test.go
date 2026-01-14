@@ -38,7 +38,7 @@ func TestDiscoverVersionsViaGit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			versions, err := DiscoverVersionsViaGit(context.Background(), tt.owner, tt.repo, 0)
+			versions, err := DiscoverVersionsViaGit(context.Background(), tt.owner, tt.repo)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("DiscoverVersionsViaGit() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -132,10 +132,15 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 	}
 	owner, repo := parts[0], parts[1]
 
+	// Skip semver filtering if version_expr will transform the tags
+	opts := DiscoverVersionsViaGitOptions{
+		SkipSemverFilter: pkg.VersionExpr != "",
+	}
+
 	// Use git HTTP protocol with fallback to GraphQL
 	versions, err := DiscoverVersionsViaGitWithFallback(ctx, owner, repo, limit, func() ([]types.Version, error) {
 		return m.discoverVersionsViaGraphQL(ctx, owner, repo, pkg, limit)
-	})
+	}, opts)
 	if err != nil {
 		return nil, err
 	}

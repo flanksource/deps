@@ -22,10 +22,20 @@ type GitRef struct {
 	SHA  string // Commit SHA
 }
 
+// DiscoverVersionsViaGitOptions configures version discovery behavior
+type DiscoverVersionsViaGitOptions struct {
+	// SkipSemverFilter skips filtering non-semver tags (useful when version_expr will transform them)
+	SkipSemverFilter bool
+}
+
 // DiscoverVersionsViaGit fetches tags from a GitHub repository using the git HTTP protocol.
 // This avoids GitHub API rate limits by using the git-upload-pack protocol.
 // URL format: https://github.com/{owner}/{repo}.git/info/refs?service=git-upload-pack
-func DiscoverVersionsViaGit(ctx context.Context, owner, repo string) ([]types.Version, error) {
+func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, opts ...DiscoverVersionsViaGitOptions) ([]types.Version, error) {
+	var options DiscoverVersionsViaGitOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
 	url := fmt.Sprintf("https://github.com/%s/%s.git/info/refs?service=git-upload-pack", owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -79,7 +89,8 @@ func DiscoverVersionsViaGit(ctx context.Context, owner, repo string) ([]types.Ve
 	}
 
 	// If we have mixed versions (some valid, some invalid), filter to only valid semver tags
-	filterInvalid := validCount > 0 && validCount < len(rawTags)
+	// Skip this filtering if SkipSemverFilter is set (version_expr will handle transformation)
+	filterInvalid := !options.SkipSemverFilter && validCount > 0 && validCount < len(rawTags)
 	if filterInvalid {
 		logger.V(3).Infof("Git HTTP: Detected %d valid semver tags out of %d total for %s/%s, filtering invalid tags", validCount, len(rawTags), owner, repo)
 	}
@@ -192,9 +203,9 @@ func parseGitUploadPackRefs(r io.Reader) ([]GitRef, error) {
 }
 
 // DiscoverVersionsViaGitWithFallback tries git HTTP protocol first, falls back to GraphQL
-func DiscoverVersionsViaGitWithFallback(ctx context.Context, owner, repo string, limit int, graphqlFallback func() ([]types.Version, error)) ([]types.Version, error) {
+func DiscoverVersionsViaGitWithFallback(ctx context.Context, owner, repo string, limit int, graphqlFallback func() ([]types.Version, error), opts ...DiscoverVersionsViaGitOptions) ([]types.Version, error) {
 	// Try git HTTP protocol first (no rate limits)
-	versions, err := DiscoverVersionsViaGit(ctx, owner, repo)
+	versions, err := DiscoverVersionsViaGit(ctx, owner, repo, opts...)
 	if err == nil {
 		return versions, nil
 	}
