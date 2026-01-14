@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -25,10 +26,15 @@ type runtimeDetector struct {
 func (d *runtimeDetector) detectRuntime() (*runtimeInfo, error) {
 	// Check cache first
 	if info, exists := getCachedRuntime(d.language); exists {
-		if d.task != nil {
-			d.task.V(4).Infof("Using cached %s runtime: %s version %s", d.language, info.Path, info.Version)
+		// Validate cached path still exists
+		if _, err := os.Stat(info.Path); err == nil {
+			if d.task != nil {
+				d.task.V(4).Infof("Using cached %s runtime: %s version %s", d.language, info.Path, info.Version)
+			}
+			return info, nil
 		}
-		return info, nil
+		// Cached path no longer exists, invalidate and continue with PATH search
+		_ = invalidateCache(d.language)
 	}
 
 	// Search PATH for runtime binary
@@ -173,7 +179,7 @@ func (d *runtimeDetector) findOrInstallRuntime(constraint string) (*runtimeInfo,
 // installRuntime installs the runtime using deps
 func (d *runtimeDetector) installRuntime(constraint string) (*runtimeInfo, error) {
 	// Determine version to install
-	versionToInstall := "latest"
+	versionToInstall := "stable"
 	if constraint != "" {
 		versionToInstall = constraint
 	}

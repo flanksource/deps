@@ -24,6 +24,18 @@ func init() {
 			}
 		}
 	}
+
+	// Add Homebrew opt directories (macOS)
+	if entries, err := os.ReadDir("/usr/local/opt"); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				binPath := filepath.Join("/usr/local/opt", entry.Name(), "bin")
+				if _, err := os.Stat(binPath); err == nil {
+					_ = os.Setenv("PATH", binPath+string(os.PathListSeparator)+os.Getenv("PATH"))
+				}
+			}
+		}
+	}
 }
 
 func TestRunPython(t *testing.T) {
