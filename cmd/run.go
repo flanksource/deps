@@ -137,13 +137,14 @@ func executeScript(scriptPath string, scriptArgs []string, opts RunOptions) (Run
 			return RunResult{}, fmt.Errorf("failed to create temp file: %w", err)
 		}
 		tempFile = f.Name()
+		// nolint:errcheck
 		defer os.Remove(tempFile)
 
 		if _, err := f.WriteString(scriptPath); err != nil {
-			f.Close()
+			_ = f.Close()
 			return RunResult{}, fmt.Errorf("failed to write script: %w", err)
 		}
-		f.Close()
+		_ = f.Close()
 		scriptPath = tempFile
 	} else if runtimeType == "" {
 		// Detect runtime from file extension

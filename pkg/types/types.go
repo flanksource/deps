@@ -299,6 +299,12 @@ type Version struct {
 	Prerelease bool `json:"prerelease,omitempty" yaml:"prerelease,omitempty"`
 	// Normalized is the fully normalized semver version string
 	Normalized string `json:"normalized,omitempty" yaml:"normalized,omitempty"`
+	// Major is the major version component (e.g., 17 in 17.0.8)
+	Major int64 `json:"major,omitempty" yaml:"major,omitempty"`
+	// Minor is the minor version component (e.g., 0 in 17.0.8)
+	Minor int64 `json:"minor,omitempty" yaml:"minor,omitempty"`
+	// Patch is the patch version component (e.g., 8 in 17.0.8)
+	Patch int64 `json:"patch,omitempty" yaml:"patch,omitempty"`
 }
 
 type InstallStatus string

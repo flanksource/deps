@@ -33,6 +33,94 @@ func (m *mockPackageManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 	return versions, nil
 }
 
+var _ = Describe("SortVersions", func() {
+	It("should sort versions with dots before versions without dots", func() {
+		versions := []types.Version{
+			{Version: "20250101"},
+			{Version: "4.1.0"},
+			{Version: "4"},
+			{Version: "3.0.0"},
+			{Version: "20240601"},
+		}
+
+		SortVersions(versions)
+
+		// Versions with dots should come first
+		Expect(versions[0].Version).To(Equal("4.1.0"))
+		Expect(versions[1].Version).To(Equal("3.0.0"))
+		// Versions without dots come after
+		Expect(versions[2].Version).To(Equal("20250101"))
+		Expect(versions[3].Version).To(Equal("20240601"))
+		Expect(versions[4].Version).To(Equal("4"))
+	})
+
+	It("should sort semver versions in descending order", func() {
+		versions := []types.Version{
+			{Version: "1.0.0"},
+			{Version: "2.0.0"},
+			{Version: "1.5.0"},
+		}
+
+		SortVersions(versions)
+
+		Expect(versions[0].Version).To(Equal("2.0.0"))
+		Expect(versions[1].Version).To(Equal("1.5.0"))
+		Expect(versions[2].Version).To(Equal("1.0.0"))
+	})
+
+	It("should handle mixed semver and non-semver versions", func() {
+		versions := []types.Version{
+			{Version: "20250110"},
+			{Version: "4.1.0"},
+			{Version: "20250101"},
+			{Version: "4.0.0"},
+		}
+
+		SortVersions(versions)
+
+		// Dotted versions first (descending)
+		Expect(versions[0].Version).To(Equal("4.1.0"))
+		Expect(versions[1].Version).To(Equal("4.0.0"))
+		// Non-dotted versions after (descending)
+		Expect(versions[2].Version).To(Equal("20250110"))
+		Expect(versions[3].Version).To(Equal("20250101"))
+	})
+
+	It("should sort versions with build metadata numerically", func() {
+		// Versions like OpenJDK: 17.0.17+10, 17.0.9+9.1, 17.0.8.1+1
+		versions := []types.Version{
+			{Version: "17.0.9+9.1"},
+			{Version: "17.0.17+10"},
+			{Version: "17.0.8.1+1"},
+			{Version: "17.0.10+7"},
+		}
+
+		SortVersions(versions)
+
+		// Should sort by numeric version parts, ignoring build metadata
+		Expect(versions[0].Version).To(Equal("17.0.17+10"))
+		Expect(versions[1].Version).To(Equal("17.0.10+7"))
+		Expect(versions[2].Version).To(Equal("17.0.9+9.1"))
+		Expect(versions[3].Version).To(Equal("17.0.8.1+1"))
+	})
+
+	It("should sort 4-part versions correctly", func() {
+		versions := []types.Version{
+			{Version: "17.0.4.1"},
+			{Version: "17.0.8.1"},
+			{Version: "17.0.8"},
+			{Version: "17.0.5"},
+		}
+
+		SortVersions(versions)
+
+		Expect(versions[0].Version).To(Equal("17.0.8.1"))
+		Expect(versions[1].Version).To(Equal("17.0.8"))
+		Expect(versions[2].Version).To(Equal("17.0.5"))
+		Expect(versions[3].Version).To(Equal("17.0.4.1"))
+	})
+})
+
 var _ = Describe("Version Resolver", func() {
 	var testVersions []types.Version
 

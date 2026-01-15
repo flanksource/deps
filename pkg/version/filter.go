@@ -192,13 +192,11 @@ func isSimpleString(s string) bool {
 
 // transformTag creates a new version with a transformed tag and version string
 func transformTag(original types.Version, transformedValue string) types.Version {
-	// Create a copy of the original version
-	modified := original
-
-	// Update both tag and version to the transformed value
-	modified.Tag = transformedValue
-	modified.Version = transformedValue
-
+	// Parse the transformed value to get correct Major/Minor/Patch
+	modified := types.ParseVersion(Normalize(transformedValue), transformedValue)
+	// Preserve original metadata
+	modified.SHA = original.SHA
+	modified.Published = original.Published
 	return modified
 }
 

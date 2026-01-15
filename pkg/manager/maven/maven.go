@@ -82,11 +82,7 @@ func (m *MavenManager) DiscoverVersions(ctx context.Context, pkg types.Package, 
 
 	var versions []types.Version
 	for _, ver := range metadata.Versioning.Versions.Version {
-		versions = append(versions, types.Version{
-			Version:    version.Normalize(ver),
-			Tag:        ver,
-			Prerelease: strings.Contains(strings.ToLower(ver), "snapshot"),
-		})
+		versions = append(versions, types.ParseVersion(version.Normalize(ver), ver))
 	}
 
 	// Debug: Maven found %d versions in metadata

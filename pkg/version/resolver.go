@@ -12,21 +12,15 @@ import (
 )
 
 // SortVersions sorts versions in descending order (newest first).
-// Uses SortVersionStructs from constraint.go for consistent semver sorting.
+// Versions with dots (e.g., 1.2.3) sort before versions without dots (e.g., 20250101).
+// Uses Version.Compare() for consistent sorting.
 func SortVersions(versions []types.Version) {
 	if len(versions) <= 1 {
 		return
 	}
 
 	sort.Slice(versions, func(i, j int) bool {
-		v1, err1 := semver.NewVersion(versions[i].Version)
-		v2, err2 := semver.NewVersion(versions[j].Version)
-
-		if err1 != nil || err2 != nil {
-			return versions[i].Version > versions[j].Version
-		}
-
-		return v1.GreaterThan(v2)
+		return versions[i].Compare(versions[j]) > 0
 	})
 }
 

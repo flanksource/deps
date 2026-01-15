@@ -343,11 +343,7 @@ func (m *ApacheManager) ParseVersionsFromHTML(pkg types.Package, htmlContent str
 
 		if ver != "" && !versionSet[ver] {
 			versionSet[ver] = true
-			versions = append(versions, types.Version{
-				Version:    version.Normalize(ver),
-				Tag:        ver,
-				Prerelease: isPrerelease(ver),
-			})
+			versions = append(versions, types.ParseVersion(version.Normalize(ver), ver))
 		}
 	}
 
@@ -428,16 +424,6 @@ func isVersionLike(s string) bool {
 	return strings.Contains(s, ".")
 }
 
-// isPrerelease checks if a version string indicates a prerelease
-func isPrerelease(ver string) bool {
-	lower := strings.ToLower(ver)
-	return strings.Contains(lower, "snapshot") ||
-		strings.Contains(lower, "alpha") ||
-		strings.Contains(lower, "beta") ||
-		strings.Contains(lower, "rc") ||
-		strings.Contains(lower, "-m") // Maven milestone releases like "1.0-M1"
-}
-
 // parseVersionsFromHTMLFallback uses regex as a fallback when HTML parsing fails
 func (m *ApacheManager) parseVersionsFromHTMLFallback(htmlContent string) []types.Version {
 	log := logger.GetLogger()
@@ -459,11 +445,7 @@ func (m *ApacheManager) parseVersionsFromHTMLFallback(htmlContent string) []type
 				ver := match[1]
 				if !versionSet[ver] {
 					versionSet[ver] = true
-					versions = append(versions, types.Version{
-						Version:    version.Normalize(ver),
-						Tag:        ver,
-						Prerelease: isPrerelease(ver),
-					})
+					versions = append(versions, types.ParseVersion(version.Normalize(ver), ver))
 				}
 			}
 		}

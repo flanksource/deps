@@ -166,15 +166,10 @@ func (m *GitHubTagsManager) discoverVersionsViaGraphQL(ctx context.Context, owne
 		}
 
 		normalizedVersion := version.Normalize(tagName)
-		isPrerelease := version.IsPrerelease(normalizedVersion)
-
-		versions = append(versions, types.Version{
-			Tag:        tagName,
-			Version:    normalizedVersion,
-			SHA:        commitSHA,
-			Published:  commitDate,
-			Prerelease: isPrerelease,
-		})
+		v := types.ParseVersion(normalizedVersion, tagName)
+		v.SHA = commitSHA
+		v.Published = commitDate
+		versions = append(versions, v)
 	}
 
 	// Log all tags returned from GraphQL API at V(4) level
