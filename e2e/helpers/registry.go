@@ -61,6 +61,42 @@ func isExcludedPackage(packageName string) bool {
 	return contains(excludedPackages, packageName)
 }
 
+// platformExclusions maps platform -> list of excluded packages
+// These are packages known to fail on specific platforms due to missing assets or format issues
+var platformExclusions = map[string][]string{
+	"darwin-amd64": {
+		"aws-cli",    // No darwin-amd64 installer asset
+		"opensearch", // Not available for darwin
+		"postgrest",  // Binary format mismatch
+	},
+	"darwin-arm64": {
+		"aws-cli",    // No darwin-arm64 installer asset
+		"openjdk8",   // No darwin-arm64 build available
+		"opensearch", // Not available for darwin
+		"svu",        // No darwin-arm64 asset
+	},
+	"linux-arm64": {
+		"expenv",        // No linux-arm64 release
+		"gitlab-runner", // Build/asset issue on arm64
+	},
+	"windows-amd64": {
+		"aws-cli",        // Different installer mechanism
+		"canary-checker", // No windows build
+		"eksctl",         // No windows asset
+		"kubectl",        // Different URL pattern for windows
+		"node",           // Different installer mechanism
+		"opensearch",     // No windows build
+		"reg",            // Linux-only tool
+		"yaml-cli",       // No windows build
+	},
+}
+
+// isPlatformExcluded checks if a package should be excluded for a specific platform
+func isPlatformExcluded(packageName, platform string) bool {
+	excluded := platformExclusions[platform]
+	return contains(excluded, packageName)
+}
+
 // GetHighPriorityPackages returns packages that should be tested more extensively
 func GetHighPriorityPackages() []string {
 	return []string{
@@ -254,8 +290,13 @@ func GetPackagesToTest(os, arch string) []InstallTestData {
 
 	// Generate test data for every package in the registry
 	for packageName, pkg := range registry.Registry {
-		// Skip excluded packages
+		// Skip globally excluded packages
 		if isExcludedPackage(packageName) {
+			continue
+		}
+
+		// Skip platform-specific exclusions
+		if isPlatformExcluded(packageName, platform) {
 			continue
 		}
 

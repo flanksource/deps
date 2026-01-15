@@ -121,42 +121,45 @@ var _ = Describe("Installation tests", func() {
 			})
 		}
 
-		It("should install flux", func() {
-			tempDir, err := os.MkdirTemp("", "")
-			Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
+		// Skip flux and stern tests for Windows (no Windows builds available)
+		if testOS != "windows" {
+			It("should install flux", func() {
+				tempDir, err := os.MkdirTemp("", "")
+				Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
 
-			binDir := filepath.Join(tempDir, "bin")
-			result, err := deps.Install("fluxcd/flux2", "stable",
-				deps.WithOS(testOS, arch),
-				deps.WithAppDir(filepath.Join(tempDir, "app")),
-				deps.WithBinDir(binDir))
-			Expect(err).ToNot(HaveOccurred(), "Installation should not error")
-			if result != nil {
-				GinkgoWriter.Printf("%s\n", result.Pretty().ANSI())
-			}
+				binDir := filepath.Join(tempDir, "bin")
+				result, err := deps.Install("fluxcd/flux2", "stable",
+					deps.WithOS(testOS, arch),
+					deps.WithAppDir(filepath.Join(tempDir, "app")),
+					deps.WithBinDir(binDir))
+				Expect(err).ToNot(HaveOccurred(), "Installation should not error")
+				if result != nil {
+					GinkgoWriter.Printf("%s\n", result.Pretty().ANSI())
+				}
 
-			// Verify installed binaries match expected platform
-			err = verifyBinariesInDir(binDir, testOS, arch)
-			Expect(err).ToNot(HaveOccurred(), "Binary platform verification should pass")
-		})
-		It("should install stern", func() {
-			tempDir, err := os.MkdirTemp("", "")
-			Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
+				// Verify installed binaries match expected platform
+				err = verifyBinariesInDir(binDir, testOS, arch)
+				Expect(err).ToNot(HaveOccurred(), "Binary platform verification should pass")
+			})
+			It("should install stern", func() {
+				tempDir, err := os.MkdirTemp("", "")
+				Expect(err).ToNot(HaveOccurred(), "failed to create temp dir")
 
-			binDir := filepath.Join(tempDir, "bin")
-			result, err := deps.Install("stern/stern", "stable",
-				deps.WithOS(testOS, arch),
-				deps.WithAppDir(filepath.Join(tempDir, "app")),
-				deps.WithBinDir(binDir))
-			Expect(err).ToNot(HaveOccurred(), "Installation should not error")
-			if result != nil {
-				GinkgoWriter.Printf("%s\n", result.Pretty().ANSI())
-			}
+				binDir := filepath.Join(tempDir, "bin")
+				result, err := deps.Install("stern/stern", "stable",
+					deps.WithOS(testOS, arch),
+					deps.WithAppDir(filepath.Join(tempDir, "app")),
+					deps.WithBinDir(binDir))
+				Expect(err).ToNot(HaveOccurred(), "Installation should not error")
+				if result != nil {
+					GinkgoWriter.Printf("%s\n", result.Pretty().ANSI())
+				}
 
-			// Verify installed binaries match expected platform
-			err = verifyBinariesInDir(binDir, testOS, arch)
-			Expect(err).ToNot(HaveOccurred(), "Binary platform verification should pass")
-		})
+				// Verify installed binaries match expected platform
+				err = verifyBinariesInDir(binDir, testOS, arch)
+				Expect(err).ToNot(HaveOccurred(), "Binary platform verification should pass")
+			})
+		}
 	})
 
 })

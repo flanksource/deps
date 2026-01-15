@@ -90,6 +90,18 @@ func (i *Installer) shouldSkipCleanup() bool {
 	return i.options.TmpDir != os.TempDir()
 }
 
+// getPlatform returns the target platform, respecting instance-specific overrides
+func (i *Installer) getPlatform() platform.Platform {
+	plat := platform.Current()
+	if i.options.OSOverride != "" {
+		plat.OS = i.options.OSOverride
+	}
+	if i.options.ArchOverride != "" {
+		plat.Arch = i.options.ArchOverride
+	}
+	return plat
+}
+
 // ParseTools parses tool specifications from string arguments
 func ParseTools(args []string) []ToolSpec {
 	var tools []ToolSpec
@@ -234,7 +246,7 @@ func (i *Installer) installTool(tool ToolSpec, t *task.Task) error {
 // installToolWithResult handles the installation of a single tool and returns detailed result
 func (i *Installer) installToolWithResult(tool ToolSpec, t *task.Task) (*types.InstallResult, error) {
 	result := &types.InstallResult{
-		Platform: platform.Current(),
+		Platform: i.getPlatform(),
 		BinDir:   i.options.BinDir,
 	}
 	startTime := time.Now()
@@ -323,7 +335,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 	}
 
 	// Step 2: Get resolution
-	plat := platform.Current()
+	plat := i.getPlatform()
 	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
 	if err != nil {
 		return fmt.Errorf("failed to resolve package %s: %w", name, err)
@@ -426,7 +438,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 	}
 
 	// Step 2: Get resolution
-	plat := platform.Current()
+	plat := i.getPlatform()
 	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
@@ -725,7 +737,7 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 	}
 
 	// Filter post-process commands by platform
-	plat := platform.Current()
+	plat := i.getPlatform()
 	filteredPostProcess := manager.FilterEntriesByPlatform(pkg.PostProcess, plat)
 
 	if len(filteredPostProcess) == 0 {
@@ -764,7 +776,7 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 	// Create symlinks for directory-mode packages
 	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 {
 		// Filter symlinks by platform
-		plat := platform.Current()
+		plat := i.getPlatform()
 		symlinkPatterns := manager.FilterEntriesByPlatform(pkg.Symlinks, plat)
 
 		// Create symlinks if any patterns match
@@ -1036,7 +1048,7 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 
 	t.V(3).Infof("Creating wrapper script for %s", pkg.Name)
 
-	plat := platform.Current()
+	plat := i.getPlatform()
 
 	// Template the wrapper script content
 	data := map[string]any{
@@ -1088,12 +1100,12 @@ func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.Pa
 
 	if customMgr, ok := mgr.(customResolver); ok {
 		t.V(3).Infof("Using custom version resolver for %s", mgr.Name())
-		return customMgr.ResolveVersionConstraint(ctx, pkg, constraint, platform.Current())
+		return customMgr.ResolveVersionConstraint(ctx, pkg, constraint, i.getPlatform())
 	}
 
 	// Use the centralized version resolver
 	resolver := versionpkg.NewResolver(mgr)
-	return resolver.ResolveConstraint(ctx, pkg, constraint, platform.Current())
+	return resolver.ResolveConstraint(ctx, pkg, constraint, i.getPlatform())
 }
 
 // downloadWithChecksum attempts to download with checksum verification
