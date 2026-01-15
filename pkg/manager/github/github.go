@@ -152,6 +152,8 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
 		}
 		versions = filteredVersions
+		// Re-sort after transformation since version strings may have changed
+		versionpkg.SortVersions(versions)
 	}
 
 	// Filter out versions that are not valid semantic versions after transformation
@@ -190,17 +192,68 @@ func (m *GitHubReleaseManager) discoverVersionsViaGraphQL(ctx context.Context, o
 	// Extract version information from GraphQL response
 	var versions []types.Version
 	for _, release := range query.Repository.Releases.Nodes {
-		version := types.Version{
-			Tag:        release.TagName,
-			Version:    versionpkg.Normalize(release.TagName),
-			Prerelease: release.IsPrerelease,
-			Published:  release.PublishedAt,
-			SHA:        release.TagCommit.Oid,
+		v := types.ParseVersion(versionpkg.Normalize(release.TagName), release.TagName)
+		v.Published = release.PublishedAt
+		v.SHA = release.TagCommit.Oid
+		if release.IsPrerelease {
+			v.Prerelease = true
 		}
-		versions = append(versions, version)
+		versions = append(versions, v)
 	}
 
 	// Sort versions in descending order (newest first)
+	versionpkg.SortVersions(versions)
+
+	return versions, nil
+}
+
+// DiscoverVersionsViaREST fetches versions using GitHub REST API.
+// This includes published dates but is subject to rate limits.
+func (m *GitHubReleaseManager) DiscoverVersionsViaREST(ctx context.Context, pkg types.Package, limit int) ([]types.Version, error) {
+	if pkg.Repo == "" {
+		return nil, fmt.Errorf("repo is required for GitHub releases")
+	}
+
+	parts := strings.Split(pkg.Repo, "/")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid repo format: %s (expected owner/repo)", pkg.Repo)
+	}
+	owner, repo := parts[0], parts[1]
+
+	client := GetClient().Client()
+	opts := &github.ListOptions{PerPage: limit}
+	if limit <= 0 {
+		opts.PerPage = 100
+	}
+
+	releases, _, err := client.Repositories.ListReleases(ctx, owner, repo, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list releases for %s/%s: %w", owner, repo, err)
+	}
+
+	var versions []types.Version
+	for _, rel := range releases {
+		tagName := rel.GetTagName()
+		v := types.ParseVersion(versionpkg.Normalize(tagName), tagName)
+		v.Published = rel.GetPublishedAt().Time
+		if rel.GetPrerelease() {
+			v.Prerelease = true
+		}
+		if rel.GetTargetCommitish() != "" {
+			v.SHA = rel.GetTargetCommitish()
+		}
+		versions = append(versions, v)
+	}
+
+	// Apply version expression filtering if specified
+	if pkg.VersionExpr != "" {
+		filteredVersions, err := versionpkg.ApplyVersionExpr(versions, pkg.VersionExpr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
+		}
+		versions = filteredVersions
+	}
+
 	versionpkg.SortVersions(versions)
 
 	return versions, nil

@@ -166,16 +166,7 @@ func (m *GitLabReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 			continue
 		}
 
-		// Parse semantic version
-		v, err := semver.NewVersion(release.TagName)
-		if err != nil {
-			continue // Skip invalid versions
-		}
-
-		versions = append(versions, types.Version{
-			Version: v.String(),
-			Tag:     release.TagName,
-		})
+		versions = append(versions, types.ParseVersion(version.Normalize(release.TagName), release.TagName))
 	}
 
 	// Apply version expression filtering if specified

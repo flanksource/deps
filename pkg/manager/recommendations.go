@@ -17,6 +17,9 @@ func EnhanceErrorWithVersions(packageName, requestedVersion string, availableVer
 		return fmt.Errorf("%w\n\nNo versions found for %s", originalErr, packageName)
 	}
 
+	// Sort versions before displaying (ensures proper numeric comparison)
+	version.SortVersions(availableVersions)
+
 	// Build enhanced error message
 	var errorMsg strings.Builder
 	errorMsg.WriteString(fmt.Sprintf("Version %s not found for %s\n\n", requestedVersion, packageName))

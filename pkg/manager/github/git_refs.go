@@ -102,14 +102,9 @@ func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, opts ...Dis
 		}
 
 		normalizedVersion := version.Normalize(t.tagName)
-		isPrerelease := version.IsPrerelease(normalizedVersion)
-
-		versions = append(versions, types.Version{
-			Tag:        t.tagName,
-			Version:    normalizedVersion,
-			SHA:        t.sha,
-			Prerelease: isPrerelease,
-		})
+		v := types.ParseVersion(normalizedVersion, t.tagName)
+		v.SHA = t.sha
+		versions = append(versions, v)
 	}
 
 	// Sort versions in descending order (newest first)

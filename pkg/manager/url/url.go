@@ -134,11 +134,7 @@ func (m *URLManager) parseVersions(data interface{}, pkg types.Package) ([]types
 			switch versionData := item.(type) {
 			case string:
 				// Simple string version
-				versions = append(versions, types.Version{
-					Version:    version.Normalize(versionData),
-					Tag:        versionData,
-					Prerelease: isPrerelease(versionData),
-				})
+				versions = append(versions, types.ParseVersion(version.Normalize(versionData), versionData))
 			case map[string]interface{}:
 				// Object with version fields
 				ver := m.parseVersionObject(versionData)
@@ -153,11 +149,7 @@ func (m *URLManager) parseVersions(data interface{}, pkg types.Package) ([]types
 			for _, item := range versionsArray {
 				switch versionData := item.(type) {
 				case string:
-					versions = append(versions, types.Version{
-						Version:    version.Normalize(versionData),
-						Tag:        versionData,
-						Prerelease: isPrerelease(versionData),
-					})
+					versions = append(versions, types.ParseVersion(version.Normalize(versionData), versionData))
 				case map[string]interface{}:
 					ver := m.parseVersionObject(versionData)
 					if ver.Version != "" {
