@@ -31,7 +31,7 @@ jobs:
       - name: Run unit tests
         run: task test:unit
 
-  # Linux installation tests - full installation and execution
+  # Full installation tests - downloads, extracts, and verifies binaries
   test-full:
     strategy:
       fail-fast: false
@@ -43,7 +43,6 @@ jobs:
           - runner: ubuntu-24.04-arm
             os: linux
             arch: arm64
-
           - runner: ubuntu-latest
             os: darwin
             arch: amd64
