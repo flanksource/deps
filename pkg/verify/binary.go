@@ -21,7 +21,7 @@ func DetectBinaryPlatform(path string) (*BinaryInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Read magic bytes
 	magic := make([]byte, 4)
@@ -61,7 +61,7 @@ func detectELF(path string) (*BinaryInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse ELF: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info := &BinaryInfo{
 		OS:   "linux",
@@ -98,7 +98,7 @@ func detectMachO(path string) (*BinaryInfo, error) {
 		if fatErr != nil {
 			return nil, fmt.Errorf("failed to parse Mach-O: %w", err)
 		}
-		defer fatFile.Close()
+		defer func() { _ = fatFile.Close() }()
 
 		// Return info for first arch in universal binary
 		if len(fatFile.Arches) > 0 {
@@ -106,7 +106,7 @@ func detectMachO(path string) (*BinaryInfo, error) {
 		}
 		return &BinaryInfo{OS: "darwin", Type: "macho", Arch: "universal"}, nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	return machoCpuToInfo(f.Cpu), nil
 }
@@ -140,7 +140,7 @@ func detectPE(path string) (*BinaryInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse PE: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Check for .NET assembly by looking for CLR runtime header
 	isDotNet := false
