@@ -799,3 +799,33 @@ registry:
             windows-amd64: stern_{{.version}}_windows_amd64.zip
         version_command: --version
         version_regex: 'stern version (\d+\.\d+\.\d+)'
+
+    bun:
+        name: bun
+        repo: oven-sh/bun
+        version_expr: 'tag.startsWith("bun-") ? tag.substring(4) : ""'
+        asset_patterns:
+            darwin-amd64: bun-darwin-x64.zip
+            darwin-arm64: bun-darwin-aarch64.zip
+            linux-amd64: bun-linux-x64.zip
+            linux-arm64: bun-linux-aarch64.zip
+            windows-amd64: bun-windows-x64.zip
+        version_command: --version
+        version_regex: '(\d+\.\d+\.\d+)'
+
+    uv:
+        name: uv
+        repo: astral-sh/uv
+        mode: directory
+        asset_patterns:
+            darwin-amd64: uv-x86_64-apple-darwin.tar.gz
+            darwin-arm64: uv-aarch64-apple-darwin.tar.gz
+            linux-amd64: uv-x86_64-unknown-linux-gnu.tar.gz
+            linux-arm64: uv-aarch64-unknown-linux-gnu.tar.gz
+            windows-amd64: uv-x86_64-pc-windows-msvc.zip
+        checksum_file: "{{.asset}}.sha256"
+        symlinks:
+            - uv
+            - uvx
+        version_command: --version
+        version_regex: 'uv (\d+\.\d+\.\d+)'

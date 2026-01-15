@@ -746,8 +746,10 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 				continue
 			}
 
-			// Check if the transformed version matches our target
-			if len(transformed) > 0 && transformed[0].Version == targetVersion {
+			// Check if the transformed version matches our target (compare normalized versions)
+			if len(transformed) > 0 && (transformed[0].Version == targetVersion ||
+				transformed[0].Version == normalizedTarget ||
+				transformed[0].Tag == targetVersion) {
 				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", rel.TagName, transformed[0].Version)
 				return rel.TagName, nil
 			}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/flanksource/deps"
 	"github.com/flanksource/deps/e2e/helpers"
+	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/verify"
 )
 
@@ -92,6 +93,9 @@ var _ = Describe("Installation tests", func() {
 				testCtx.Cleanup()
 			}
 		})
+
+		// Set global platform overrides from CLI flags
+		platform.SetGlobalOverrides(testOS, arch)
 
 		for _, packageData := range helpers.GetPackagesToTest(testOS, arch) {
 
