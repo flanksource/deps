@@ -120,7 +120,6 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 	logger.V(3).Infof("GitHub Build: Fetching 'latest' release from %s/%s", owner, repo)
 
 	// First get the latest release tag name using GraphQL
-	graphql := GetClient().GraphQL()
 	var latestQuery releasesQuery
 	variables := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -128,7 +127,7 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 		"first": githubv4.Int(1),
 	}
 
-	err := graphql.Query(ctx, &latestQuery, variables)
+	err := GetClient().Query(ctx, &latestQuery, variables)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest release for %s: %w", pkg.Repo, err)
 	}
@@ -254,7 +253,6 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 	// Get the tag name based on buildTag
 	if buildTag == "latest" {
 		// Get latest release tag using GraphQL
-		graphql := GetClient().GraphQL()
 		var latestQuery releasesQuery
 		variables := map[string]interface{}{
 			"owner": githubv4.String(owner),
@@ -262,7 +260,7 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 			"first": githubv4.Int(1),
 		}
 
-		err := graphql.Query(ctx, &latestQuery, variables)
+		err := GetClient().Query(ctx, &latestQuery, variables)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get latest release for %s: %w", pkg.Repo, err)
 		}

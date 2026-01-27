@@ -175,7 +175,6 @@ func (m *GitHubReleaseManager) discoverVersionsViaGraphQL(ctx context.Context, o
 		first = 100
 	}
 
-	graphql := GetClient().GraphQL()
 	var query releasesQuery
 	variables := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -183,7 +182,7 @@ func (m *GitHubReleaseManager) discoverVersionsViaGraphQL(ctx context.Context, o
 		"first": githubv4.Int(first),
 	}
 
-	err := graphql.Query(ctx, &query, variables)
+	err := GetClient().Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to list releases for %s/%s: %w", owner, repo, err)
@@ -686,7 +685,6 @@ func formatDuration(d time.Duration) string {
 func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, repo, targetVersion, versionExpr string) (string, error) {
 	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
-	graphql := GetClient().GraphQL()
 	var query releasesQuery
 	variables := map[string]interface{}{
 		"owner": githubv4.String(owner),
@@ -694,7 +692,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 		"first": githubv4.Int(100),
 	}
 
-	err := graphql.Query(ctx, &query, variables)
+	err := GetClient().Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return "", fmt.Errorf("failed to list releases: %w", err)
@@ -764,7 +762,6 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 
 // fetchReleaseAssetByName queries GraphQL for a specific asset by name with its digest
 func (m *GitHubReleaseManager) fetchReleaseAssetByName(ctx context.Context, owner, repo, tagName, assetName string) (*AssetInfo, error) {
-	graphql := GetClient().GraphQL()
 	var query releaseByTagQuery
 	variables := map[string]interface{}{
 		"owner":     githubv4.String(owner),
@@ -773,7 +770,7 @@ func (m *GitHubReleaseManager) fetchReleaseAssetByName(ctx context.Context, owne
 		"assetName": githubv4.String(assetName),
 	}
 
-	err := graphql.Query(ctx, &query, variables)
+	err := GetClient().Query(ctx, &query, variables)
 	if err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to query release assets: %w", err)
@@ -797,7 +794,6 @@ func (m *GitHubReleaseManager) fetchReleaseAssetByName(ctx context.Context, owne
 // fetchAllReleaseAssetsWithDigests queries GraphQL for ALL assets with SHA256 digests and pagination
 // This is a package-level function that both GitHubReleaseManager and GitHubBuildManager can use
 func fetchAllReleaseAssetsWithDigests(ctx context.Context, owner, repo, tagName string) ([]AssetInfo, error) {
-	graphql := GetClient().GraphQL()
 	var allAssets []AssetInfo
 	var after *githubv4.String
 
@@ -812,7 +808,7 @@ func fetchAllReleaseAssetsWithDigests(ctx context.Context, owner, repo, tagName 
 			"after":   after,
 		}
 
-		err := graphql.Query(ctx, &query, variables)
+		err := GetClient().Query(ctx, &query, variables)
 		if err != nil {
 			// Create a temporary GitHubReleaseManager to use enhanceRateLimitError
 			tempMgr := &GitHubReleaseManager{}

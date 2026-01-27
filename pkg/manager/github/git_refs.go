@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/flanksource/commons/logger"
@@ -265,23 +266,29 @@ type gitRefsCacheEntry struct {
 }
 
 // gitRefsCache caches git refs responses to avoid repeated HTTP calls
-var gitRefsCache = make(map[string]*gitRefsCacheEntry)
-var gitRefsCacheTTL = 5 * time.Minute
+var (
+	gitRefsCache    = make(map[string]*gitRefsCacheEntry)
+	gitRefsCacheMu  sync.RWMutex
+	gitRefsCacheTTL = 5 * time.Minute
+)
 
 // DiscoverVersionsViaGitCached is like DiscoverVersionsViaGit but with caching
 func DiscoverVersionsViaGitCached(ctx context.Context, owner, repo string, limit int) ([]types.Version, error) {
 	cacheKey := fmt.Sprintf("%s/%s", owner, repo)
 
-	// Check cache
+	// Check cache with read lock
+	gitRefsCacheMu.RLock()
 	if entry, ok := gitRefsCache[cacheKey]; ok {
 		if time.Since(entry.fetchedAt) < gitRefsCacheTTL {
 			versions := entry.versions
+			gitRefsCacheMu.RUnlock()
 			if limit > 0 && len(versions) > limit {
 				versions = versions[:limit]
 			}
 			return versions, nil
 		}
 	}
+	gitRefsCacheMu.RUnlock()
 
 	// Fetch fresh data
 	versions, err := DiscoverVersionsViaGit(ctx, owner, repo) // Get all, cache full list
@@ -289,11 +296,13 @@ func DiscoverVersionsViaGitCached(ctx context.Context, owner, repo string, limit
 		return nil, err
 	}
 
-	// Update cache
+	// Update cache with write lock
+	gitRefsCacheMu.Lock()
 	gitRefsCache[cacheKey] = &gitRefsCacheEntry{
 		versions:  versions,
 		fetchedAt: time.Now(),
 	}
+	gitRefsCacheMu.Unlock()
 
 	// Apply limit
 	if limit > 0 && len(versions) > limit {
