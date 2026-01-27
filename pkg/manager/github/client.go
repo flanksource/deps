@@ -2,9 +2,11 @@ package github
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/go-github/v57/github"
 	"github.com/shurcooL/githubv4"
@@ -99,4 +101,44 @@ func (c *GitHubClient) TokenSource() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.tokenSource
+}
+
+// isRetryableError checks if an error is a retryable HTTP error
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "504 Gateway Timeout") ||
+		strings.Contains(errStr, "502 Bad Gateway") ||
+		strings.Contains(errStr, "503 Service Unavailable")
+}
+
+// Query executes a GraphQL query with retry logic for transient errors
+func (c *GitHubClient) Query(ctx context.Context, q interface{}, variables map[string]interface{}) error {
+	maxRetries := 3
+	baseDelay := 500 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		err := c.GraphQL().Query(ctx, q, variables)
+		if err == nil {
+			return nil
+		}
+
+		if !isRetryableError(err) {
+			return err
+		}
+
+		lastErr = err
+
+		// Don't sleep after the last attempt
+		if attempt < maxRetries-1 {
+			delay := baseDelay * time.Duration(1<<attempt)
+			jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+			time.Sleep(delay + jitter)
+		}
+	}
+
+	return lastErr
 }
