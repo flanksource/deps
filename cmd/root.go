@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/commons/logger"
@@ -39,6 +40,7 @@ var (
 	depsConfig     *types.DepsConfig
 	versionInfo    VersionInfo
 	showVersion    bool
+	timeout        time.Duration
 )
 
 type VersionInfo struct {
@@ -151,4 +153,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&osOverride, "os", runtime.GOOS, "Target OS (linux, darwin, windows)")
 	rootCmd.PersistentFlags().StringVar(&archOverride, "arch", runtime.GOARCH, "Target architecture (amd64, arm64, etc.)")
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to deps.yaml config file")
+	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout for downloads and installations")
 }

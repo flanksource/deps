@@ -2,6 +2,9 @@ package types
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/flanksource/clicky"
@@ -411,6 +414,18 @@ type InstallResult struct {
 	Checksum string `json:"checksum,omitempty"`
 }
 
+func relativeDir(base string) string {
+	if base == "" {
+		return ""
+	}
+	cwd, _ := os.Getwd()
+	rel, err := filepath.Rel(cwd, base)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return base
+	}
+	return rel
+}
+
 func (r InstallResult) Pretty() api.Text {
 	text := clicky.Text("")
 
@@ -433,10 +448,10 @@ func (r InstallResult) Pretty() api.Text {
 
 	// Installation path
 	if r.BinDir != "" {
-		text = text.Append(" bin-dir: ", "muted").Append(r.BinDir)
+		text = text.Append(" to: ", "muted").Append(relativeDir(r.BinDir))
 	}
-	if r.AppDir != "" {
-		text = text.Append(" app-dir: ", "muted").Append(r.AppDir)
+	if r.AppDir != "" && r.BinDir != r.AppDir && r.Package.Mode == "directory" {
+		text = text.Append(" app-dir: ", "muted").Append(relativeDir(r.AppDir))
 	}
 
 	// Version and verify status

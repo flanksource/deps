@@ -52,6 +52,8 @@ var (
 	WithStrictChecksum = installer.WithStrictChecksum
 	WithDebug          = installer.WithDebug
 	WithOS             = installer.WithOS
+	WithTimeout        = installer.WithTimeout
+	WithProgress       = installer.WithProgress
 )
 
 // Install installs a package and returns detailed installation result.

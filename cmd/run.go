@@ -51,14 +51,14 @@ Examples:
 		if runOpts.Script != "" {
 			// Inline script mode
 			if runOpts.Runtime == "" {
-				return fmt.Errorf("--runtime is required when using -c/--script")
+				return fmt.Errorf("--runtime is required when using -e/--script")
 			}
 			scriptPath = runOpts.Script
 			scriptArgs = args
 		} else {
 			// File mode
 			if len(args) < 1 {
-				return fmt.Errorf("SCRIPT argument is required (or use -c/--script for inline scripts)")
+				return fmt.Errorf("SCRIPT argument is required (or use -e/--script for inline scripts)")
 			}
 			scriptPath = args[0]
 			scriptArgs = args[1:]
@@ -137,8 +137,7 @@ func executeScript(scriptPath string, scriptArgs []string, opts RunOptions) (Run
 			return RunResult{}, fmt.Errorf("failed to create temp file: %w", err)
 		}
 		tempFile = f.Name()
-		// nolint:errcheck
-		defer os.Remove(tempFile)
+		defer func() { _ = os.Remove(tempFile) }()
 
 		if _, err := f.WriteString(scriptPath); err != nil {
 			_ = f.Close()

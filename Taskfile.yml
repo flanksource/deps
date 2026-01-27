@@ -37,6 +37,7 @@ tasks:
     sources:
       - "**/*.go"
       - pkg/**/*.yaml
+      - pkg/config/defaults.yaml
       - go.mod
       - go.sum
     generates:
