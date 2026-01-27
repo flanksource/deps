@@ -827,5 +827,5 @@ registry:
         symlinks:
             - uv
             - uvx
-        version_command: --version
+        version_command: uv --version
         version_regex: 'uv (\d+\.\d+\.\d+)'

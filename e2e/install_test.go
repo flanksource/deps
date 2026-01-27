@@ -35,11 +35,8 @@ func verifyBinariesInDir(binDir, expectedOS, expectedArch string) error {
 		binaryPath := filepath.Join(binDir, name)
 
 		// Check if it's a symlink and resolve it
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
+		// Use entry.Type() instead of entry.Info().Mode() because Info() follows symlinks
+		if entry.Type()&os.ModeSymlink != 0 {
 			resolved, err := filepath.EvalSymlinks(binaryPath)
 			if err != nil {
 				continue
