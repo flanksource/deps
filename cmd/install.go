@@ -59,12 +59,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		installer.WithStrictChecksum(strictChecksum),
 		installer.WithDebug(debug),
 		installer.WithOS(osOverride, archOverride),
+		installer.WithTimeout(timeout),
 	)
 
 	// If no arguments provided, install from deps.yaml
 	if len(args) == 0 {
 		var installErr error
-		task.StartTask("install-from-config", func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
+		task.StartTask("install", func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
 			installErr = inst.InstallFromConfig(task)
 			return nil, installErr
 		})
@@ -87,16 +88,13 @@ func runInstall(cmd *cobra.Command, args []string) error {
 
 	// Perform post-install check if requested
 	if installCheck {
-		fmt.Println("\n🔍 Verifying installations...")
+		clicky.Infof("🔍 Verifying ....")
 		var verifyErr error
-		task.StartTask("verify-installations", func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
+		task.StartTask("verify", func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
 			verifyErr = runPostInstallCheck(args, task)
 			return nil, verifyErr
 		})
-		if verifyErr != nil {
-			fmt.Printf("⚠️  Installation verification failed: %v\n", verifyErr)
-			// Don't return error as installation succeeded, just verification failed
-		}
+		return verifyErr
 	}
 
 	return nil

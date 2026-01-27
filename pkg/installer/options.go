@@ -23,6 +23,7 @@ type InstallOptions struct {
 	VersionCheck types.VersionCheckMode
 	Timeout      time.Duration
 	PreferLocal  bool
+	Progress     bool
 }
 
 // InstallOption is a functional option for configuring installation
@@ -101,6 +102,12 @@ func WithVersionCheck(mode types.VersionCheckMode) InstallOption {
 	}
 }
 
+func WithProgress(progress bool) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.Progress = progress
+	}
+}
+
 // WithTimeout sets the download timeout (legacy compatibility)
 func WithTimeout(timeout time.Duration) InstallOption {
 	return func(opts *InstallOptions) {
@@ -136,5 +143,6 @@ func DefaultOptions() InstallOptions {
 		VersionCheck:   types.VersionCheckNone,
 		Timeout:        5 * time.Minute,
 		PreferLocal:    false,
+		Progress:       false,
 	}
 }

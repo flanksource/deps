@@ -54,6 +54,10 @@ type Installer struct {
 	depsConfig *types.DepsConfig
 }
 
+func (i Installer) GetOptions() InstallOptions {
+	return i.options
+}
+
 // New creates a new installer with the given options
 func New(opts ...InstallOption) *Installer {
 	options := DefaultOptions()

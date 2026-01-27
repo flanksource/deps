@@ -40,9 +40,9 @@ func WithHttpLogging(headerLevel, bodyLevel logger.LogLevel) ClientOption {
 func GetHttpClient(opts ...ClientOption) *http.Client {
 	cfg := &clientConfig{
 		timeout:      30 * time.Second,
-		headerLevel:  logger.Debug,
-		bodyLevel:    logger.Trace,
-		enableLogger: true,
+		headerLevel:  logger.Trace1,
+		bodyLevel:    logger.Trace2,
+		enableLogger: logger.IsTraceEnabled(),
 	}
 
 	for _, opt := range opts {
