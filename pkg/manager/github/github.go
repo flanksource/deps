@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -262,12 +263,19 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 		return nil, err
 	}
 
-	// Find exact match first
+	// Find matching asset - support both exact match and glob patterns
 	var matched *restAsset
 	for i, asset := range release.Assets {
 		if asset.Name == templatedPattern {
 			matched = &release.Assets[i]
 			break
+		}
+		// Try glob matching if pattern contains wildcards
+		if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
+			if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
+				matched = &release.Assets[i]
+				break
+			}
 		}
 	}
 
@@ -420,12 +428,19 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 			return nil, fmt.Errorf("failed to fetch release: %w", err)
 		}
 
-		// Find matching asset
+		// Find matching asset - support both exact match and glob patterns
 		var matchedAsset *restAsset
 		for i, asset := range release.Assets {
 			if asset.Name == templatedPattern {
 				matchedAsset = &release.Assets[i]
 				break
+			}
+			// Try glob matching if pattern contains wildcards
+			if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
+				if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
+					matchedAsset = &release.Assets[i]
+					break
+				}
 			}
 		}
 
