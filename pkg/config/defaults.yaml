@@ -216,8 +216,8 @@ registry:
 
         repo: wal-g/wal-g
         asset_patterns:
-            linux-amd64: wal-g-pg-*-amd64*
-            linux-arm64: wal-g-pg-*-aarch64*
+            linux-amd64: wal-g-pg-22.04-amd64.tar.gz
+            linux-arm64: wal-g-pg-22.04-aarch64.tar.gz
         version_command: --version
         version_regex: wal-g\s+version\s+v?(\d+\.\d+\.\d+)
 
