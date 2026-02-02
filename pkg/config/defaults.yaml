@@ -216,8 +216,8 @@ registry:
 
         repo: wal-g/wal-g
         asset_patterns:
-            linux-amd64: wal-g-pg-ubuntu-20.04-amd64.tar.gz
-            linux-arm64: wal-g-pg-ubuntu-20.04-aarch64.tar.gz
+            linux-amd64: wal-g-pg-*-amd64*
+            linux-arm64: wal-g-pg-*-aarch64*
         version_command: --version
         version_regex: wal-g\s+version\s+v?(\d+\.\d+\.\d+)
 
@@ -271,6 +271,14 @@ registry:
             "*": "{{.tag}}-{{.os}}-{{.arch}}.tar.gz"
         checksum_file: "{{.asset}}.sha512"
         binary_path: envtest
+
+    controller-gen:
+        name: envtest
+        repo: kubernetes-sigs/controller-tools
+        asset_patterns:
+            "*": "{{.tag}}-{{.os}}-{{.arch}}.tar.gz"
+        checksum_file: "{{.asset}}.sha512"
+        binary_path: controller-gen
 
     kube-apiserver:
         name: kube-apiserver

@@ -19,7 +19,6 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
-	"github.com/shurcooL/githubv4"
 )
 
 // GitHubTagsManager implements the PackageManager interface for GitHub tags
@@ -34,34 +33,6 @@ func NewGitHubTagsManager() *GitHubTagsManager {
 	}
 }
 
-// GraphQL query structs for tags with commit dates
-type tagsQuery struct {
-	Repository struct {
-		Refs struct {
-			Nodes []struct {
-				Name   string
-				Target struct {
-					Tag struct {
-						Target struct {
-							Commit struct {
-								Oid           string
-								CommittedDate time.Time
-							} `graphql:"... on Commit"`
-						}
-					} `graphql:"... on Tag"`
-					Commit struct {
-						Oid           string
-						CommittedDate time.Time
-					} `graphql:"... on Commit"`
-				}
-			}
-			PageInfo struct {
-				HasNextPage bool
-				EndCursor   githubv4.String
-			}
-		} `graphql:"refs(refPrefix: \"refs/tags/\", first: $first, orderBy: {field: TAG_COMMIT_DATE, direction: DESC}, after: $after)"`
-	} `graphql:"repository(owner: $owner, name: $name)"`
-}
 
 // Name returns the manager identifier
 func (m *GitHubTagsManager) Name() string {
@@ -86,9 +57,9 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 		SkipSemverFilter: pkg.VersionExpr != "",
 	}
 
-	// Use git HTTP protocol with fallback to GraphQL
+	// Use git HTTP protocol with fallback to REST API
 	versions, err := DiscoverVersionsViaGitWithFallback(ctx, owner, repo, limit, func() ([]types.Version, error) {
-		return m.discoverVersionsViaGraphQL(ctx, owner, repo, pkg, limit)
+		return m.discoverVersionsViaREST(ctx, owner, repo, pkg, limit)
 	}, opts)
 	if err != nil {
 		return nil, err
@@ -118,65 +89,45 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 	return versions, nil
 }
 
-// discoverVersionsViaGraphQL fetches versions using GitHub GraphQL API (fallback method)
-func (m *GitHubTagsManager) discoverVersionsViaGraphQL(ctx context.Context, owner, repo string, pkg types.Package, limit int) ([]types.Version, error) {
-	// Set appropriate page size based on limit
-	first := limit
-	if first <= 0 || first > 100 {
-		first = 100
+// discoverVersionsViaREST fetches versions using GitHub REST API (fallback method)
+func (m *GitHubTagsManager) discoverVersionsViaREST(ctx context.Context, owner, repo string, pkg types.Package, limit int) ([]types.Version, error) {
+	perPage := limit
+	if perPage <= 0 || perPage > 100 {
+		perPage = 100
 	}
 
-	// Execute GraphQL query for tags sorted by commit date
-	graphql := GetClient().GraphQL()
-	var query tagsQuery
-	variables := map[string]interface{}{
-		"owner": githubv4.String(owner),
-		"name":  githubv4.String(repo),
-		"first": githubv4.Int(first),
-		"after": (*githubv4.String)(nil),
-	}
-
-	err := graphql.Query(ctx, &query, variables)
-	if err != nil {
+	// Use REST API to get tags
+	endpoint := fmt.Sprintf("/repos/%s/%s/tags?per_page=%d", owner, repo, perPage)
+	var tags []restTag
+	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &tags); err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
-		return nil, fmt.Errorf("failed to query tags for %s/%s: %w", owner, repo, err)
+		return nil, fmt.Errorf("failed to list tags for %s/%s: %w", owner, repo, err)
 	}
 
-	// Extract tag information from GraphQL response
 	var versions []types.Version
-	var tagNames []string
-
-	for _, node := range query.Repository.Refs.Nodes {
-		tagName := node.Name
-		tagNames = append(tagNames, tagName)
-
-		// Extract commit SHA and date
-		var commitSHA string
-		var commitDate time.Time
-
-		// Handle both Tag -> Commit and direct Commit references
-		if node.Target.Tag.Target.Commit.Oid != "" {
-			// Tag points to another tag that points to a commit
-			commitSHA = node.Target.Tag.Target.Commit.Oid
-			commitDate = node.Target.Tag.Target.Commit.CommittedDate
-		} else if node.Target.Commit.Oid != "" {
-			// Tag points directly to a commit
-			commitSHA = node.Target.Commit.Oid
-			commitDate = node.Target.Commit.CommittedDate
+	for _, tag := range tags {
+		normalizedVersion := version.Normalize(tag.Name)
+		v := types.ParseVersion(normalizedVersion, tag.Name)
+		if tag.Commit != nil {
+			v.SHA = tag.Commit.SHA
 		}
-
-		normalizedVersion := version.Normalize(tagName)
-		v := types.ParseVersion(normalizedVersion, tagName)
-		v.SHA = commitSHA
-		v.Published = commitDate
 		versions = append(versions, v)
 	}
 
-	// Log all tags returned from GraphQL API at V(4) level
-	logger.V(4).Infof("GitHub Tags: Found %d total tags for %s/%s", len(tagNames), owner, repo)
-	logger.V(4).Infof("GitHub Tags: Found %d valid semantic version tags", len(versions))
-
+	logger.V(4).Infof("GitHub Tags: Found %d tags for %s/%s", len(versions), owner, repo)
 	return versions, nil
+}
+
+// restTag represents a tag from REST API
+type restTag struct {
+	Name   string          `json:"name"`
+	Commit *restTagCommit  `json:"commit"`
+}
+
+// restTagCommit represents a commit reference in a tag
+type restTagCommit struct {
+	SHA string `json:"sha"`
+	URL string `json:"url"`
 }
 
 // Resolve gets the download URL and metadata for a specific version and platform
@@ -188,6 +139,10 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 	// Find the tag by version (pass full package for version_expr support)
 	tag, err := m.findTagByVersion(ctx, pkg, version)
 	if err != nil {
+		// Check for rate limit error - try fallback
+		if isRateLimitError(err) {
+			return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
+		}
 		// If it's a version not found error, enhance it with available versions
 		if versionErr, ok := err.(*manager.ErrVersionNotFound); ok {
 			return nil, m.enhanceErrorWithVersions(ctx, pkg, versionErr.Version, plat, err)
@@ -466,9 +421,117 @@ func (m *GitHubTagsManager) enhanceRateLimitError(ctx context.Context, originalE
 	return fmt.Errorf("%s", msg.String())
 }
 
+// handleRateLimitFallback handles rate limit errors by using fallback version
+func (m *GitHubTagsManager) handleRateLimitFallback(ctx context.Context, pkg types.Package, ver string, plat platform.Platform, originalErr error) (*types.Resolution, error) {
+	// Check if strict checksum mode is enabled
+	if manager.GetStrictChecksum(ctx) {
+		return nil, fmt.Errorf("rate limited and --strict-checksum requires checksum verification: %w", originalErr)
+	}
+
+	// Determine fallback version
+	fallbackVersion := pkg.FallbackVersion
+	if fallbackVersion == "" {
+		fallbackVersion = "latest"
+	}
+
+	// Check if we have url_template or non-wildcard asset_patterns to build a fallback URL
+	hasURLTemplate := pkg.URLTemplate != ""
+	hasAssetPattern := m.hasNonWildcardAssetPattern(pkg, plat)
+
+	if !hasURLTemplate && !hasAssetPattern {
+		return nil, fmt.Errorf("rate limited and no url_template or asset_patterns configured for fallback: %w", originalErr)
+	}
+
+	logger.Warnf("GitHub rate limited, using fallback version '%s' without checksum verification", fallbackVersion)
+
+	// Use the requested version for templating if it looks like a specific version
+	versionForTemplate := ver
+	if ver == "latest" || ver == "" {
+		versionForTemplate = fallbackVersion
+	}
+
+	// Build resolution without checksum
+	return m.buildFallbackResolution(pkg, versionForTemplate, plat)
+}
+
+// hasNonWildcardAssetPattern checks if the package has an asset pattern for the platform
+// that doesn't contain wildcards (can be used to construct a deterministic download URL)
+func (m *GitHubTagsManager) hasNonWildcardAssetPattern(pkg types.Package, plat platform.Platform) bool {
+	if pkg.AssetPatterns == nil {
+		return false
+	}
+	pattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	if err != nil || pattern == "" {
+		return false
+	}
+	return !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?")
+}
+
+// buildFallbackResolution builds a resolution using url_template or asset_patterns without checksum
+func (m *GitHubTagsManager) buildFallbackResolution(pkg types.Package, ver string, plat platform.Platform) (*types.Resolution, error) {
+	// Get the asset pattern for this platform
+	assetPattern, _ := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	if assetPattern == "" {
+		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
+	}
+
+	// Determine tag name (typically "v" + version for GitHub tags)
+	tagName := ver
+	if !strings.HasPrefix(ver, "v") {
+		tagName = "v" + ver
+	}
+
+	normalizedVersion := depstemplate.NormalizeVersion(ver)
+
+	// Template the asset pattern
+	templatedPattern, err := m.templateString(assetPattern, map[string]string{
+		"name": pkg.Name, "version": normalizedVersion, "tag": tagName,
+		"os": plat.OS, "arch": plat.Arch,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
+	}
+
+	var downloadURL string
+	if pkg.URLTemplate != "" {
+		// Use url_template if provided
+		urlTemplate := manager.NormalizeURLTemplate(pkg.URLTemplate)
+		downloadURL, err = m.templateString(urlTemplate, map[string]string{
+			"name":    pkg.Name,
+			"version": normalizedVersion,
+			"tag":     tagName,
+			"os":      plat.OS,
+			"arch":    plat.Arch,
+			"asset":   templatedPattern,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to template URL: %w", err)
+		}
+	} else {
+		// Build GitHub release download URL from repo and asset pattern
+		downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", pkg.Repo, tagName, templatedPattern)
+	}
+
+	resolution := &types.Resolution{
+		Package:     pkg,
+		Version:     ver,
+		Platform:    plat,
+		DownloadURL: downloadURL,
+		IsArchive:   isArchiveFile(downloadURL),
+		// No checksum - rate limit fallback
+	}
+
+	if resolution.IsArchive {
+		resolution.BinaryPath = m.guessBinaryPath(pkg, templatedPattern, plat)
+	}
+
+	logger.Debugf("Fallback resolved %s (no checksum)", resolution.Pretty().ANSI())
+	return resolution, nil
+}
+
 // Helper methods
 
-// TagInfo represents tag information from GraphQL query
+// TagInfo represents tag information from REST API
 type TagInfo struct {
 	Name string
 	SHA  string
@@ -480,31 +543,19 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 		return nil, fmt.Errorf("invalid repo format: %s", pkg.Repo)
 	}
 	owner, repo := parts[0], parts[1]
-	// Log GraphQL query initiation
-	logger.V(3).Infof("GitHub Tags: Searching for tag matching version %s in %s/%s using GraphQL", targetVersion, owner, repo)
-	logger.V(4).Infof("GitHub Tags: Tag search GraphQL query - owner: %s, repo: %s, first: 100", owner, repo)
+	logger.V(3).Infof("GitHub Tags: Searching for tag matching version %s in %s/%s using REST API", targetVersion, owner, repo)
 
-	// Execute GraphQL query for tags (we need to search through them)
-	graphql := GetClient().GraphQL()
-	var query tagsQuery
-	variables := map[string]interface{}{
-		"owner": githubv4.String(owner),
-		"name":  githubv4.String(repo),
-		"first": githubv4.Int(100),
-		"after": (*githubv4.String)(nil),
-	}
-
-	err := graphql.Query(ctx, &query, variables)
-	if err != nil {
+	// Fetch tags via REST API
+	endpoint := fmt.Sprintf("/repos/%s/%s/tags?per_page=100", owner, repo)
+	var tags []restTag
+	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &tags); err != nil {
 		err = m.enhanceRateLimitError(ctx, err)
 		return nil, fmt.Errorf("failed to query tags: %w", err)
 	}
 
 	// Try exact tag match first (with version_expr transformation)
-	for _, node := range query.Repository.Refs.Nodes {
-		tagName := node.Name
-
-		// Apply version_expr transformation if specified
+	for _, tag := range tags {
+		tagName := tag.Name
 		transformedTag := tagName
 		if pkg.VersionExpr != "" {
 			transformed, err := ApplyVersionExprToSingleTag(tagName, pkg.VersionExpr)
@@ -513,29 +564,22 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 			}
 		}
 
-		// Check if transformed tag matches target version
 		if transformedTag == targetVersion || transformedTag == "v"+targetVersion {
-			// Extract commit SHA
-			var commitSHA string
-			if node.Target.Tag.Target.Commit.Oid != "" {
-				commitSHA = node.Target.Tag.Target.Commit.Oid
-			} else if node.Target.Commit.Oid != "" {
-				commitSHA = node.Target.Commit.Oid
+			sha := ""
+			if tag.Commit != nil {
+				sha = tag.Commit.SHA
 			}
-
 			return &TagInfo{
-				Name: transformedTag, // Use transformed tag for URL templating
-				SHA:  commitSHA,
+				Name: transformedTag,
+				SHA:  sha,
 			}, nil
 		}
 	}
 
 	// Try version normalization match (with version_expr transformation)
 	normalizedTarget := version.Normalize(targetVersion)
-	for _, node := range query.Repository.Refs.Nodes {
-		tagName := node.Name
-
-		// Apply version_expr transformation if specified
+	for _, tag := range tags {
+		tagName := tag.Name
 		transformedTag := tagName
 		if pkg.VersionExpr != "" {
 			transformed, err := ApplyVersionExprToSingleTag(tagName, pkg.VersionExpr)
@@ -545,17 +589,13 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 		}
 
 		if version.Normalize(transformedTag) == normalizedTarget {
-			// Extract commit SHA
-			var commitSHA string
-			if node.Target.Tag.Target.Commit.Oid != "" {
-				commitSHA = node.Target.Tag.Target.Commit.Oid
-			} else if node.Target.Commit.Oid != "" {
-				commitSHA = node.Target.Commit.Oid
+			sha := ""
+			if tag.Commit != nil {
+				sha = tag.Commit.SHA
 			}
-
 			return &TagInfo{
-				Name: transformedTag, // Use transformed tag for URL templating
-				SHA:  commitSHA,
+				Name: transformedTag,
+				SHA:  sha,
 			}, nil
 		}
 	}

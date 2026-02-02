@@ -8,7 +8,6 @@ import (
 
 	"github.com/flanksource/deps/pkg/installer"
 	"github.com/flanksource/deps/pkg/manager"
-	ghmanager "github.com/flanksource/deps/pkg/manager/github"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 	versionpkg "github.com/flanksource/deps/pkg/version"
@@ -83,13 +82,9 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Binary: %s\n", pkg.BinaryName)
 	}
 
-	// Discover versions - use REST API for GitHub releases to get published dates
+	// Discover versions
 	var versions []types.Version
-	if ghMgr, ok := mgr.(*ghmanager.GitHubReleaseManager); ok {
-		versions, err = ghMgr.DiscoverVersionsViaREST(ctx, pkg, infoVersionLimit)
-	} else {
-		versions, err = mgr.DiscoverVersions(ctx, pkg, plat, infoVersionLimit)
-	}
+	versions, err = mgr.DiscoverVersions(ctx, pkg, plat, infoVersionLimit)
 	if err != nil {
 		fmt.Printf("\nVersions: (error: %v)\n", err)
 	} else if len(versions) == 0 {

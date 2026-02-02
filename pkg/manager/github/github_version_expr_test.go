@@ -9,6 +9,70 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var _ = Describe("GitHubReleaseManager REST API optimization", func() {
+	var ctx context.Context
+	var manager *GitHubReleaseManager
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		manager = NewGitHubReleaseManager()
+	})
+
+	Describe("Resolve with latest", func() {
+		It("should resolve latest version via REST API fast path", func() {
+			pkg := types.Package{
+				Name: "jq",
+				Repo: "jqlang/jq",
+			}
+			plat := platform.Platform{OS: "darwin", Arch: "arm64"}
+
+			resolution, err := manager.Resolve(ctx, pkg, "latest", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resolution).ToNot(BeNil())
+			Expect(resolution.Version).ToNot(BeEmpty())
+			Expect(resolution.DownloadURL).To(ContainSubstring("jq"))
+			// REST API should provide checksum
+			Expect(resolution.Checksum).ToNot(BeEmpty())
+		})
+
+		It("should skip REST fast path when URL template is configured", func() {
+			// Helm uses url_template (downloads from get.helm.sh), so REST fast path is skipped
+			// This tests that packages with custom URL templates work correctly
+			pkg := types.Package{
+				Name:        "helm",
+				Repo:        "helm/helm",
+				URLTemplate: "https://get.helm.sh/{{.asset}}",
+				AssetPatterns: map[string]string{
+					"darwin-arm64": "helm-{{.tag}}-darwin-arm64.tar.gz",
+				},
+			}
+			plat := platform.Platform{OS: "darwin", Arch: "arm64"}
+
+			resolution, err := manager.Resolve(ctx, pkg, "latest", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resolution).ToNot(BeNil())
+			Expect(resolution.Version).ToNot(BeEmpty())
+			Expect(resolution.DownloadURL).To(ContainSubstring("get.helm.sh"))
+		})
+	})
+
+	Describe("Resolve with explicit version", func() {
+		It("should resolve explicit version via REST API tags endpoint", func() {
+			pkg := types.Package{
+				Name: "jq",
+				Repo: "jqlang/jq",
+			}
+			plat := platform.Platform{OS: "darwin", Arch: "arm64"}
+
+			resolution, err := manager.Resolve(ctx, pkg, "1.7.1", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resolution).ToNot(BeNil())
+			Expect(resolution.Version).To(Equal("1.7.1"))
+			Expect(resolution.DownloadURL).To(ContainSubstring("jq"))
+		})
+	})
+})
+
 var _ = Describe("GitHub Managers with VersionExpr", func() {
 	var ctx context.Context
 

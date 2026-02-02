@@ -2,21 +2,25 @@ package github
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/google/go-github/v57/github"
-	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 )
 
 // GitHubClient is a singleton wrapper for GitHub API clients
 type GitHubClient struct {
 	client      *github.Client
-	graphql     *githubv4.Client
+	httpClient  *http.Client
+	token       string
 	tokenSource string
 	mu          sync.RWMutex
 }
@@ -37,7 +41,7 @@ func GetClient() *GitHubClient {
 // newClient creates a GitHub client with token resolution
 func newClient(tokenSources ...string) *GitHubClient {
 	var client *github.Client
-	var graphqlClient *githubv4.Client
+	var httpClient *http.Client
 	var token string
 	var tokenSource string
 
@@ -53,17 +57,17 @@ func newClient(tokenSources ...string) *GitHubClient {
 
 	if token != "" {
 		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		tc := oauth2.NewClient(context.Background(), ts)
-		client = github.NewClient(tc)
-		graphqlClient = githubv4.NewClient(tc)
+		httpClient = oauth2.NewClient(context.Background(), ts)
+		client = github.NewClient(httpClient)
 	} else {
 		client = github.NewClient(nil)
-		graphqlClient = githubv4.NewClient(nil)
+		httpClient = depshttp.GetHttpClient()
 	}
 
 	return &GitHubClient{
 		client:      client,
-		graphql:     graphqlClient,
+		httpClient:  httpClient,
+		token:       token,
 		tokenSource: tokenSource,
 	}
 }
@@ -75,9 +79,10 @@ func (c *GitHubClient) SetToken(token string) {
 
 	if token != "" {
 		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		tc := oauth2.NewClient(context.Background(), ts)
-		c.client = github.NewClient(tc)
-		c.graphql = githubv4.NewClient(tc)
+		httpClient := oauth2.NewClient(context.Background(), ts)
+		c.client = github.NewClient(httpClient)
+		c.httpClient = httpClient
+		c.token = token
 		c.tokenSource = "CLI-provided"
 	}
 }
@@ -89,18 +94,18 @@ func (c *GitHubClient) Client() *github.Client {
 	return c.client
 }
 
-// GraphQL returns the GraphQL client
-func (c *GitHubClient) GraphQL() *githubv4.Client {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.graphql
-}
-
 // TokenSource returns the current token source name
 func (c *GitHubClient) TokenSource() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.tokenSource
+}
+
+// Token returns the current token value
+func (c *GitHubClient) Token() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.token
 }
 
 // isRetryableError checks if an error is a retryable HTTP error
@@ -114,14 +119,18 @@ func isRetryableError(err error) bool {
 		strings.Contains(errStr, "503 Service Unavailable")
 }
 
-// Query executes a GraphQL query with retry logic for transient errors
-func (c *GitHubClient) Query(ctx context.Context, q interface{}, variables map[string]interface{}) error {
-	maxRetries := 3
+// RESTRequest makes a REST API request to GitHub with retry logic
+func (c *GitHubClient) RESTRequest(ctx context.Context, method, endpoint string, result interface{}) error {
+	return c.RESTRequestWithRetry(ctx, method, endpoint, result, 3)
+}
+
+// RESTRequestWithRetry makes a REST API request with configurable retries
+func (c *GitHubClient) RESTRequestWithRetry(ctx context.Context, method, endpoint string, result interface{}, maxRetries int) error {
 	baseDelay := 500 * time.Millisecond
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		err := c.GraphQL().Query(ctx, q, variables)
+		err := c.doRESTRequest(ctx, method, endpoint, result)
 		if err == nil {
 			return nil
 		}
@@ -141,4 +150,49 @@ func (c *GitHubClient) Query(ctx context.Context, q interface{}, variables map[s
 	}
 
 	return lastErr
+}
+
+// doRESTRequest performs a single REST API request
+func (c *GitHubClient) doRESTRequest(ctx context.Context, method, endpoint string, result interface{}) error {
+	url := "https://api.github.com" + endpoint
+
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	c.mu.RLock()
+	token := c.token
+	c.mu.RUnlock()
+
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := depshttp.GetHttpClient().Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("not found: %s", endpoint)
+	}
+	if resp.StatusCode == 403 {
+		return fmt.Errorf("rate limit exceeded or forbidden: %s", endpoint)
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, endpoint)
+	}
+
+	if result != nil {
+		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+
+	return nil
 }

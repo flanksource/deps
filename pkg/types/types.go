@@ -77,6 +77,8 @@ type Package struct {
 	WrapperScript string `json:"wrapper_script,omitempty" yaml:"wrapper_script,omitempty"`
 	// Extra contains manager-specific configuration options
 	Extra map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`
+	// FallbackVersion is used when GitHub API rate limits are reached (defaults to "latest")
+	FallbackVersion string `json:"fallback_version,omitempty" yaml:"fallback_version,omitempty"`
 }
 
 func (p Package) TemplateURL(platform platform.Platform, v string) (string, error) {

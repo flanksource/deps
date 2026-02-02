@@ -13,7 +13,6 @@ import (
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
-	"github.com/shurcooL/githubv4"
 )
 
 // GitHubBuildManager implements the PackageManager interface for GitHub releases
@@ -116,32 +115,20 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 	}
 	owner, repo := parts[0], parts[1]
 
-	// Always use "latest" release for version discovery
 	logger.V(3).Infof("GitHub Build: Fetching 'latest' release from %s/%s", owner, repo)
 
-	// First get the latest release tag name using GraphQL
-	var latestQuery releasesQuery
-	variables := map[string]interface{}{
-		"owner": githubv4.String(owner),
-		"name":  githubv4.String(repo),
-		"first": githubv4.Int(1),
-	}
-
-	err := GetClient().Query(ctx, &latestQuery, variables)
-	if err != nil {
+	// Get the latest release via REST API
+	endpoint := fmt.Sprintf("/repos/%s/%s/releases/latest", owner, repo)
+	var release restRelease
+	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &release); err != nil {
 		return nil, fmt.Errorf("failed to get latest release for %s: %w", pkg.Repo, err)
 	}
 
-	if len(latestQuery.Repository.Releases.Nodes) == 0 {
-		return nil, fmt.Errorf("no releases found for %s", pkg.Repo)
-	}
-
-	latestRelease := latestQuery.Repository.Releases.Nodes[0]
-	tagName := latestRelease.TagName
-	publishedAt := latestRelease.PublishedAt
+	tagName := release.TagName
+	publishedAt := release.PublishedAt
 
 	// Fetch all assets with digests using shared function
-	assets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
+	assets, err := fetchAllReleaseAssets(ctx, owner, repo, tagName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch assets for %s: %w", pkg.Repo, err)
 	}
@@ -160,7 +147,7 @@ func (m *GitHubBuildManager) DiscoverVersions(ctx context.Context, pkg types.Pac
 		if _, exists := versionMap[av.softwareVer]; !exists {
 			versionMap[av.softwareVer] = types.Version{
 				Version:   av.softwareVer,
-				Tag:       av.buildDate, // Store build date as tag
+				Tag:       av.buildDate,
 				Published: publishedAt,
 			}
 		}
@@ -252,30 +239,19 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 
 	// Get the tag name based on buildTag
 	if buildTag == "latest" {
-		// Get latest release tag using GraphQL
-		var latestQuery releasesQuery
-		variables := map[string]interface{}{
-			"owner": githubv4.String(owner),
-			"name":  githubv4.String(repo),
-			"first": githubv4.Int(1),
-		}
-
-		err := GetClient().Query(ctx, &latestQuery, variables)
-		if err != nil {
+		// Get latest release tag using REST API
+		endpoint := fmt.Sprintf("/repos/%s/%s/releases/latest", owner, repo)
+		var release restRelease
+		if err := GetClient().RESTRequest(ctx, "GET", endpoint, &release); err != nil {
 			return nil, fmt.Errorf("failed to get latest release for %s: %w", pkg.Repo, err)
 		}
-
-		if len(latestQuery.Repository.Releases.Nodes) == 0 {
-			return nil, fmt.Errorf("no releases found for %s", pkg.Repo)
-		}
-
-		tagName = latestQuery.Repository.Releases.Nodes[0].TagName
+		tagName = release.TagName
 	} else {
 		tagName = buildTag
 	}
 
 	// Fetch all assets with digests using shared function
-	assets, err := fetchAllReleaseAssetsWithDigests(ctx, owner, repo, tagName)
+	assets, err := fetchAllReleaseAssets(ctx, owner, repo, tagName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch assets for %s: %w", pkg.Repo, err)
 	}
@@ -339,7 +315,6 @@ func (m *GitHubBuildManager) Resolve(ctx context.Context, pkg types.Package, ver
 	// Set checksum from asset digest
 	if matched.sha256 != "" {
 		logger.V(3).Infof("Using SHA256 digest from GitHub asset: %s", matched.sha256)
-		// The GraphQL Digest field is a raw hex string, add the sha256: prefix
 		resolution.Checksum = "sha256:" + matched.sha256
 	}
 
