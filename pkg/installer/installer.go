@@ -338,9 +338,10 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return nil
 	}
 
-	// Step 2: Get resolution
+	// Step 2: Get resolution (pass strict checksum mode via context)
 	plat := i.getPlatform()
-	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
+	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
+	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, plat)
 	if err != nil {
 		return fmt.Errorf("failed to resolve package %s: %w", name, err)
 	}
@@ -441,9 +442,10 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		return nil
 	}
 
-	// Step 2: Get resolution
+	// Step 2: Get resolution (pass strict checksum mode via context)
 	plat := i.getPlatform()
-	resolution, err := mgr.Resolve(ctx, pkg, resolvedVersion, plat)
+	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
+	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, plat)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
 		return fmt.Errorf("failed to resolve package %s: %w", name, err)
@@ -1097,6 +1099,13 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 
 // resolveVersionConstraint resolves a version constraint to a specific version
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
+	// Fast path for "latest" with GitHub release manager
+	// Pass "latest" through directly - Resolve() will use REST API in a single call
+	if constraint == "latest" && mgr.Name() == "github_release" && pkg.VersionExpr == "" {
+		t.V(3).Infof("Using fast path for 'latest' constraint with github_release manager")
+		return "latest", nil
+	}
+
 	// Check if manager provides custom version resolution
 	type customResolver interface {
 		ResolveVersionConstraint(context.Context, types.Package, string, platform.Platform) (string, error)

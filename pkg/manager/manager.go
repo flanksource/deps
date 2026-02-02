@@ -7,6 +7,29 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 )
 
+// Context keys for passing options to managers
+type contextKey string
+
+const (
+	// StrictChecksumKey is used to pass strict checksum mode to managers
+	StrictChecksumKey contextKey = "strictChecksum"
+)
+
+// WithStrictChecksum returns a context with strict checksum mode set
+func WithStrictChecksum(ctx context.Context, strict bool) context.Context {
+	return context.WithValue(ctx, StrictChecksumKey, strict)
+}
+
+// GetStrictChecksum returns the strict checksum mode from context
+func GetStrictChecksum(ctx context.Context) bool {
+	if v := ctx.Value(StrictChecksumKey); v != nil {
+		if strict, ok := v.(bool); ok {
+			return strict
+		}
+	}
+	return true // Default to strict mode
+}
+
 // PackageManager defines the interface for different package managers
 type PackageManager interface {
 	// Name returns the manager type identifier
