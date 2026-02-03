@@ -13,6 +13,8 @@ type contextKey string
 const (
 	// StrictChecksumKey is used to pass strict checksum mode to managers
 	StrictChecksumKey contextKey = "strictChecksum"
+	// IterateVersionsKey is used to pass the max number of releases to try when assets not found
+	IterateVersionsKey contextKey = "iterateVersions"
 )
 
 // WithStrictChecksum returns a context with strict checksum mode set
@@ -28,6 +30,22 @@ func GetStrictChecksum(ctx context.Context) bool {
 		}
 	}
 	return true // Default to strict mode
+}
+
+// WithIterateVersions returns a context with iterate-versions setting
+func WithIterateVersions(ctx context.Context, n int) context.Context {
+	return context.WithValue(ctx, IterateVersionsKey, n)
+}
+
+// GetIterateVersions returns the max number of releases to try from context
+// Returns 0 if not set (iteration disabled)
+func GetIterateVersions(ctx context.Context) int {
+	if v := ctx.Value(IterateVersionsKey); v != nil {
+		if n, ok := v.(int); ok {
+			return n
+		}
+	}
+	return 0
 }
 
 // PackageManager defines the interface for different package managers
