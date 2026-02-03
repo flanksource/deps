@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	installCheck bool
+	installCheck     bool
+	iterateVersions  int
 )
 
 var installCmd = &cobra.Command{
@@ -38,6 +39,7 @@ Examples:
 func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().BoolVar(&installCheck, "check", false, "Verify installation by checking version after install")
+	installCmd.Flags().IntVar(&iterateVersions, "iterate-versions", 0, "Number of releases to try when 'latest' has no matching assets (0=disabled)")
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
@@ -60,6 +62,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		installer.WithDebug(debug),
 		installer.WithOS(osOverride, archOverride),
 		installer.WithTimeout(timeout),
+		installer.WithIterateVersions(iterateVersions),
 	)
 
 	// If no arguments provided, install from deps.yaml

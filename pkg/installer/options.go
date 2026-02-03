@@ -9,16 +9,17 @@ import (
 
 // InstallOptions configures the installation behavior
 type InstallOptions struct {
-	BinDir         string
-	AppDir         string
-	TmpDir         string
-	CacheDir       string
-	Force          bool
-	SkipChecksum   bool
-	StrictChecksum bool // If true, checksum failures cause installation to fail
-	Debug          bool
-	OSOverride     string
-	ArchOverride   string
+	BinDir          string
+	AppDir          string
+	TmpDir          string
+	CacheDir        string
+	Force           bool
+	SkipChecksum    bool
+	StrictChecksum  bool // If true, checksum failures cause installation to fail
+	Debug           bool
+	OSOverride      string
+	ArchOverride    string
+	IterateVersions int // Number of releases to try when 'latest' has no matching assets (0 = disabled)
 	// Legacy compatibility
 	VersionCheck types.VersionCheckMode
 	Timeout      time.Duration
@@ -84,6 +85,14 @@ func WithStrictChecksum(strict bool) InstallOption {
 func WithDebug(debug bool) InstallOption {
 	return func(opts *InstallOptions) {
 		opts.Debug = debug
+	}
+}
+
+// WithIterateVersions sets the number of releases to try when 'latest' has no matching assets
+// Set to 0 to disable iteration (default), or a positive number to enable
+func WithIterateVersions(n int) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.IterateVersions = n
 	}
 }
 

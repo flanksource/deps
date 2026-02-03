@@ -338,9 +338,10 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return nil
 	}
 
-	// Step 2: Get resolution (pass strict checksum mode via context)
+	// Step 2: Get resolution (pass options via context)
 	plat := i.getPlatform()
 	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
+	resolveCtx = manager.WithIterateVersions(resolveCtx, i.options.IterateVersions)
 	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, plat)
 	if err != nil {
 		return fmt.Errorf("failed to resolve package %s: %w", name, err)
@@ -442,9 +443,10 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		return nil
 	}
 
-	// Step 2: Get resolution (pass strict checksum mode via context)
+	// Step 2: Get resolution (pass options via context)
 	plat := i.getPlatform()
 	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
+	resolveCtx = manager.WithIterateVersions(resolveCtx, i.options.IterateVersions)
 	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, plat)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
@@ -1099,11 +1101,15 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 
 // resolveVersionConstraint resolves a version constraint to a specific version
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
-	// Fast path for "latest" with GitHub release manager
-	// Pass "latest" through directly - Resolve() will use REST API in a single call
-	if constraint == "latest" && mgr.Name() == "github_release" && pkg.VersionExpr == "" {
-		t.V(3).Infof("Using fast path for 'latest' constraint with github_release manager")
-		return "latest", nil
+	// Fast path for GitHub release manager:
+	// - "latest": Resolve() will use REST API in a single call
+	// - exact versions: Resolve() will try direct tag lookup first, then fall back
+	// This avoids version_expr normalization for exact tags like "jdk-21.0.5+11"
+	if mgr.Name() == "github_release" {
+		if constraint == "latest" || versionpkg.LooksLikeExactVersion(constraint) {
+			t.V(3).Infof("Using fast path for '%s' constraint with github_release manager", constraint)
+			return constraint, nil
+		}
 	}
 
 	// Check if manager provides custom version resolution
