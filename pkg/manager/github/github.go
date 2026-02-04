@@ -30,15 +30,15 @@ func NewGitHubReleaseManager() *GitHubReleaseManager {
 
 // restRelease represents a GitHub release from REST API
 type restRelease struct {
-	ID          int64            `json:"id"`
-	TagName     string           `json:"tag_name"`
-	Name        string           `json:"name"`
-	Prerelease  bool             `json:"prerelease"`
-	Draft       bool             `json:"draft"`
-	PublishedAt time.Time        `json:"published_at"`
-	Assets      []restAsset      `json:"assets"`
-	Author      *restUser        `json:"author,omitempty"`
-	TargetCommitish string       `json:"target_commitish,omitempty"`
+	ID              int64       `json:"id"`
+	TagName         string      `json:"tag_name"`
+	Name            string      `json:"name"`
+	Prerelease      bool        `json:"prerelease"`
+	Draft           bool        `json:"draft"`
+	PublishedAt     time.Time   `json:"published_at"`
+	Assets          []restAsset `json:"assets"`
+	Author          *restUser   `json:"author,omitempty"`
+	TargetCommitish string      `json:"target_commitish,omitempty"`
 }
 
 // restAsset represents a release asset from REST API (includes digest field)
@@ -180,6 +180,11 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			if buildErr == nil {
 				return resolution, nil
 			}
+			// If platform is not supported, return immediately (no point iterating)
+			var platformErr *manager.ErrPlatformNotSupported
+			if errors.As(buildErr, &platformErr) {
+				return nil, buildErr
+			}
 			// REST fetched the release but couldn't build resolution (asset not found)
 			// Check if iteration is enabled
 			if manager.IsAssetNotFoundError(buildErr) && manager.GetIterateVersions(ctx) > 0 {
@@ -187,7 +192,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 				return m.resolveLatestWithIteration(ctx, pkg, plat)
 			}
 			// Use the tag from REST for the fallback path
-			logger.V(3).Infof("REST fast path failed to build resolution: %v, using tag %s for fallback", buildErr, release.TagName)
+			logger.V(3).Infof("%v, using tag %s for fallback", buildErr, release.TagName)
 			tagName = release.TagName
 		} else {
 			// Check for rate limit error - try fallback
@@ -198,14 +203,49 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		}
 	}
 
+	// Fast path: use REST API for "stable" (first non-prerelease release)
+	if version == "stable" && pkg.URLTemplate == "" {
+		logger.V(3).Infof("Using REST API fast path for stable release of %s/%s", owner, repo)
+		release, err := m.fetchLatestStableRelease(ctx, owner, repo)
+		if err == nil {
+			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
+			if buildErr == nil {
+				resolution.Version = "stable"
+				return resolution, nil
+			}
+			// If platform is not supported, return immediately (no point iterating)
+			var platformErr *manager.ErrPlatformNotSupported
+			if errors.As(buildErr, &platformErr) {
+				return nil, buildErr
+			}
+			// Asset not found - automatically iterate for stable (no flag required)
+			if manager.IsAssetNotFoundError(buildErr) {
+				logger.V(3).Infof("Stable release has no matching assets, trying iteration through stable releases")
+				return m.resolveStableWithIteration(ctx, pkg, plat)
+			}
+			logger.V(3).Infof("%v", buildErr)
+			tagName = release.TagName
+		} else {
+			if isRateLimitError(err) {
+				return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
+			}
+			logger.V(3).Infof("REST fast path failed: %v, falling back to normal path", err)
+		}
+	}
+
 	// Fast path: try direct tag lookup using version as-is (user may have provided exact tag)
-	if tagName == "" && version != "latest" && pkg.URLTemplate == "" {
+	if tagName == "" && version != "latest" && version != "stable" && pkg.URLTemplate == "" {
 		logger.V(3).Infof("Trying direct tag lookup: %s", version)
 		release, err := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+version)
 		if err == nil {
 			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
 			if buildErr == nil {
 				return resolution, nil
+			}
+			// If platform is not supported, return immediately
+			var platformErr *manager.ErrPlatformNotSupported
+			if errors.As(buildErr, &platformErr) {
+				return nil, buildErr
 			}
 			logger.V(3).Infof("Direct tag lookup found %s but failed to build resolution: %v", version, buildErr)
 		}
@@ -262,6 +302,21 @@ func (m *GitHubReleaseManager) fetchReleaseViaREST(ctx context.Context, owner, r
 	return &release, nil
 }
 
+// fetchLatestStableRelease fetches the most recent non-prerelease release
+func (m *GitHubReleaseManager) fetchLatestStableRelease(ctx context.Context, owner, repo string) (*restRelease, error) {
+	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=20", owner, repo)
+	var releases []restRelease
+	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &releases); err != nil {
+		return nil, err
+	}
+	for i := range releases {
+		if !releases[i].Draft && !releases[i].Prerelease {
+			return &releases[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no stable releases found")
+}
+
 // buildResolutionFromRelease builds a Resolution from REST API release response
 func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, release *restRelease, plat platform.Platform) (*types.Resolution, error) {
 	tagName := release.TagName
@@ -278,7 +333,14 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 	}
 
 	// Get the asset pattern for this platform
-	assetPattern, _ := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	assetPattern, patternErr := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
+	if patternErr != nil {
+		// If asset-patterns are defined but don't include this platform, return the error
+		var platformErr *manager.ErrPlatformNotSupported
+		if errors.As(patternErr, &platformErr) && len(pkg.AssetPatterns) > 0 {
+			return nil, patternErr
+		}
+	}
 	if assetPattern == "" {
 		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
 	}
@@ -336,7 +398,7 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 		}
 		return nil, manager.EnhanceAssetNotFoundError(pkg.Name, templatedPattern, plat.String(), availableAssetNames,
 			&manager.ErrAssetNotFound{
-				Package:         pkg.Name,
+				Package:         fmt.Sprintf("%s@%s", pkg.Name, tagName),
 				AssetPattern:    templatedPattern,
 				Platform:        plat.String(),
 				AvailableAssets: availableAssetNames,
@@ -506,7 +568,7 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 
 			return nil, manager.EnhanceAssetNotFoundError(pkg.Name, templatedPattern, platformKey, availableAssetNames,
 				&manager.ErrAssetNotFound{
-					Package:         pkg.Name,
+					Package:         fmt.Sprintf("%s@%s", pkg.Name, tagName),
 					AssetPattern:    templatedPattern,
 					Platform:        platformKey,
 					AvailableAssets: availableAssetNames,
@@ -657,27 +719,56 @@ func (m *GitHubReleaseManager) resolveLatestWithIteration(ctx context.Context, p
 	}
 
 	iterator := &githubReleaseIterator{
-		mgr:   m,
-		pkg:   pkg,
-		plat:  plat,
-		owner: parts[0],
-		repo:  parts[1],
+		mgr:              m,
+		pkg:              pkg,
+		plat:             plat,
+		owner:            parts[0],
+		repo:             parts[1],
+		requestedVersion: "latest",
 	}
 	return manager.IterateReleasesForAsset(ctx, iterator, manager.GetIterateVersions(ctx))
 }
 
+// resolveStableWithIteration tries stable releases to find one with matching assets
+func (m *GitHubReleaseManager) resolveStableWithIteration(ctx context.Context, pkg types.Package, plat platform.Platform) (*types.Resolution, error) {
+	parts := strings.Split(pkg.Repo, "/")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid repo format: %s", pkg.Repo)
+	}
+
+	iterator := &githubReleaseIterator{
+		mgr:              m,
+		pkg:              pkg,
+		plat:             plat,
+		owner:            parts[0],
+		repo:             parts[1],
+		stableOnly:       true,
+		requestedVersion: "stable",
+	}
+	// Default to trying 10 stable releases (no flag required for stable)
+	return manager.IterateReleasesForAsset(ctx, iterator, 10)
+}
+
 // githubReleaseIterator implements manager.ReleaseIterator for GitHub releases
 type githubReleaseIterator struct {
-	mgr   *GitHubReleaseManager
-	pkg   types.Package
-	plat  platform.Platform
-	owner string
-	repo  string
+	mgr              *GitHubReleaseManager
+	pkg              types.Package
+	plat             platform.Platform
+	owner            string
+	repo             string
+	stableOnly       bool   // filter out prereleases when true
+	requestedVersion string // original version constraint (e.g., "latest", "stable")
 }
 
 // FetchReleases fetches recent releases from GitHub REST API
 func (i *githubReleaseIterator) FetchReleases(ctx context.Context, limit int) ([]manager.ReleaseInfo, error) {
-	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=%d", i.owner, i.repo, limit)
+	// Fetch more releases if filtering for stable only (to account for filtering)
+	fetchLimit := limit
+	if i.stableOnly {
+		fetchLimit = limit * 2
+	}
+
+	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=%d", i.owner, i.repo, fetchLimit)
 	var releases []restRelease
 	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &releases); err != nil {
 		return nil, fmt.Errorf("failed to list releases: %w", err)
@@ -688,12 +779,18 @@ func (i *githubReleaseIterator) FetchReleases(ctx context.Context, limit int) ([
 		if rel.Draft {
 			continue
 		}
+		if i.stableOnly && rel.Prerelease {
+			continue
+		}
 		result = append(result, manager.ReleaseInfo{
 			Tag:          rel.TagName,
 			Version:      versionpkg.Normalize(rel.TagName),
 			PublishedAt:  rel.PublishedAt,
 			IsPrerelease: rel.Prerelease,
 		})
+		if len(result) >= limit {
+			break
+		}
 	}
 	return result, nil
 }
@@ -711,8 +808,10 @@ func (i *githubReleaseIterator) TryResolve(ctx context.Context, release manager.
 		return nil, buildErr
 	}
 
-	// Set version to "latest" since that's what was requested
-	resolution.Version = "latest"
+	// Set version to the original constraint (e.g., "latest", "stable")
+	if i.requestedVersion != "" {
+		resolution.Version = i.requestedVersion
+	}
 	return resolution, nil
 }
 
@@ -864,7 +963,14 @@ func (m *GitHubReleaseManager) hasNonWildcardAssetPattern(pkg types.Package, pla
 // buildFallbackResolution builds a resolution using url_template or asset_patterns without checksum
 func (m *GitHubReleaseManager) buildFallbackResolution(pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
 	// Get the asset pattern for this platform
-	assetPattern, _ := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
+	if err != nil {
+		// If asset-patterns are defined but don't include this platform, return the error
+		var platformErr *manager.ErrPlatformNotSupported
+		if errors.As(err, &platformErr) && len(pkg.AssetPatterns) > 0 {
+			return nil, err
+		}
+	}
 	if assetPattern == "" {
 		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
 	}
