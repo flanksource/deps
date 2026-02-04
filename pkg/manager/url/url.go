@@ -300,7 +300,7 @@ func (m *URLManager) Resolve(ctx context.Context, pkg types.Package, version str
 
 		// Resolve asset pattern if specified
 		if asset == "" && len(pkg.AssetPatterns) > 0 {
-		assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+		assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
 		if err != nil {
 			return nil, err
 		}

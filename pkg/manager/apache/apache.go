@@ -202,7 +202,7 @@ func (m *ApacheManager) Verify(ctx context.Context, binaryPath string, pkg types
 // resolveAssetPattern resolves the asset pattern for a package and platform, then templates it
 func (m *ApacheManager) resolveAssetPattern(pkg types.Package, version string, plat platform.Platform) (string, error) {
 	// Use common asset pattern resolution
-	pattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	pattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
 	if err != nil {
 		return "", err
 	}

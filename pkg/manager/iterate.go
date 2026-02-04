@@ -61,7 +61,14 @@ func IterateReleasesForAsset(ctx context.Context, iterator ReleaseIterator, maxI
 
 		triedVersions = append(triedVersions, release.Tag)
 		lastErr = err
-		logger.V(3).Infof("Release %s has no matching assets, trying next...", release.Tag)
+
+		var assetErr *ErrAssetNotFound
+		if errors.As(err, &assetErr) {
+			platformDisplay := strings.ReplaceAll(assetErr.Platform, "-", "/")
+			logger.Warnf("%s: no matching assets found for %s (total assets: %d)", assetErr.Package, platformDisplay, len(assetErr.AvailableAssets))
+		} else {
+			logger.Warnf("Version %s: no matching assets for platform", release.Tag)
+		}
 	}
 
 	return nil, EnhanceIterationError(triedVersions, lastErr)

@@ -14,7 +14,7 @@ import (
 // 2. Literal "*" wildcard (all platforms)
 // 3. Glob patterns (e.g., "darwin-*", "linux-*")
 // 4. Comma-separated patterns (e.g., "darwin-*,windows-*")
-func ResolveAssetPattern(assetPatterns map[string]string, plat platform.Platform) (string, error) {
+func ResolveAssetPattern(assetPatterns map[string]string, plat platform.Platform, packageName ...string) (string, error) {
 	if len(assetPatterns) == 0 {
 		return "", fmt.Errorf("no asset patterns defined")
 	}
@@ -41,12 +41,21 @@ func ResolveAssetPattern(assetPatterns map[string]string, plat platform.Platform
 		return pattern, nil
 	}
 
-	// No match found
-	availablePatterns := make([]string, 0, len(assetPatterns))
+	// No match found - return structured error with available platforms
+	availablePlatforms := make([]string, 0, len(assetPatterns))
 	for k := range assetPatterns {
-		availablePatterns = append(availablePatterns, k)
+		availablePlatforms = append(availablePlatforms, k)
 	}
-	return "", fmt.Errorf("no asset pattern found for platform %s, available patterns: %v", platformKey, availablePatterns)
+
+	pkgName := ""
+	if len(packageName) > 0 {
+		pkgName = packageName[0]
+	}
+	return "", &ErrPlatformNotSupported{
+		Package:            pkgName,
+		Platform:           platformKey,
+		AvailablePlatforms: availablePlatforms,
+	}
 }
 
 // matchPlatformPattern checks if a platform matches a wildcard pattern.
