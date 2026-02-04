@@ -347,6 +347,15 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return fmt.Errorf("failed to resolve package %s: %w", name, err)
 	}
 
+	// Update task with actual resolved version if different (e.g., latest -> v1.2.3, stable -> 11.0.29+7)
+	if resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
+		if actualVersion := versionpkg.Normalize(resolution.GitHubAsset.Tag); actualVersion != resolvedVersion {
+			t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
+			t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))
+			resolvedVersion = actualVersion
+		}
+	}
+
 	// Check if this manager handles installation without downloading (e.g., go install)
 	if resolution.DownloadURL == "" {
 		t.Infof("Installing %s@%s using %s", name, resolvedVersion, mgr.Name())
@@ -363,7 +372,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 
 		// Finalize installation (for wrapper scripts, symlinks, etc.)
 		finalPath := filepath.Join(i.options.BinDir, name)
-		return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+		return i.finalizeInstallation(resolvedVersion, finalPath, pkg, t)
 	}
 
 	// Step 3: Download package (resolution already obtained above)
@@ -394,7 +403,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 	}
 
 	// Step 5: Finalize installation
-	return i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+	return i.finalizeInstallation(resolvedVersion, finalPath, pkg, t)
 }
 
 // installWithNewPackageManagerWithResult installs using the new package manager system and populates result
@@ -453,9 +462,20 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		return fmt.Errorf("failed to resolve package %s: %w", name, err)
 	}
 
+	// Update task with actual resolved version if different (e.g., latest -> v1.2.3)
+	actualVersion := resolvedVersion
+	if resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
+		actualVersion = versionpkg.Normalize(resolution.GitHubAsset.Tag)
+		if actualVersion != resolvedVersion {
+			t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
+			t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))
+			result.Version = types.Version{Version: actualVersion}
+		}
+	}
+
 	// Check if this manager handles installation without downloading (e.g., go install)
 	if resolution.DownloadURL == "" {
-		t.Infof("Installing %s@%s using %s", name, resolvedVersion, mgr.Name())
+		t.Infof("Installing %s@%s using %s", name, actualVersion, mgr.Name())
 
 		// Call manager's Install method directly
 		installOpts := types.InstallOptions{
@@ -470,7 +490,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 
 		// Finalize installation (for wrapper scripts, symlinks, etc.)
 		finalPath := filepath.Join(i.options.BinDir, name)
-		err = i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+		err = i.finalizeInstallation(actualVersion, finalPath, pkg, t)
 		if err != nil {
 			result.Status = types.InstallStatusFailed
 			return err
@@ -486,7 +506,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 	}
 
 	// Step 3: Download package (resolution already obtained above)
-	downloadPath, err := i.downloadPackage(ctx, name, resolvedVersion, resolution, t)
+	downloadPath, err := i.downloadPackage(ctx, name, actualVersion, resolution, t)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
 		return err
@@ -510,7 +530,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 			return err
 		}
 	} else if resolution.IsArchive {
-		finalPath, err = i.handleArchiveInstallation(downloadPath, name, resolvedVersion, resolution, pkg, t)
+		finalPath, err = i.handleArchiveInstallation(downloadPath, name, actualVersion, resolution, pkg, t)
 		if err != nil {
 			result.Status = types.InstallStatusFailed
 			return err
@@ -529,7 +549,7 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 	}
 
 	// Step 5: Finalize installation
-	err = i.finalizeInstallation(name, resolvedVersion, finalPath, pkg, t)
+	err = i.finalizeInstallation(actualVersion, finalPath, pkg, t)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
 		return err
@@ -770,7 +790,7 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 }
 
 // finalizeInstallation makes the binary executable and reports success
-func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string, pkg types.Package, t *task.Task) error {
+func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg types.Package, t *task.Task) error {
 	// Make executable (skip for directories and when post-process was used)
 	if len(pkg.PostProcess) == 0 && pkg.Mode != "directory" {
 		fileInfo, err := os.Stat(finalPath)
@@ -805,7 +825,7 @@ func (i *Installer) finalizeInstallation(name, resolvedVersion, finalPath string
 	}
 
 	// Mark task successful only after all operations (including post-processing) complete
-	t.Infof("✓ Successfully installed %s@%s to %s", name, resolvedVersion, finalPath)
+	t.SetDescription(fmt.Sprintf("Successfully installed to %s", finalPath))
 	t.Success()
 
 	return nil
@@ -1103,10 +1123,11 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string, t *task.Task) (string, error) {
 	// Fast path for GitHub release manager:
 	// - "latest": Resolve() will use REST API in a single call
+	// - "stable": Resolve() will use REST API, filtering prereleases
 	// - exact versions: Resolve() will try direct tag lookup first, then fall back
 	// This avoids version_expr normalization for exact tags like "jdk-21.0.5+11"
 	if mgr.Name() == "github_release" {
-		if constraint == "latest" || versionpkg.LooksLikeExactVersion(constraint) {
+		if constraint == "latest" || constraint == "stable" || versionpkg.LooksLikeExactVersion(constraint) {
 			t.V(3).Infof("Using fast path for '%s' constraint with github_release manager", constraint)
 			return constraint, nil
 		}

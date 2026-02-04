@@ -99,7 +99,7 @@ It can download and install various tools like kubectl, helm, terraform, and mor
 			os.Exit(1)
 		}
 
-		logger.Infof("Using BIN_DIR: %s (%s/%s)", binDir, osOverride, archOverride)
+		logger.Debugf("Using BIN_DIR: %s (%s/%s)", binDir, osOverride, archOverride)
 	},
 }
 
