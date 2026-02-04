@@ -458,6 +458,7 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 	}
 
 	// Apply version_expr to the tag to get the version for templating
+	// For special constraints like "stable"/"latest", derive version from tagName
 	versionForTemplate := version
 	if pkg.VersionExpr != "" {
 		testVer := types.Version{
@@ -469,6 +470,9 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 			versionForTemplate = transformed[0].Version
 			logger.V(4).Infof("Applied version_expr for templating: %s -> %s", tagName, versionForTemplate)
 		}
+	} else if version == "stable" || version == "latest" {
+		// Special constraints should use the resolved tag for templating
+		versionForTemplate = versionpkg.Normalize(tagName)
 	} else {
 		versionForTemplate = versionpkg.Normalize(version)
 	}
@@ -502,7 +506,7 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 
 		downloadURL, err = m.templateString(urlTemplate, map[string]string{
 			"name":    pkg.Name,
-			"version": depstemplate.NormalizeVersion(version),
+			"version": depstemplate.NormalizeVersion(versionForTemplate),
 			"tag":     tagName,
 			"os":      plat.OS,
 			"arch":    plat.Arch,
@@ -643,6 +647,20 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 			}
 		}
 		return "", fmt.Errorf("no releases found for %s/%s", owner, repo)
+	}
+
+	// Handle "stable" - return the first non-prerelease release only (never fall back to prereleases)
+	if targetVersion == "stable" {
+		for _, rel := range releases {
+			if !rel.Prerelease && !rel.Draft {
+				logger.V(3).Infof("Found stable release: %s", rel.TagName)
+				return rel.TagName, nil
+			}
+		}
+		return "", &manager.ErrVersionNotFound{
+			Package: repo,
+			Version: targetVersion,
+		}
 	}
 
 	// Try exact tag match first
