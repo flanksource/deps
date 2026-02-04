@@ -155,8 +155,15 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 
 	// Use common asset pattern resolution
 	if pkg.AssetPatterns != nil {
-		assetPattern, _ = manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
-		// Continue with empty assetPattern to fall back to default if error
+		var err error
+		assetPattern, err = manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
+		if err != nil {
+			// If asset-patterns are defined but don't include this platform, return the error
+			var platformErr *manager.ErrPlatformNotSupported
+			if errors.As(err, &platformErr) {
+				return nil, err
+			}
+		}
 	}
 
 	// If no asset pattern found, use default pattern
@@ -470,7 +477,14 @@ func (m *GitHubTagsManager) hasNonWildcardAssetPattern(pkg types.Package, plat p
 // buildFallbackResolution builds a resolution using url_template or asset_patterns without checksum
 func (m *GitHubTagsManager) buildFallbackResolution(pkg types.Package, ver string, plat platform.Platform) (*types.Resolution, error) {
 	// Get the asset pattern for this platform
-	assetPattern, _ := manager.ResolveAssetPattern(pkg.AssetPatterns, plat)
+	assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
+	if err != nil {
+		// If asset-patterns are defined but don't include this platform, return the error
+		var platformErr *manager.ErrPlatformNotSupported
+		if errors.As(err, &platformErr) && len(pkg.AssetPatterns) > 0 {
+			return nil, err
+		}
+	}
 	if assetPattern == "" {
 		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
 	}
