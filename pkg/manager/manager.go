@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"strings"
 
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
@@ -130,17 +131,21 @@ type ErrVersionNotFound struct {
 }
 
 func (e *ErrVersionNotFound) Error() string {
-	return "version " + e.Version + " not found for package " + e.Package
+	return e.Version + " not found"
 }
 
 // ErrPlatformNotSupported is returned when a platform is not supported
 type ErrPlatformNotSupported struct {
-	Package  string
-	Platform string
+	Package            string
+	Platform           string
+	AvailablePlatforms []string
 }
 
 func (e *ErrPlatformNotSupported) Error() string {
-	return "platform " + e.Platform + " not supported for package " + e.Package
+	if len(e.AvailablePlatforms) > 0 {
+		return e.Platform + " not supported, available platforms: " + strings.Join(e.AvailablePlatforms, ", ")
+	}
+	return e.Platform + " not supported"
 }
 
 // ErrChecksumMismatch is returned when checksums don't match

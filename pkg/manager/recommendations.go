@@ -226,7 +226,7 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 		errorMsg.WriteString(fmt.Sprintf("\nDid you mean: %s?", suggestion))
 	}
 
-	return fmt.Errorf("%s", errorMsg.String())
+	return fmt.Errorf("%s: %w", errorMsg.String(), originalErr)
 }
 
 // SuggestClosestAsset finds the closest matching asset from available assets

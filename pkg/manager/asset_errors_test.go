@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,12 @@ func TestEnhanceAssetNotFoundError(t *testing.T) {
 
 			if assetCount != tt.expectedCount {
 				t.Errorf("Expected %d assets to be shown, but found %d", tt.expectedCount, assetCount)
+			}
+
+			// Verify that the enhanced error wraps the original error and can be extracted via errors.As
+			var unwrappedErr *ErrAssetNotFound
+			if !errors.As(enhancedErr, &unwrappedErr) {
+				t.Errorf("Enhanced error should wrap ErrAssetNotFound so errors.As can find it")
 			}
 		})
 	}
@@ -427,6 +434,70 @@ func TestCalculateAssetSimilarity(t *testing.T) {
 			if score < tt.minScore || score > tt.maxScore {
 				t.Errorf("Score %d not in expected range [%d, %d] for target=%q candidate=%q",
 					score, tt.minScore, tt.maxScore, tt.target, tt.candidate)
+			}
+		})
+	}
+}
+
+func TestErrPlatformNotSupported(t *testing.T) {
+	tests := []struct {
+		name               string
+		err                *ErrPlatformNotSupported
+		expectedContains   []string
+		expectedNotContain []string
+	}{
+		{
+			name: "with available platforms",
+			err: &ErrPlatformNotSupported{
+				Package:            "example/tool",
+				Platform:           "darwin-arm64",
+				AvailablePlatforms: []string{"linux-amd64", "linux-arm64", "windows-amd64"},
+			},
+			expectedContains: []string{
+				"darwin-arm64 not supported",
+				"example/tool",
+				"available platforms:",
+				"linux-amd64",
+				"linux-arm64",
+				"windows-amd64",
+			},
+		},
+		{
+			name: "without available platforms (legacy usage)",
+			err: &ErrPlatformNotSupported{
+				Package:  "example/tool",
+				Platform: "darwin-arm64",
+			},
+			expectedContains: []string{
+				"darwin-arm64 not supported",
+				"example/tool",
+			},
+			expectedNotContain: []string{
+				"available platforms:",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			errMsg := tt.err.Error()
+
+			for _, expected := range tt.expectedContains {
+				if !strings.Contains(errMsg, expected) {
+					t.Errorf("Error message missing expected content:\nExpected: %s\nFull message: %s", expected, errMsg)
+				}
+			}
+
+			for _, notExpected := range tt.expectedNotContain {
+				if strings.Contains(errMsg, notExpected) {
+					t.Errorf("Error message should NOT contain:\nNot expected: %s\nFull message: %s", notExpected, errMsg)
+				}
+			}
+
+			// Verify errors.As works
+			var platformErr *ErrPlatformNotSupported
+			if !errors.As(tt.err, &platformErr) {
+				t.Errorf("errors.As should find ErrPlatformNotSupported")
 			}
 		})
 	}

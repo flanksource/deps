@@ -1,6 +1,8 @@
 package manager
 
 import (
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -151,10 +153,18 @@ var _ = Describe("Asset Resolution", func() {
 					"windows-*":   "windows.zip",
 				}
 
-				_, err := ResolveAssetPattern(patterns, plat)
+				_, err := ResolveAssetPattern(patterns, plat, "test-package")
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("no asset pattern found"))
-				Expect(err.Error()).To(ContainSubstring("darwin-arm64"))
+				Expect(err.Error()).To(ContainSubstring("platform darwin-arm64 not supported"))
+				Expect(err.Error()).To(ContainSubstring("available platforms"))
+				Expect(err.Error()).To(ContainSubstring("linux-amd64"))
+
+				// Verify it's the correct error type
+				var platformErr *ErrPlatformNotSupported
+				Expect(errors.As(err, &platformErr)).To(BeTrue())
+				Expect(platformErr.Platform).To(Equal("darwin-arm64"))
+				Expect(platformErr.Package).To(Equal("test-package"))
+				Expect(platformErr.AvailablePlatforms).To(ContainElements("linux-amd64", "windows-*"))
 			})
 		})
 	})
