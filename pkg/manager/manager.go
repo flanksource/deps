@@ -142,10 +142,14 @@ type ErrPlatformNotSupported struct {
 }
 
 func (e *ErrPlatformNotSupported) Error() string {
-	if len(e.AvailablePlatforms) > 0 {
-		return e.Platform + " not supported, available platforms: " + strings.Join(e.AvailablePlatforms, ", ")
+	msg := "platform " + e.Platform + " not supported"
+	if e.Package != "" {
+		msg += " for " + e.Package
 	}
-	return e.Platform + " not supported"
+	if len(e.AvailablePlatforms) > 0 {
+		msg += ", available platforms: " + strings.Join(e.AvailablePlatforms, ", ")
+	}
+	return msg
 }
 
 // ErrChecksumMismatch is returned when checksums don't match
