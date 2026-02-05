@@ -51,6 +51,13 @@ jobs:
       - name: Create branch and update Dockerfile
         run: |
           BRANCH="update-deps-${{ steps.version.outputs.version }}"
+          
+          # Check if branch already exists
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            echo "Branch $BRANCH already exists. Skipping."
+            exit 0
+          fi
+          
           git checkout -b "$BRANCH"
           
           # Update the Dockerfile to use the specific version instead of latest
@@ -70,6 +77,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.FLANKBOT_GITHUB_TOKEN }}
         run: |
+          BRANCH="update-deps-${{ steps.version.outputs.version }}"
+          
+          # Check if PR already exists
+          if gh pr list --repo flanksource/base-image --head "$BRANCH" --state open | grep -q .; then
+            echo "PR for branch $BRANCH already exists. Skipping."
+            exit 0
+          fi
+          
           gh pr create \
             --repo flanksource/base-image \
             --title "chore: update deps to ${{ steps.version.outputs.version }}" \
