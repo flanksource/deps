@@ -54,7 +54,7 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           
           # Check if branch already exists (exact match to avoid false positives)
-          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH\$"; then
+          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH$"; then
             echo "Branch $BRANCH already exists, skipping branch creation."
             exit 0
           fi
