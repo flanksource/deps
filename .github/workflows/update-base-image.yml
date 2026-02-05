@@ -52,8 +52,8 @@ jobs:
         run: |
           BRANCH="update-deps-${{ steps.version.outputs.version }}"
           
-          # Check if branch already exists
-          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+          # Check if branch already exists (exact match to avoid false positives)
+          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH$"; then
             echo "Branch $BRANCH already exists, skipping branch creation."
             exit 0
           fi
@@ -62,6 +62,13 @@ jobs:
           
           # Update the Dockerfile to use the specific version instead of latest
           sed -i 's|https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz|https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-${TARGETARCH}.tar.gz|g' Dockerfile
+          
+          # Verify that the substitution occurred
+          if ! grep -q "https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-" Dockerfile; then
+            echo "Error: Failed to update Dockerfile with version ${{ steps.version.outputs.tag }}"
+            echo "The Dockerfile URL format may have changed."
+            exit 1
+          fi
           
           # Check if changes were made
           if git diff --quiet; then
@@ -79,8 +86,9 @@ jobs:
         run: |
           BRANCH="update-deps-${{ steps.version.outputs.version }}"
           
-          # Check if PR already exists
-          if gh pr list --repo flanksource/base-image --head "$BRANCH" --state open | grep -q .; then
+          # Check if PR already exists (using json output for robustness)
+          PR_COUNT=$(gh pr list --repo flanksource/base-image --head "$BRANCH" --state open --json number --jq 'length')
+          if [ "$PR_COUNT" -gt 0 ]; then
             echo "PR for branch $BRANCH already exists, skipping PR creation."
             exit 0
           fi
