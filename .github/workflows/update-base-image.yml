@@ -51,9 +51,10 @@ jobs:
       - name: Create branch and update Dockerfile
         run: |
           BRANCH="update-deps-${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
           
           # Check if branch already exists (exact match to avoid false positives)
-          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/${BRANCH}$"; then
+          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH\$"; then
             echo "Branch $BRANCH already exists, skipping branch creation."
             exit 0
           fi
@@ -64,12 +65,12 @@ jobs:
           # Expected current format: https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz
           # Expected new format: https://github.com/flanksource/deps/releases/download/<TAG>/deps-linux-${TARGETARCH}.tar.gz
           # Note: \${TARGETARCH} is a literal string in the Dockerfile (Docker build arg), not a shell variable
-          sed -i 's|https://github.com/flanksource/deps/releases/latest/download/deps-linux-\${TARGETARCH}.tar.gz|https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-\${TARGETARCH}.tar.gz|g' Dockerfile
+          sed -i "s|https://github.com/flanksource/deps/releases/latest/download/deps-linux-\${TARGETARCH}.tar.gz|https://github.com/flanksource/deps/releases/download/${TAG}/deps-linux-\${TARGETARCH}.tar.gz|g" Dockerfile
           
           # Verify that the substitution occurred by checking the complete URL pattern
           # The Dockerfile contains literal ${TARGETARCH} (Docker build arg, not shell variable)
-          if ! grep -q 'https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-\${TARGETARCH}\.tar\.gz' Dockerfile; then
-            echo "Error: Failed to update Dockerfile with version ${{ steps.version.outputs.tag }}"
+          if ! grep -q "https://github.com/flanksource/deps/releases/download/${TAG}/deps-linux-\${TARGETARCH}\.tar\.gz" Dockerfile; then
+            echo "Error: Failed to update Dockerfile with version ${TAG}"
             echo "The Dockerfile URL format may have changed."
             echo "Current Dockerfile content:"
             cat Dockerfile
