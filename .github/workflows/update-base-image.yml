@@ -53,7 +53,7 @@ jobs:
           BRANCH="update-deps-${{ steps.version.outputs.version }}"
           
           # Check if branch already exists (exact match to avoid false positives)
-          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH$"; then
+          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/${BRANCH}$"; then
             echo "Branch $BRANCH already exists, skipping branch creation."
             exit 0
           fi
@@ -66,7 +66,8 @@ jobs:
           sed -i 's|https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz|https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-${TARGETARCH}.tar.gz|g' Dockerfile
           
           # Verify that the substitution occurred by checking the complete URL pattern
-          if ! grep -q "https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-\${TARGETARCH}\.tar\.gz" Dockerfile; then
+          # The Dockerfile contains literal ${TARGETARCH} (Docker build arg, not shell variable)
+          if ! grep -q 'https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-${TARGETARCH}\.tar\.gz' Dockerfile; then
             echo "Error: Failed to update Dockerfile with version ${{ steps.version.outputs.tag }}"
             echo "The Dockerfile URL format may have changed."
             echo "Current Dockerfile content:"
