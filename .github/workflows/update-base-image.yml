@@ -54,7 +54,7 @@ jobs:
           
           # Check if branch already exists
           if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
-            echo "Branch $BRANCH already exists. Skipping."
+            echo "Branch $BRANCH already exists, skipping branch creation."
             exit 0
           fi
           
@@ -81,7 +81,7 @@ jobs:
           
           # Check if PR already exists
           if gh pr list --repo flanksource/base-image --head "$BRANCH" --state open | grep -q .; then
-            echo "PR for branch $BRANCH already exists. Skipping."
+            echo "PR for branch $BRANCH already exists, skipping PR creation."
             exit 0
           fi
           
