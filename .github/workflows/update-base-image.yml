@@ -61,12 +61,16 @@ jobs:
           git checkout -b "$BRANCH"
           
           # Update the Dockerfile to use the specific version instead of latest
+          # Expected current format: https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz
+          # Expected new format: https://github.com/flanksource/deps/releases/download/<TAG>/deps-linux-${TARGETARCH}.tar.gz
           sed -i 's|https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz|https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-${TARGETARCH}.tar.gz|g' Dockerfile
           
-          # Verify that the substitution occurred
-          if ! grep -q "https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-" Dockerfile; then
+          # Verify that the substitution occurred by checking the complete URL pattern
+          if ! grep -q "https://github.com/flanksource/deps/releases/download/${{ steps.version.outputs.tag }}/deps-linux-\${TARGETARCH}\.tar\.gz" Dockerfile; then
             echo "Error: Failed to update Dockerfile with version ${{ steps.version.outputs.tag }}"
             echo "The Dockerfile URL format may have changed."
+            echo "Current Dockerfile content:"
+            cat Dockerfile
             exit 1
           fi
           
