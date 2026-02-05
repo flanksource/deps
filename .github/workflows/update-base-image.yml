@@ -65,13 +65,18 @@ jobs:
           # Expected current format: https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz
           # Expected new format: https://github.com/flanksource/deps/releases/download/<TAG>/deps-linux-${TARGETARCH}.tar.gz
           # Note: \${TARGETARCH} is a literal string in the Dockerfile (Docker build arg), not a shell variable
-          sed -i "s|https://github.com/flanksource/deps/releases/latest/download/deps-linux-\${TARGETARCH}.tar.gz|https://github.com/flanksource/deps/releases/download/${TAG}/deps-linux-\${TARGETARCH}.tar.gz|g" Dockerfile
+          
+          CURRENT_URL='https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz'
+          NEW_URL="https://github.com/flanksource/deps/releases/download/${TAG}/deps-linux-\${TARGETARCH}.tar.gz"
+          
+          sed -i "s|${CURRENT_URL}|${NEW_URL}|g" Dockerfile
           
           # Verify that the substitution occurred by checking the complete URL pattern
           # The Dockerfile contains literal ${TARGETARCH} (Docker build arg, not shell variable)
-          if ! grep -q "https://github.com/flanksource/deps/releases/download/${TAG}/deps-linux-\${TARGETARCH}\.tar\.gz" Dockerfile; then
+          if ! grep -q "${NEW_URL}" Dockerfile; then
             echo "Error: Failed to update Dockerfile with version ${TAG}"
             echo "The Dockerfile URL format may have changed."
+            echo "Expected to find: ${NEW_URL}"
             echo "Current Dockerfile content:"
             cat Dockerfile
             exit 1
