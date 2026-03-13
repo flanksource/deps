@@ -834,6 +834,18 @@ registry:
         version_command: client --version
         version_regex: ClickHouse client version (\d+\.\d+\.\d+)
 
+    step:
+        name: step
+        repo: smallstep/cli
+        asset_patterns:
+            darwin-amd64: step_darwin_{{.version}}_amd64.tar.gz
+            darwin-arm64: step_darwin_{{.version}}_arm64.tar.gz
+            linux-amd64: step_linux_{{.version}}_amd64.tar.gz
+            linux-arm64: step_linux_{{.version}}_arm64.tar.gz
+            windows-amd64: step_windows_{{.version}}_amd64.zip
+        version_command: version
+        version_regex: 'Smallstep CLI/(\d+\.\d+\.\d+)'
+
     uv:
         name: uv
         repo: astral-sh/uv
