@@ -821,6 +821,19 @@ registry:
         version_command: --version
         version_regex: '(\d+\.\d+\.\d+)'
 
+    clickhouse:
+        name: clickhouse
+        repo: ClickHouse/ClickHouse
+        asset_patterns:
+            linux-amd64: clickhouse-common-static-{{.version | replaceAll "+" "."}}-amd64.tgz
+            linux-arm64: clickhouse-common-static-{{.version | replaceAll "+" "."}}-arm64.tgz
+            darwin-amd64: clickhouse-macos
+            darwin-arm64: clickhouse-macos-aarch64
+        version_expr: |
+            (tag.contains("-stable") || tag.contains("-lts")) ? (tag.substring(1).split("-")[0].split(".").size() >= 4 ? tag.substring(1).split("-")[0].split(".")[0] + "." + tag.substring(1).split("-")[0].split(".")[1] + "." + tag.substring(1).split("-")[0].split(".")[2] + "+" + tag.substring(1).split("-")[0].split(".")[3] : tag.substring(1).split("-")[0]) : ""
+        version_command: client --version
+        version_regex: ClickHouse client version (\d+\.\d+\.\d+)
+
     uv:
         name: uv
         repo: astral-sh/uv
