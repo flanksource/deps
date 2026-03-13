@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   BINARY_NAME: deps
-  BUILD_DIR: ./bin
+  BUILD_DIR: ./.bin
   MAIN_PATH: ./cmd/deps/main.go
   GINKGO: go run github.com/onsi/ginkgo/v2/ginkgo
 
@@ -257,10 +257,10 @@ tasks:
       - go clean
 
   install:
-    desc: Install the binary to GOPATH/bin
+    desc: Install the binary to /usr/local/bin
     deps: [build]
     cmds:
-      - go install {{.MAIN_PATH}}
+      - mv "{{.BUILD_DIR}}/{{.BINARY_NAME}}" /usr/local/bin
 
   check:
     desc: Run all checks (fmt, vet, lint, test)
