@@ -14,13 +14,14 @@ import (
 
 // Re-export commonly used types for public API
 type (
-	InstallResult = types.InstallResult
-	InstallStatus = types.InstallStatus
-	VerifyStatus  = types.VerifyStatus
-	VersionStatus = types.VersionStatus
-	Package       = types.Package
-	RunOptions    = runtime.RunOptions
-	RunResult     = runtime.RunResult
+	InstallResult        = types.InstallResult
+	InstallStatus        = types.InstallStatus
+	VerifyStatus         = types.VerifyStatus
+	VersionStatus        = types.VersionStatus
+	Package              = types.Package
+	RunOptions           = runtime.RunOptions
+	RunResult            = runtime.RunResult
+	VersionMismatchError = installer.VersionMismatchError
 )
 
 // Re-export status constants

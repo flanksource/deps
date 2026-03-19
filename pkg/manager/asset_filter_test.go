@@ -305,7 +305,23 @@ var _ = Describe("Asset Filtering", func() {
 				expected: []string{"universal-binary"},
 			},
 			{
-				name: "should prefer arm64 over arm when both exist",
+				name: "should not return wrong-arch asset as universal (aarch64 when amd64 requested)",
+			assets: []string{
+				"postgrest-v14.6-macos-aarch64.tar.xz",
+			},
+			arch:    "amd64",
+			wantErr: true,
+		},
+		{
+			name: "should not return wrong-arch asset as universal (x86_64 when arm64 requested)",
+			assets: []string{
+				"tool-macos-x86_64.tar.gz",
+			},
+			arch:    "arm64",
+			wantErr: true,
+		},
+		{
+			name: "should prefer arm64 over arm when both exist",
 				assets: []string{
 					"yq_linux_arm.tar.gz",
 					"yq_linux_arm64.tar.gz",
@@ -470,6 +486,19 @@ var _ = Describe("Asset Filtering", func() {
 				os:       "linux",
 				arch:     "amd64",
 				expected: []string{"kubectl", "kubectl.exe"},
+			},
+			{
+				name: "should reject wrong-arch asset after OS filtering (postgrest aarch64 for amd64)",
+				assets: []string{
+					"postgrest-v14.6-freebsd-x86-64.tar.xz",
+					"postgrest-v14.6-linux-static-x86-64.tar.xz",
+					"postgrest-v14.6-macos-aarch64.tar.xz",
+					"postgrest-v14.6-ubuntu-aarch64.tar.xz",
+					"postgrest-v14.6-windows-x86-64.zip",
+				},
+				os:      "darwin",
+				arch:    "amd64",
+				wantErr: true,
 			},
 		}
 

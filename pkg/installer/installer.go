@@ -694,6 +694,19 @@ func (i *Installer) resolveAndValidateVersion(ctx context.Context, mgr manager.P
 
 	// Check if binary already exists with correct version (unless force flag is set)
 	if !i.options.Force {
+		// Skip existing-install check if the binary's architecture doesn't match the requested one
+		if i.options.ArchOverride != "" {
+			binaryName := name
+			if pkg.BinaryName != "" {
+				binaryName = pkg.BinaryName
+			}
+			binPath := filepath.Join(i.options.BinDir, binaryName)
+			if nativeArch := pipeline.DetectBinaryArch(binPath); nativeArch != "" && !archMatches(nativeArch, i.options.ArchOverride) {
+				t.Debugf("Existing %s is %s but %s requested, reinstalling", binaryName, nativeArch, i.options.ArchOverride)
+				return resolvedVersion, false, nil
+			}
+		}
+
 		if existingVersion := versionpkg.CheckExistingInstallation(t, name, pkg, resolvedVersion, i.options.BinDir, i.options.OSOverride); existingVersion != "" {
 			t.Infof("✓ %s@%s is already installed", name, resolvedVersion)
 			t.Success()
@@ -758,10 +771,10 @@ func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion s
 	return downloadPath, nil
 }
 
-// executePostProcessing runs the post-processing pipeline if configured
+// executePostProcessing runs the post-processing pipeline if configured.
 func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath string, t *task.Task) error {
 	if len(pkg.PostProcess) == 0 {
-		return nil // No post-processing needed
+		return nil
 	}
 
 	// Filter post-process commands by platform
@@ -782,14 +795,10 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 
 	// Execute the CEL pipeline on the extracted contents
 	evaluator := pipeline.NewCELPipelineEvaluator(workDir, targetPath, i.options.TmpDir, t, i.options.Debug)
-	if err := evaluator.Execute(celPipeline); err != nil {
-		return err
-	}
-
-	return nil
+	return evaluator.Execute(celPipeline)
 }
 
-// finalizeInstallation makes the binary executable and reports success
+// finalizeInstallation makes the binary executable and reports success.
 func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg types.Package, t *task.Task) error {
 	// Make executable (skip for directories and when post-process was used)
 	if len(pkg.PostProcess) == 0 && pkg.Mode != "directory" {
@@ -824,6 +833,26 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 		}
 	}
 
+	// Verify installed version matches expected
+	if pkg.VersionCommand != "" {
+		t.SetDescription("Verifying installed version")
+		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, finalPath, pkg.VersionCommand, pkg.VersionRegex, pkg.Mode)
+		if versionErr != nil {
+			if diagMsg := pipeline.DiagnoseLibraryIssues(finalPath, t); diagMsg != "" {
+				return fmt.Errorf("%s: version check failed: %w\n%s", pkg.Name, versionErr, diagMsg)
+			}
+			return fmt.Errorf("%s: version check failed: %w", pkg.Name, versionErr)
+		}
+		status, _ := versionpkg.CompareVersions(installedVersion, resolvedVersion)
+		if status != types.CheckStatusOK && status != types.CheckStatusNewer {
+			return &VersionMismatchError{
+				Tool:     pkg.Name,
+				Expected: resolvedVersion,
+				Got:      installedVersion,
+			}
+		}
+	}
+
 	// Mark task successful only after all operations (including post-processing) complete
 	t.SetDescription(fmt.Sprintf("Successfully installed to %s", finalPath))
 	t.Success()
@@ -831,7 +860,7 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 	return nil
 }
 
-// handleArchiveInstallation processes an archive download (extraction, binary finding, post-processing)
+// handleArchiveInstallation processes an archive download (extraction, binary finding, post-processing).
 func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersion string, resolution *types.Resolution, pkg types.Package, t *task.Task) (string, error) {
 	// Auto-extract archive to working directory immediately after download
 	workDir := filepath.Join(i.options.TmpDir, fmt.Sprintf("deps-extract-%s-%s", name, resolvedVersion))
@@ -846,10 +875,10 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 	cleanup.AddFile(downloadPath)
 	defer cleanup.GetCleanupFunc()()
 
-	var finalPath string
-
 	// Use resolution.Package since managers can modify the mode
 	resolvedPkg := resolution.Package
+
+	var finalPath string
 
 	// Handle directory mode installation
 	if resolvedPkg.Mode == "directory" {
@@ -871,36 +900,29 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 	} else {
 		finalPath = filepath.Join(i.options.BinDir, name)
 
-		// Check if package has post-processing pipeline
-		if len(resolvedPkg.PostProcess) > 0 {
-			// Execute the CEL pipeline on the extracted contents
-			if err := i.executePostProcessing(resolvedPkg, workDir, finalPath, t); err != nil {
-				return "", err
-			}
+		if err := i.executePostProcessing(resolvedPkg, workDir, finalPath, t); err != nil {
+			return "", err
+		}
 
-			// Make executable after post-processing completes
-			if fileInfo, err := os.Stat(finalPath); err == nil && !fileInfo.IsDir() {
-				if err := os.Chmod(finalPath, 0755); err != nil {
-					return "", fmt.Errorf("failed to make binary executable: %w", err)
-				}
-			}
-
-		} else {
-			// Regular binary search in already extracted archive
+		// Find and copy the binary from the extract dir to finalPath.
+		// Always copy — if we reached this point, resolveAndValidateVersion
+		// already decided a (re)install is needed.
+		{
 			t.SetDescription("Searching for binary")
-
 			binaryPath, err := extract.FindBinaryInDir(workDir, resolution.BinaryPath, t)
 			if err != nil {
 				return "", fmt.Errorf("failed to find binary %s: %w", name, err)
 			}
-
 			utils.LogFileFound(t, binaryPath, "binary")
-
-			// Copy binary to final destination
 			t.SetDescription("Installing binary")
-
 			if err := utils.CopyFile(binaryPath, finalPath); err != nil {
 				return "", fmt.Errorf("failed to install binary: %w", err)
+			}
+		}
+
+		if fileInfo, err := os.Stat(finalPath); err == nil && !fileInfo.IsDir() {
+			if err := os.Chmod(finalPath, 0755); err != nil {
+				return "", fmt.Errorf("failed to make binary executable: %w", err)
 			}
 		}
 	}
@@ -1208,4 +1230,14 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
 	return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
+}
+
+// archMatches returns true if nativeArch (e.g. "x86_64", "arm64") corresponds
+// to goArch (e.g. "amd64", "arm64").
+func archMatches(nativeArch, goArch string) bool {
+	if nativeArch == goArch {
+		return true
+	}
+	return (nativeArch == "x86_64" && goArch == "amd64") ||
+		(nativeArch == "amd64" && goArch == "x86_64")
 }
