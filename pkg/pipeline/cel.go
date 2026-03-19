@@ -698,7 +698,7 @@ func (f *functions) deleteFiles(matches []string, context string) ([]string, err
 	}
 
 	if len(failed) > 0 {
-		f.ctx.LogError(fmt.Sprintf("Failed to delete %d items: %v", len(failed), failed))
+		f.ctx.LogError(fmt.Sprintf("Failed to delete %d items (%s): %v", len(failed), context, failed))
 	}
 
 	if totalSize > 0 {
