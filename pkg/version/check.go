@@ -188,7 +188,12 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 		// Run with timeout
 		result := p.WithTimeout(timeout).Run()
 		if result.Err != nil {
-			lastErr = result.Err
+			stderr := strings.TrimSpace(result.GetStderr())
+			if stderr != "" {
+				lastErr = fmt.Errorf("%w: %s", result.Err, stderr)
+			} else {
+				lastErr = result.Err
+			}
 			continue
 		}
 
@@ -202,7 +207,7 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 
 	if lastErr != nil {
 		t.V(3).Infof("All version commands failed for %s", utils.LogPath(binaryPath))
-		return "", fmt.Errorf("all version commands failed, last error: %v", lastErr)
+		return "", lastErr
 	}
 
 	version, err := parseVersionOutput(string(output), versionPattern)
@@ -272,7 +277,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 		compareVersion = requestedVersion
 	}
 
-	status, err := compareVersions(installedVersion, compareVersion)
+	status, err := CompareVersions(installedVersion, compareVersion)
 	if err != nil {
 		result.Status = types.CheckStatusError
 		result.Error = err.Error()

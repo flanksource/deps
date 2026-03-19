@@ -49,6 +49,20 @@ func (ctx *PipelineContext) LogDebug(message string) {
 	}
 }
 
+// LogTrace logs a trace message (V4) if task context is available
+func (ctx *PipelineContext) LogTrace(message string) {
+	if ctx.Task != nil {
+		ctx.Task.V(4).Infof("%s", message)
+	}
+}
+
+// LogWarn logs a warning message if task context is available
+func (ctx *PipelineContext) LogWarn(message string) {
+	if ctx.Task != nil {
+		ctx.Task.Warnf("%s", message)
+	}
+}
+
 // LogError logs an error message if task context is available
 func (ctx *PipelineContext) LogError(message string) {
 	if ctx.Task != nil {

@@ -187,8 +187,13 @@ func filterByArch(assets []AssetInfo, arch string) ([]AssetInfo, error) {
 		}
 	}
 
-	// If no arch-specific files found, return all (might be universal binaries)
+	// If no arch-specific files found, check whether the remaining assets
+	// contain arch markers from other architectures. If they do, they are
+	// not universal binaries — they are simply the wrong architecture.
 	if len(filtered) == 0 {
+		if hasOtherArchMarkers(assets, arch) {
+			return nil, fmt.Errorf("no assets found matching architecture '%s'", arch)
+		}
 		return assets, nil
 	}
 
@@ -198,6 +203,30 @@ func filterByArch(assets []AssetInfo, arch string) ([]AssetInfo, error) {
 	}
 
 	return filtered, nil
+}
+
+// hasOtherArchMarkers returns true if any asset contains an arch alias
+// belonging to a different architecture than the requested one.
+func hasOtherArchMarkers(assets []AssetInfo, requestedArch string) bool {
+	allArchAliases := map[string][]string{
+		"amd64": {"amd64", "x86_64", "x64", "x86-64", "x86", "i386", "i686"},
+		"arm64": {"arm64", "aarch64"},
+		"arm":   {"armv7", "armv7l"},
+	}
+	for _, asset := range assets {
+		nameLower := strings.ToLower(asset.Name)
+		for archKey, aliases := range allArchAliases {
+			if archKey == requestedArch {
+				continue
+			}
+			for _, alias := range aliases {
+				if strings.Contains(nameLower, alias) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // preferArm64Assets filters to prefer arm64/aarch64 assets over arm-only assets.

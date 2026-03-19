@@ -201,7 +201,6 @@ registry:
         version_regex: .*Version:\s+v?(\d+\.\d+\.\d+)
     postgrest:
         name: postgrest
-
         repo: PostgREST/postgrest
         asset_patterns:
             darwin-amd64: postgrest-{{.tag}}-macos-x86-64.tar.xz

@@ -87,9 +87,7 @@ func getShellBinary() string {
 	return "sh"
 }
 
-// compareVersions compares installed version against expected version
-// Returns the appropriate CheckStatus and any error
-func compareVersions(installed, expected string) (types.CheckStatus, error) {
+func CompareVersions(installed, expected string) (types.CheckStatus, error) {
 	// Normalize versions for comparison
 	normalizedInstalled := Normalize(installed)
 	normalizedExpected := Normalize(expected)
