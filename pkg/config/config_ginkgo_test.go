@@ -8,6 +8,16 @@ import (
 )
 
 var _ = Describe("Config", func() {
+	Describe("LoadDefaultConfig", func() {
+		It("should load embedded defaults.yaml without error", func() {
+			config, err := LoadDefaultConfig()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(config.Registry)).To(BeNumerically(">", 50))
+			Expect(config.Registry).To(HaveKey("powershell"))
+			Expect(config.Registry).To(HaveKey("step"))
+		})
+	})
+
 	Describe("Package Defaults", func() {
 		Context("when applying package defaults", func() {
 			It("should set name to registry key when name is empty", func() {

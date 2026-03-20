@@ -7,32 +7,34 @@ import (
 var globalRegistry *types.DepsConfig
 
 func init() {
-	// Load defaults + user config during package initialization
+	initGlobalRegistry()
+}
+
+func initGlobalRegistry() {
 	defaultConfig, err := LoadDefaultConfig()
 	if err != nil {
-		// If we can't load defaults, create minimal config
 		defaultConfig = &types.DepsConfig{
 			Registry:     make(map[string]types.Package),
 			Dependencies: make(map[string]string),
 		}
 	}
 
-	// Try to load user config
 	userConfig, err := loadRawConfig("")
 	if err != nil {
-		// If user config doesn't exist, just use defaults
 		globalRegistry = defaultConfig
 	} else {
-		// Merge configs
 		globalRegistry = MergeWithDefaults(defaultConfig, userConfig)
 	}
 
-	// Apply post-processing (same logic as LoadMergedConfig)
 	applyConfigPostProcessing(globalRegistry)
 }
 
-// GetGlobalRegistry returns the pre-loaded global registry (defaults + user config)
+// GetGlobalRegistry returns the pre-loaded global registry (defaults + user config).
+// If the registry is nil (e.g., after ResetGlobalRegistry), it re-initializes from defaults.
 func GetGlobalRegistry() *types.DepsConfig {
+	if globalRegistry == nil {
+		initGlobalRegistry()
+	}
 	return globalRegistry
 }
 
