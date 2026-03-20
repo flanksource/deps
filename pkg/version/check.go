@@ -85,9 +85,10 @@ func resolveBinaryPath(tool string, pkg types.Package, binDir string, osOverride
 	}
 
 	// For directory mode packages with symlinks, use the symlink for version checking
-	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 && pkg.VersionCommand != "" {
+	// Skip shell-wrapped commands (bash -c, sh -c) — they must run in directory mode
+	if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 && pkg.VersionCommand != "" && !ContainsShellOperators(pkg.VersionCommand) {
 		cmdParts := strings.Fields(pkg.VersionCommand)
-		if len(cmdParts) > 0 {
+		if len(cmdParts) > 0 && cmdParts[0] != "bash" && cmdParts[0] != "sh" {
 			symlinkName := filepath.Base(cmdParts[0])
 			binaryPath := filepath.Join(binDir, symlinkName)
 

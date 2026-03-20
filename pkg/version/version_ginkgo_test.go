@@ -118,6 +118,22 @@ OpenJDK 64-Bit Server VM Temurin-21.0.5+11 (build 21.0.5+11, mixed mode, sharing
 		)
 	})
 
+	Describe("CompareVersions", func() {
+		DescribeTable("should compare versions with prefix matching",
+			func(installed, expected string, want types.CheckStatus) {
+				status, err := CompareVersions(installed, expected)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(status).To(Equal(want))
+			},
+			Entry("exact match", "1.2.3", "1.2.3", types.CheckStatusOK),
+			Entry("v prefix on expected", "1.2.3", "v1.2.3", types.CheckStatusOK),
+			Entry("installed prefixes expected (clickhouse style)", "26.2.5.45", "26.2.5.45-stable", types.CheckStatusOK),
+			Entry("expected prefixes installed", "7.4.6.1", "7.4.6", types.CheckStatusOK),
+			Entry("different versions", "1.2.3", "1.2.4", types.CheckStatusOutdated),
+			Entry("newer installed", "1.3.0", "1.2.9", types.CheckStatusNewer),
+		)
+	})
+
 	Describe("IsCompatible", func() {
 		DescribeTable("should check version compatibility",
 			func(installed, required string, expected bool) {
