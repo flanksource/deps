@@ -33,7 +33,7 @@ registry:
             linux-arm64: jq-linux-arm64
             windows-amd64: jq-win64.exe
         version_command: --version
-        version_regex: jq-(\d+\.\d+)
+        version_regex: jq-(\d+\.\d+\.\d+)
 
     kubectl:
         name: kubectl
@@ -829,9 +829,9 @@ registry:
             darwin-amd64: clickhouse-macos
             darwin-arm64: clickhouse-macos-aarch64
         version_expr: |
-            (tag.contains("-stable") || tag.contains("-lts")) ? (tag.substring(1).split("-")[0].split(".").size() >= 4 ? tag.substring(1).split("-")[0].split(".")[0] + "." + tag.substring(1).split("-")[0].split(".")[1] + "." + tag.substring(1).split("-")[0].split(".")[2] + "+" + tag.substring(1).split("-")[0].split(".")[3] : tag.substring(1).split("-")[0]) : ""
+            (tag.contains("-stable") || tag.contains("-lts")) ? tag.substring(1).split("-")[0] : ""
         version_command: client --version
-        version_regex: ClickHouse client version (\d+\.\d+\.\d+)
+        version_regex: ClickHouse client version (\d+\.\d+\.\d+\.\d+)
 
     step:
         name: step

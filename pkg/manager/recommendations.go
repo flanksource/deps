@@ -22,8 +22,8 @@ func EnhanceErrorWithVersions(packageName, requestedVersion string, availableVer
 
 	// Build enhanced error message
 	var errorMsg strings.Builder
-	errorMsg.WriteString(fmt.Sprintf("Version %s not found for %s\n\n", requestedVersion, packageName))
-	errorMsg.WriteString(fmt.Sprintf("Available versions (%d total):\n", len(availableVersions)))
+	fmt.Fprintf(&errorMsg, "Version %s not found for %s\n\n", requestedVersion, packageName)
+	fmt.Fprintf(&errorMsg, "Available versions (%d total):\n", len(availableVersions))
 
 	// Show latest versions (up to 10)
 	maxVersions := 10
@@ -37,16 +37,16 @@ func EnhanceErrorWithVersions(packageName, requestedVersion string, availableVer
 		if v.Prerelease {
 			suffix += " (prerelease)"
 		}
-		errorMsg.WriteString(fmt.Sprintf("  %s%s\n", v.Tag, suffix))
+		fmt.Fprintf(&errorMsg, "  %s%s\n", v.Tag, suffix)
 	}
 
 	if len(availableVersions) > maxVersions {
-		errorMsg.WriteString(fmt.Sprintf("  ... and %d more versions\n", len(availableVersions)-maxVersions))
+		fmt.Fprintf(&errorMsg, "  ... and %d more versions\n", len(availableVersions)-maxVersions)
 	}
 
 	// Suggest closest match
 	if suggestion := SuggestClosestVersion(requestedVersion, availableVersions); suggestion != "" {
-		errorMsg.WriteString(fmt.Sprintf("\nDid you mean: %s?", suggestion))
+		fmt.Fprintf(&errorMsg, "\nDid you mean: %s?", suggestion)
 	}
 
 	return fmt.Errorf("%s", errorMsg.String())
@@ -196,8 +196,8 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 
 	// Build enhanced error message
 	var errorMsg strings.Builder
-	errorMsg.WriteString(fmt.Sprintf("Asset not found: %s for %s in package %s\n\n", assetPattern, platform, packageName))
-	errorMsg.WriteString(fmt.Sprintf("Available assets (%d total):\n", len(assetsWithDist)))
+	fmt.Fprintf(&errorMsg, "Asset not found: %s for %s in package %s\n\n", assetPattern, platform, packageName)
+	fmt.Fprintf(&errorMsg, "Available assets (%d total):\n", len(assetsWithDist))
 
 	// Show up to 20 assets (most relevant ones)
 	maxAssets := 20
@@ -207,15 +207,15 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 	}
 
 	for _, asset := range displayAssets {
-		errorMsg.WriteString(fmt.Sprintf("  %s\n", asset.name))
+		fmt.Fprintf(&errorMsg, "  %s\n", asset.name)
 	}
 
 	if len(assetsWithDist) > maxAssets {
-		errorMsg.WriteString(fmt.Sprintf("  ... and %d more assets\n", len(assetsWithDist)-maxAssets))
+		fmt.Fprintf(&errorMsg, "  ... and %d more assets\n", len(assetsWithDist)-maxAssets)
 	}
 
 	// Show the pattern that was searched for
-	errorMsg.WriteString(fmt.Sprintf("\nSearched for pattern: %s", assetPattern))
+	fmt.Fprintf(&errorMsg, "\nSearched for pattern: %s", assetPattern)
 
 	// Suggest closest match (first sorted asset)
 	sortedAssetNames := make([]string, len(assetsWithDist))
@@ -223,7 +223,7 @@ func EnhanceAssetNotFoundError(packageName, assetPattern, platform string, avail
 		sortedAssetNames[i] = a.name
 	}
 	if suggestion := SuggestClosestAsset(assetPattern, sortedAssetNames); suggestion != "" {
-		errorMsg.WriteString(fmt.Sprintf("\nDid you mean: %s?", suggestion))
+		fmt.Fprintf(&errorMsg, "\nDid you mean: %s?", suggestion)
 	}
 
 	return fmt.Errorf("%s: %w", errorMsg.String(), originalErr)

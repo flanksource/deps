@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -834,11 +835,20 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 	}
 
 	// Verify installed version matches expected
-	if pkg.VersionCommand != "" {
+	// Skip for: cross-platform installs (can't execute), version aliases (nothing concrete to compare)
+	isCrossPlatform := (i.options.OSOverride != "" && i.options.OSOverride != runtime.GOOS) ||
+		(i.options.ArchOverride != "" && i.options.ArchOverride != runtime.GOARCH)
+	isAlias := resolvedVersion == "stable" || resolvedVersion == "latest" || resolvedVersion == "any"
+	if pkg.VersionCommand != "" && !isCrossPlatform && !isAlias {
+		// Use full path in bin-dir for version check
+		binPath := filepath.Join(i.options.BinDir, filepath.Base(finalPath))
+		if _, err := os.Stat(binPath); err != nil {
+			binPath = finalPath // fallback to finalPath if not in bin-dir
+		}
 		t.SetDescription("Verifying installed version")
-		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, finalPath, pkg.VersionCommand, pkg.VersionRegex, pkg.Mode)
+		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, pkg.VersionCommand, pkg.VersionRegex, pkg.Mode)
 		if versionErr != nil {
-			if diagMsg := pipeline.DiagnoseLibraryIssues(finalPath, t); diagMsg != "" {
+			if diagMsg := pipeline.DiagnoseLibraryIssues(binPath, t); diagMsg != "" {
 				return fmt.Errorf("%s: version check failed: %w\n%s", pkg.Name, versionErr, diagMsg)
 			}
 			return fmt.Errorf("%s: version check failed: %w", pkg.Name, versionErr)
