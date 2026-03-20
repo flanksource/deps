@@ -332,8 +332,8 @@ func (r *VersionResolver) enhanceVersionError(packageName, requestedVersion stri
 
 	// Build enhanced error message
 	var errorMsg strings.Builder
-	errorMsg.WriteString(fmt.Sprintf("Version %s not found for %s\n\n", requestedVersion, packageName))
-	errorMsg.WriteString(fmt.Sprintf("Available versions (%d total):\n", len(availableVersions)))
+	fmt.Fprintf(&errorMsg, "Version %s not found for %s\n\n", requestedVersion, packageName)
+	fmt.Fprintf(&errorMsg, "Available versions (%d total):\n", len(availableVersions))
 
 	// Show latest versions (up to 10)
 	maxVersions := 10
@@ -347,16 +347,16 @@ func (r *VersionResolver) enhanceVersionError(packageName, requestedVersion stri
 		if v.Prerelease {
 			suffix += " (prerelease)"
 		}
-		errorMsg.WriteString(fmt.Sprintf("  %s%s\n", v.Tag, suffix))
+		fmt.Fprintf(&errorMsg, "  %s%s\n", v.Tag, suffix)
 	}
 
 	if len(availableVersions) > maxVersions {
-		errorMsg.WriteString(fmt.Sprintf("  ... and %d more versions\n", len(availableVersions)-maxVersions))
+		fmt.Fprintf(&errorMsg, "  ... and %d more versions\n", len(availableVersions)-maxVersions)
 	}
 
 	// Suggest closest match
 	if suggestion := r.suggestClosestVersion(requestedVersion, availableVersions); suggestion != "" {
-		errorMsg.WriteString(fmt.Sprintf("\nDid you mean: %s?", suggestion))
+		fmt.Fprintf(&errorMsg, "\nDid you mean: %s?", suggestion)
 	}
 
 	return fmt.Errorf("%s", errorMsg.String())
