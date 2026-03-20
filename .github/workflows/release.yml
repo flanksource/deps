@@ -139,12 +139,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create GitHub Release
+      - name: Update GitHub Release Notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
-          gh release create "$TAG" \
-            --title "Release $TAG" \
-            --generate-notes \
-            release/*
+          NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes -f tag_name="$TAG" --jq '.body')
+          gh release edit "$TAG" --title "Release $TAG" --notes "$NOTES"
