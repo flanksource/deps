@@ -846,7 +846,11 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 			binPath = finalPath // fallback to finalPath if not in bin-dir
 		}
 		t.SetDescription("Verifying installed version")
-		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, pkg.VersionCommand, pkg.VersionRegex, pkg.Mode)
+		versionCheckMode := pkg.Mode
+		if pkg.Mode == "directory" && binPath != finalPath {
+			versionCheckMode = ""
+		}
+		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, pkg.VersionCommand, pkg.VersionRegex, versionCheckMode)
 		if versionErr != nil {
 			if diagMsg := pipeline.DiagnoseLibraryIssues(binPath, t); diagMsg != "" {
 				return fmt.Errorf("%s: version check failed: %w\n%s", pkg.Name, versionErr, diagMsg)
