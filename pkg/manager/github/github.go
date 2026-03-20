@@ -332,6 +332,17 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 		}
 	}
 
+	// Apply version_fallback if configured
+	if pkg.VersionFallback != "" {
+		fallbackVer, fallbackTag, fbErr := versionpkg.EvaluateVersionFallback(pkg.VersionFallback, version, tagName, plat.OS, plat.Arch)
+		if fbErr == nil {
+			version = fallbackVer
+			tagName = fallbackTag
+		} else {
+			logger.Warnf("Failed to evaluate version_fallback for %s: %v", pkg.Name, fbErr)
+		}
+	}
+
 	// Get the asset pattern for this platform
 	assetPattern, patternErr := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
 	if patternErr != nil {
@@ -475,6 +486,17 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 		versionForTemplate = versionpkg.Normalize(tagName)
 	} else {
 		versionForTemplate = versionpkg.Normalize(version)
+	}
+
+	// Apply version_fallback if configured
+	if pkg.VersionFallback != "" {
+		fallbackVer, fallbackTag, fbErr := versionpkg.EvaluateVersionFallback(pkg.VersionFallback, versionForTemplate, tagName, plat.OS, plat.Arch)
+		if fbErr == nil {
+			versionForTemplate = fallbackVer
+			tagName = fallbackTag
+		} else {
+			logger.Warnf("Failed to evaluate version_fallback for %s: %v", pkg.Name, fbErr)
+		}
 	}
 
 	// Template the asset pattern
