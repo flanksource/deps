@@ -860,19 +860,35 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 			}
 		}
 
-		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, versionCmd, pkg.VersionRegex, versionCheckMode)
+		installedVersion, rawOutput, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, versionCmd, pkg.VersionRegex, versionCheckMode)
 		if versionErr != nil {
 			if diagMsg := pipeline.DiagnoseLibraryIssues(binPath, t); diagMsg != "" {
 				return fmt.Errorf("%s: version check failed: %w\n%s", pkg.Name, versionErr, diagMsg)
 			}
 			return fmt.Errorf("%s: version check failed: %w", pkg.Name, versionErr)
 		}
-		status, _ := versionpkg.CompareVersions(installedVersion, resolvedVersion)
-		if status != types.CheckStatusOK && status != types.CheckStatusNewer {
-			return &VersionMismatchError{
-				Tool:     pkg.Name,
-				Expected: resolvedVersion,
-				Got:      installedVersion,
+
+		if pkg.VerifyExpr != "" {
+			plat := i.getPlatform()
+			ok, verifyErr := versionpkg.EvaluateVerifyExpr(pkg.VerifyExpr, installedVersion, resolvedVersion, rawOutput, plat.OS, plat.Arch)
+			if verifyErr != nil {
+				return fmt.Errorf("%s: verify_expr failed: %w", pkg.Name, verifyErr)
+			}
+			if !ok {
+				return &VersionMismatchError{
+					Tool:     pkg.Name,
+					Expected: resolvedVersion,
+					Got:      installedVersion,
+				}
+			}
+		} else {
+			status, _ := versionpkg.CompareVersions(installedVersion, resolvedVersion)
+			if status != types.CheckStatusOK && status != types.CheckStatusNewer {
+				return &VersionMismatchError{
+					Tool:     pkg.Name,
+					Expected: resolvedVersion,
+					Got:      installedVersion,
+				}
 			}
 		}
 	}
