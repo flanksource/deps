@@ -188,10 +188,15 @@ func (d *runtimeDetector) installRuntime(constraint string) (*runtimeInfo, error
 		d.task.V(3).Infof("Installing %s version %s via deps", d.language, versionToInstall)
 	}
 
-	// Get global config
 	depsConfig := config.GetGlobalRegistry()
+	if depsConfig == nil {
+		return nil, fmt.Errorf("failed to install %s: global registry is nil", d.language)
+	}
 
-	// Create installer
+	if _, hasPkg := depsConfig.Registry[d.language]; !hasPkg {
+		return nil, fmt.Errorf("failed to install %s: not found in registry (%d packages loaded)", d.language, len(depsConfig.Registry))
+	}
+
 	inst := installer.NewWithConfig(depsConfig)
 
 	// Ensure we have a task for installation

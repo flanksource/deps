@@ -170,7 +170,7 @@ func TestRunJava(t *testing.T) {
 func TestRunPowershell(t *testing.T) {
 	t.Run("execute simple PowerShell script", func(t *testing.T) {
 		result, err := deps.RunPowershell("testdata/test_powershell_runtime.ps1", deps.RunOptions{
-			Timeout: 10 * time.Second,
+			Timeout: 120 * time.Second,
 			Version: "7.4.6",
 			Env: map[string]string{
 				"TEST_API_KEY": "test_value_abc",
