@@ -409,18 +409,18 @@ func (m *GitHubTagsManager) enhanceRateLimitError(ctx context.Context, originalE
 	// Build compact single-line message
 	msg.WriteString(". GitHub API rate limit")
 	if total > 0 {
-		msg.WriteString(fmt.Sprintf(": %d/%d remaining", remaining, total))
+		fmt.Fprintf(&msg, ": %d/%d remaining", remaining, total)
 	} else {
 		msg.WriteString(" exceeded")
 	}
 
 	if resetTime != nil {
 		timeUntilReset := time.Until(*resetTime)
-		msg.WriteString(fmt.Sprintf(", resets in %s", formatDuration(timeUntilReset)))
+		fmt.Fprintf(&msg, ", resets in %s", formatDuration(timeUntilReset))
 	}
 
 	if status.TokenSource != "" {
-		msg.WriteString(fmt.Sprintf(" (using %s)", status.TokenSource))
+		fmt.Fprintf(&msg, " (using %s)", status.TokenSource)
 	} else {
 		msg.WriteString(". Set GITHUB_TOKEN for 5000/hour limit")
 	}
