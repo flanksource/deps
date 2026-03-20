@@ -563,9 +563,11 @@ registry:
             linux-amd64: OpenJDK8U-jdk_x64_linux_hotspot_{{.tag | strings.TrimPrefix "jdk" | strings.ReplaceAll "-" ""}}.tar.gz
             linux-arm64: OpenJDK8U-jdk_aarch64_linux_hotspot_{{.tag | strings.TrimPrefix "jdk" | strings.ReplaceAll "-" ""}}.tar.gz
         version_command: java -version
-        version_regex: '8u(\d+)'
+        version_regex: '([\d._]+)'
         # Transform jdk8u472-b08 -> 8.0.472+8 for semver sorting, exclude beta and non-jdk8u tags
         version_expr: 'tag.startsWith("jdk8u") && !tag.contains("beta") ? "8.0." + tag.split("-")[0].substring(5) + "+" + tag.split("-")[1].substring(1) : ""'
+        verify_expr: |
+            installed == expected || installed.startsWith("1.8.0") || installed.startsWith("8.0.")
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"

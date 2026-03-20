@@ -61,6 +61,8 @@ type Package struct {
 	VersionExpr string `json:"version_expr,omitempty" yaml:"version_expr,omitempty"`
 	// VersionFallback is a CEL expression to transform the resolved version before URL templating (e.g., strip patch for envtest)
 	VersionFallback string `json:"version_fallback,omitempty" yaml:"version_fallback,omitempty"`
+	// VerifyExpr is a CEL expression for custom post-install version verification (context: installed, expected, output, os, arch)
+	VerifyExpr string `json:"verify_expr,omitempty" yaml:"verify_expr,omitempty"`
 	// BinaryName specifies a custom name for the binary (defaults to package name)
 	BinaryName string `json:"binary_name,omitempty" yaml:"binary_name,omitempty"`
 	// BinaryPath is the path within an archive to the binary (supports CEL expressions)

@@ -131,20 +131,21 @@ func resolveBinaryPath(tool string, pkg types.Package, binDir string, osOverride
 	}, nil
 }
 
-// GetInstalledVersion executes a binary with its version command and extracts the version
-func GetInstalledVersion(t *task.Task, binaryPath, versionCommand, versionPattern string) (string, error) {
+// GetInstalledVersion executes a binary with its version command and extracts the version.
+// Returns (parsedVersion, rawOutput, error).
+func GetInstalledVersion(t *task.Task, binaryPath, versionCommand, versionPattern string) (string, string, error) {
 	return GetInstalledVersionWithMode(t, binaryPath, versionCommand, versionPattern, "")
 }
 
 // GetInstalledVersionWithMode executes a binary with its version command and extracts the version,
-// supporting directory mode packages
-func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versionPattern, mode string) (string, error) {
+// supporting directory mode packages. Returns (parsedVersion, rawOutput, error).
+func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versionPattern, mode string) (string, string, error) {
 	if binaryPath == "" {
-		return "", fmt.Errorf("binary path is empty")
+		return "", "", fmt.Errorf("binary path is empty")
 	}
 
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("binary not found: %s", binaryPath)
+		return "", "", fmt.Errorf("binary not found: %s", binaryPath)
 	}
 
 	wasCustomCommand := versionCommand != ""
@@ -208,17 +209,19 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 
 	if lastErr != nil {
 		t.V(3).Infof("All version commands failed for %s", utils.LogPath(binaryPath))
-		return "", lastErr
+		return "", "", lastErr
 	}
 
-	version, err := parseVersionOutput(string(output), versionPattern)
+	rawOutput := string(output)
+	version, err := parseVersionOutput(rawOutput, versionPattern)
 	if err != nil {
-		return "", err
+		return "", rawOutput, err
 	}
 
 	t.V(3).Infof("Successfully extracted version: %s", version)
-	return version, nil
+	return version, rawOutput, nil
 }
+
 
 // CheckBinaryVersion checks the version of a binary against expected versions
 func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir string, expectedVersion, requestedVersion string) types.CheckResult {
@@ -255,7 +258,7 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	}
 
 	// Get installed version
-	installedVersion, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
+	installedVersion, rawOutput, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
 	if err != nil {
 		result.Status = types.CheckStatusError
 		result.Error = fmt.Sprintf("Failed to get version: %v", err)
@@ -276,6 +279,21 @@ func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir str
 	compareVersion := expectedVersion
 	if compareVersion == "" {
 		compareVersion = requestedVersion
+	}
+
+	if pkg.VerifyExpr != "" {
+		ok, verifyErr := EvaluateVerifyExpr(pkg.VerifyExpr, installedVersion, compareVersion, rawOutput, "", "")
+		if verifyErr != nil {
+			result.Status = types.CheckStatusError
+			result.Error = verifyErr.Error()
+			return result
+		}
+		if ok {
+			result.Status = types.CheckStatusOK
+		} else {
+			result.Status = types.CheckStatusOutdated
+		}
+		return result
 	}
 
 	status, err := CompareVersions(installedVersion, compareVersion)
@@ -350,7 +368,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	}
 
 	// Try to get the installed version
-	installedVersion, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
+	installedVersion, _, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
 	if err != nil {
 		t.V(2).Infof(err.Error())
 		return ""
