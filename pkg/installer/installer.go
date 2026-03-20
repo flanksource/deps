@@ -840,29 +840,20 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 		(i.options.ArchOverride != "" && i.options.ArchOverride != runtime.GOARCH)
 	isAlias := resolvedVersion == "stable" || resolvedVersion == "latest" || resolvedVersion == "any"
 	if pkg.VersionCommand != "" && !isCrossPlatform && !isAlias {
-		// Use full path in bin-dir for version check
-		binPath := filepath.Join(i.options.BinDir, filepath.Base(finalPath))
-		if _, err := os.Stat(binPath); err != nil {
-			binPath = finalPath // fallback to finalPath if not in bin-dir
-		}
 		t.SetDescription("Verifying installed version")
-		versionCheckMode := pkg.Mode
-		if pkg.Mode == "directory" && binPath != finalPath {
-			versionCheckMode = ""
-		}
-		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, pkg.VersionCommand, pkg.VersionRegex, versionCheckMode)
-		if versionErr != nil {
+		result := versionpkg.CheckBinaryVersion(t, pkg.Name, pkg, i.options.BinDir, resolvedVersion, resolvedVersion)
+		if result.Status == types.CheckStatusError {
+			binPath := filepath.Join(i.options.BinDir, filepath.Base(finalPath))
 			if diagMsg := pipeline.DiagnoseLibraryIssues(binPath, t); diagMsg != "" {
-				return fmt.Errorf("%s: version check failed: %w\n%s", pkg.Name, versionErr, diagMsg)
+				return fmt.Errorf("%s: version check failed: %s\n%s", pkg.Name, result.Error, diagMsg)
 			}
-			return fmt.Errorf("%s: version check failed: %w", pkg.Name, versionErr)
+			return fmt.Errorf("%s: version check failed: %s", pkg.Name, result.Error)
 		}
-		status, _ := versionpkg.CompareVersions(installedVersion, resolvedVersion)
-		if status != types.CheckStatusOK && status != types.CheckStatusNewer {
+		if result.Status != types.CheckStatusOK && result.Status != types.CheckStatusNewer {
 			return &VersionMismatchError{
 				Tool:     pkg.Name,
 				Expected: resolvedVersion,
-				Got:      installedVersion,
+				Got:      result.InstalledVersion,
 			}
 		}
 	}

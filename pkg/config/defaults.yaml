@@ -170,7 +170,7 @@ registry:
             linux-amd64: svu_{{.version}}_linux_amd64.tar.gz
             linux-arm64: svu_{{.version}}_linux_arm64.tar.gz
         version_command: --version
-        version_regex: svu\s+version\s+v?(\d+\.\d+\.\d+)
+        version_regex: 'GitVersion:\s+v?(\d+\.\d+\.\d+)'
     canary-checker:
         name: canary-checker
 
@@ -442,8 +442,8 @@ registry:
             darwin-arm64: powershell-{{.version}}-osx-arm64.tar.gz
             linux-amd64: powershell-{{.version}}-linux-x64.tar.gz
             linux-arm64: powershell-{{.version}}-linux-arm64.tar.gz
-        version_command: ./pwsh --version
-        version_regex: PowerShell (\S+)
+        version_command: --version
+        version_regex: 'PowerShell (\S+)'
         post_process:
             - chmod("pwsh", "0755")
         symlinks:
@@ -615,7 +615,7 @@ registry:
             "*": tomee-{{.version}}/apache-tomee-{{.version}}-plume.zip
         checksum_file: "{{.asset}}.sha512"
         version_command: bash -c 'bin/tomee version 2>/dev/null | grep TomEE'
-        version_regex: 'Server version:.*TomEE/([\\d\\.]+)'
+        version_regex: 'Server version:.*TomEE/([\d.]+)'
         symlinks:
             - tomee->bin/catalina.sh
         post_process:
@@ -631,7 +631,7 @@ registry:
             "*": apache-activemq-{{.version}}-bin.zip
         checksum_file: "{{.asset}}.sha512"
         version_command: bin/activemq --version
-        version_regex: 'ActiveMQ\\s+(\\d+\\.\\d+\\.\\d+)'
+        version_regex: 'ActiveMQ\s+(\d+\.\d+\.\d+)'
         symlinks:
             - bin/activemq
         post_process:
@@ -650,7 +650,7 @@ registry:
             "*": apache-artemis-{{.version}}-bin.tar.gz
         checksum_file: apache-artemis-{{.version}}-bin.tar.gz.sha512
         version_command: bin/artemis version
-        version_regex: 'ActiveMQ Artemis\\s+(\\d+\\.\\d+\\.\\d+)'
+        version_regex: 'ActiveMQ Artemis\s+(\d+\.\d+\.\d+)'
         symlinks:
             - bin/artemis
 
@@ -859,5 +859,5 @@ registry:
         symlinks:
             - uv
             - uvx
-        version_command: uv --version
+        version_command: --version
         version_regex: 'uv (\d+\.\d+\.\d+)'

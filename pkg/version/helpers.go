@@ -88,7 +88,6 @@ func getShellBinary() string {
 }
 
 func CompareVersions(installed, expected string) (types.CheckStatus, error) {
-	// Normalize versions for comparison
 	normalizedInstalled := Normalize(installed)
 	normalizedExpected := Normalize(expected)
 
@@ -96,10 +95,13 @@ func CompareVersions(installed, expected string) (types.CheckStatus, error) {
 		return types.CheckStatusOK, nil
 	}
 
-	// Try semantic version comparison
+	// Prefix match: "26.2.5.45" matches "26.2.5.45-stable", "7.4.6" matches "7.4.6.1"
+	if strings.HasPrefix(normalizedExpected, normalizedInstalled) || strings.HasPrefix(normalizedInstalled, normalizedExpected) {
+		return types.CheckStatusOK, nil
+	}
+
 	cmp, err := Compare(installed, expected)
 	if err != nil {
-		// If semantic comparison fails, use string comparison
 		if normalizedInstalled != normalizedExpected {
 			return types.CheckStatusOutdated, nil
 		}
