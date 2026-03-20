@@ -17,7 +17,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
-	"github.com/flanksource/deps/pkg/version"
+	versionpkg "github.com/flanksource/deps/pkg/version"
 	"github.com/google/go-github/v57/github"
 )
 
@@ -67,7 +67,7 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 
 	// Apply version expression filtering if specified
 	if pkg.VersionExpr != "" {
-		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
+		filteredVersions, err := versionpkg.ApplyVersionExpr(versions, pkg.VersionExpr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
 		}
@@ -76,10 +76,10 @@ func (m *GitHubTagsManager) DiscoverVersions(ctx context.Context, pkg types.Pack
 	}
 
 	// Filter out versions that are not valid semantic versions after transformation
-	versions = version.FilterToValidSemver(versions)
+	versions = versionpkg.FilterToValidSemver(versions)
 
 	// Re-sort by transformed version (needed after version_expr transforms tags)
-	version.SortVersions(versions)
+	versionpkg.SortVersions(versions)
 
 	// Apply limit if specified
 	if limit > 0 && len(versions) > limit {
@@ -106,7 +106,7 @@ func (m *GitHubTagsManager) discoverVersionsViaREST(ctx context.Context, owner, 
 
 	var versions []types.Version
 	for _, tag := range tags {
-		normalizedVersion := version.Normalize(tag.Name)
+		normalizedVersion := versionpkg.Normalize(tag.Name)
 		v := types.ParseVersion(normalizedVersion, tag.Name)
 		if tag.Commit != nil {
 			v.SHA = tag.Commit.SHA
@@ -150,6 +150,19 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 		return nil, err
 	}
 
+	// Apply version_fallback if configured
+	resolvedVersion := version
+	resolvedTag := tag.Name
+	if pkg.VersionFallback != "" {
+		fallbackVer, fallbackTag, fbErr := versionpkg.EvaluateVersionFallback(pkg.VersionFallback, version, tag.Name, plat.OS, plat.Arch)
+		if fbErr == nil {
+			resolvedVersion = fallbackVer
+			resolvedTag = fallbackTag
+		} else {
+			logger.Warnf("Failed to evaluate version_fallback for %s: %v", pkg.Name, fbErr)
+		}
+	}
+
 	// Get the asset pattern for this platform or use fallback
 	assetPattern := ""
 
@@ -171,13 +184,13 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
 	}
 
-	normalizedVersion := depstemplate.NormalizeVersion(version)
+	normalizedVersion := depstemplate.NormalizeVersion(resolvedVersion)
 
 	// Template the asset pattern
 	templatedPattern, err := m.templateString(assetPattern, map[string]string{
 		"name":    pkg.Name,
 		"version": normalizedVersion,
-		"tag":     tag.Name,
+		"tag":     resolvedTag,
 		"os":      plat.OS,
 		"arch":    plat.Arch,
 	})
@@ -192,7 +205,7 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 	downloadURL, err := m.templateString(urlTemplate, map[string]string{
 		"name":    pkg.Name,
 		"version": normalizedVersion,
-		"tag":     tag.Name,
+		"tag":     resolvedTag,
 		"os":      plat.OS,
 		"arch":    plat.Arch,
 		"asset":   templatedPattern,
@@ -257,7 +270,7 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 
 	resolution := &types.Resolution{
 		Package:     pkg,
-		Version:     version,
+		Version:     resolvedVersion,
 		Platform:    plat,
 		DownloadURL: finalDownloadURL,
 		IsArchive:   isArchive,
@@ -281,8 +294,8 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 			"os":      plat.OS,
 			"arch":    plat.Arch,
 			"name":    pkg.Name,
-			"version": depstemplate.NormalizeVersion(version),
-			"tag":     tag.Name,
+			"version": depstemplate.NormalizeVersion(resolvedVersion),
+			"tag":     resolvedTag,
 		}
 
 		evaluatedChecksumFile, err := depstemplate.EvaluateCELOrTemplate(checksumFile, data)
@@ -292,7 +305,7 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 
 		// Only proceed if we have a non-empty checksum file after evaluation
 		if checksumFile != "" {
-			checksumURL, err := m.templateChecksumURL(checksumFile, templatedPattern, version, tag.Name, plat)
+			checksumURL, err := m.templateChecksumURL(checksumFile, templatedPattern, resolvedVersion, resolvedTag, plat)
 			if err == nil && checksumURL != "" {
 				resolution.ChecksumURL = checksumURL
 			}
@@ -591,7 +604,7 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 	}
 
 	// Try version normalization match (with version_expr transformation)
-	normalizedTarget := version.Normalize(targetVersion)
+	normalizedTarget := versionpkg.Normalize(targetVersion)
 	for _, tag := range tags {
 		tagName := tag.Name
 		transformedTag := tagName
@@ -602,7 +615,7 @@ func (m *GitHubTagsManager) findTagByVersion(ctx context.Context, pkg types.Pack
 			}
 		}
 
-		if version.Normalize(transformedTag) == normalizedTarget {
+		if versionpkg.Normalize(transformedTag) == normalizedTarget {
 			sha := ""
 			if tag.Commit != nil {
 				sha = tag.Commit.SHA
@@ -634,7 +647,7 @@ func ApplyVersionExprToSingleTag(tag, versionExpr string) (string, error) {
 	}
 
 	// Apply the version expression
-	result, err := version.ApplyVersionExpr([]types.Version{testVersion}, versionExpr)
+	result, err := versionpkg.ApplyVersionExpr([]types.Version{testVersion}, versionExpr)
 	if err != nil {
 		return "", fmt.Errorf("failed to apply version_expr to tag %s: %w", tag, err)
 	}

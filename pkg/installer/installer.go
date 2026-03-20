@@ -841,19 +841,38 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 	isAlias := resolvedVersion == "stable" || resolvedVersion == "latest" || resolvedVersion == "any"
 	if pkg.VersionCommand != "" && !isCrossPlatform && !isAlias {
 		t.SetDescription("Verifying installed version")
-		result := versionpkg.CheckBinaryVersion(t, pkg.Name, pkg, i.options.BinDir, resolvedVersion, resolvedVersion)
-		if result.Status == types.CheckStatusError {
-			binPath := filepath.Join(i.options.BinDir, filepath.Base(finalPath))
-			if diagMsg := pipeline.DiagnoseLibraryIssues(binPath, t); diagMsg != "" {
-				return fmt.Errorf("%s: version check failed: %s\n%s", pkg.Name, result.Error, diagMsg)
+
+		// Resolve binary path and version command using the same logic as CheckExistingInstallation
+		binPath := finalPath
+		versionCmd := pkg.VersionCommand
+		versionCheckMode := pkg.Mode
+
+		// For directory-mode with symlinks, resolve through the symlink in bin-dir
+		if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 && !versionpkg.ContainsShellOperators(pkg.VersionCommand) {
+			cmdParts := strings.Fields(pkg.VersionCommand)
+			if len(cmdParts) > 0 && cmdParts[0] != "bash" && cmdParts[0] != "sh" {
+				symlinkPath := filepath.Join(i.options.BinDir, filepath.Base(cmdParts[0]))
+				if _, err := os.Stat(symlinkPath); err == nil {
+					binPath = symlinkPath
+					versionCmd = strings.Join(cmdParts[1:], " ")
+					versionCheckMode = ""
+				}
 			}
-			return fmt.Errorf("%s: version check failed: %s", pkg.Name, result.Error)
 		}
-		if result.Status != types.CheckStatusOK && result.Status != types.CheckStatusNewer {
+
+		installedVersion, versionErr := versionpkg.GetInstalledVersionWithMode(t, binPath, versionCmd, pkg.VersionRegex, versionCheckMode)
+		if versionErr != nil {
+			if diagMsg := pipeline.DiagnoseLibraryIssues(binPath, t); diagMsg != "" {
+				return fmt.Errorf("%s: version check failed: %w\n%s", pkg.Name, versionErr, diagMsg)
+			}
+			return fmt.Errorf("%s: version check failed: %w", pkg.Name, versionErr)
+		}
+		status, _ := versionpkg.CompareVersions(installedVersion, resolvedVersion)
+		if status != types.CheckStatusOK && status != types.CheckStatusNewer {
 			return &VersionMismatchError{
 				Tool:     pkg.Name,
 				Expected: resolvedVersion,
-				Got:      result.InstalledVersion,
+				Got:      installedVersion,
 			}
 		}
 	}
