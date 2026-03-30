@@ -33,7 +33,6 @@ func NewGitHubTagsManager() *GitHubTagsManager {
 	}
 }
 
-
 // Name returns the manager identifier
 func (m *GitHubTagsManager) Name() string {
 	return "github_tags"
@@ -120,8 +119,8 @@ func (m *GitHubTagsManager) discoverVersionsViaREST(ctx context.Context, owner, 
 
 // restTag represents a tag from REST API
 type restTag struct {
-	Name   string          `json:"name"`
-	Commit *restTagCommit  `json:"commit"`
+	Name   string         `json:"name"`
+	Commit *restTagCommit `json:"commit"`
 }
 
 // restTagCommit represents a commit reference in a tag
@@ -136,25 +135,27 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 		return nil, fmt.Errorf("url_template is required for github_tags manager")
 	}
 
-	// Find the tag by version (pass full package for version_expr support)
-	tag, err := m.findTagByVersion(ctx, pkg, version)
-	if err != nil {
-		// Check for rate limit error - try fallback
-		if isRateLimitError(err) {
-			return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
-		}
-		// If it's a version not found error, enhance it with available versions
-		if versionErr, ok := err.(*manager.ErrVersionNotFound); ok {
-			return nil, m.enhanceErrorWithVersions(ctx, pkg, versionErr.Version, plat, err)
-		}
-		return nil, err
-	}
-
 	// Apply version_fallback if configured
 	resolvedVersion := version
-	resolvedTag := tag.Name
+	resolvedTag := version
+	if m.requiresOriginalTag(pkg) {
+		// Find the tag by version (pass full package for version_expr support)
+		tag, err := m.findTagByVersion(ctx, pkg, version)
+		if err != nil {
+			// Check for rate limit error - try fallback
+			if isRateLimitError(err) {
+				return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
+			}
+			// If it's a version not found error, enhance it with available versions
+			if versionErr, ok := err.(*manager.ErrVersionNotFound); ok {
+				return nil, m.enhanceErrorWithVersions(ctx, pkg, versionErr.Version, plat, err)
+			}
+			return nil, err
+		}
+		resolvedTag = tag.Name
+	}
 	if pkg.VersionFallback != "" {
-		fallbackVer, fallbackTag, fbErr := versionpkg.EvaluateVersionFallback(pkg.VersionFallback, version, tag.Name, plat.OS, plat.Arch)
+		fallbackVer, fallbackTag, fbErr := versionpkg.EvaluateVersionFallback(pkg.VersionFallback, version, resolvedTag, plat.OS, plat.Arch)
 		if fbErr == nil {
 			resolvedVersion = fallbackVer
 			resolvedTag = fallbackTag
@@ -313,6 +314,28 @@ func (m *GitHubTagsManager) Resolve(ctx context.Context, pkg types.Package, vers
 	}
 
 	return resolution, nil
+}
+
+func (m *GitHubTagsManager) requiresOriginalTag(pkg types.Package) bool {
+	if pkg.VersionFallback != "" {
+		return true
+	}
+
+	if strings.Contains(pkg.URLTemplate, "{{.tag") {
+		return true
+	}
+
+	if strings.Contains(pkg.ChecksumFile, "{{.tag") || strings.Contains(pkg.ChecksumFile, "tag") {
+		return true
+	}
+
+	for _, pattern := range pkg.AssetPatterns {
+		if strings.Contains(pattern, "{{.tag") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Install downloads and installs the binary

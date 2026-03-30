@@ -2,20 +2,23 @@ package http
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
-	commonshttp "github.com/flanksource/commons/http"
+	httpmiddlewares "github.com/flanksource/commons/http/middlewares"
 	"github.com/flanksource/commons/logger"
+	"github.com/flanksource/commons/properties"
 )
 
 // ClientOption configures the HTTP client
 type ClientOption func(*clientConfig)
 
 type clientConfig struct {
-	timeout      time.Duration
-	headerLevel  logger.LogLevel
-	bodyLevel    logger.LogLevel
-	enableLogger bool
+	timeout           time.Duration
+	headerLevel       logger.LogLevel
+	bodyLevel         logger.LogLevel
+	logMode           string
+	useLevelThreshold bool
 }
 
 // WithTimeout sets the request timeout
@@ -30,35 +33,63 @@ func WithHttpLogging(headerLevel, bodyLevel logger.LogLevel) ClientOption {
 	return func(c *clientConfig) {
 		c.headerLevel = headerLevel
 		c.bodyLevel = bodyLevel
-		c.enableLogger = true
+		c.useLevelThreshold = true
 	}
 }
 
 // GetHttpClient returns a configured HTTP client suitable for general use.
-// It uses flanksource/commons/http for consistent logging and middleware support.
-// By default, logging is enabled at Debug level for headers and Trace level for bodies.
+// It uses the shared commons HTTP logger middleware for consistent HTTP logging.
+// We intentionally avoid using commons/http.Client directly as a stdlib Transport
+// because its request adaptation re-serializes existing query parameters.
 func GetHttpClient(opts ...ClientOption) *http.Client {
 	cfg := &clientConfig{
-		timeout:      30 * time.Second,
-		headerLevel:  logger.Trace1,
-		bodyLevel:    logger.Trace2,
-		enableLogger: logger.IsTraceEnabled(),
+		timeout:     30 * time.Second,
+		headerLevel: logger.Trace1,
+		bodyLevel:   logger.Trace2,
+		logMode:     properties.String("access", "http.log", "http.logs"),
 	}
 
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	client := commonshttp.NewClient().
-		Timeout(cfg.timeout)
+	baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+	var transport http.RoundTripper = baseTransport
 
-	if cfg.enableLogger {
-		client = client.WithHttpLogging(cfg.headerLevel, cfg.bodyLevel)
+	if traceConfig, ok := resolveHTTPLogConfig(cfg); ok {
+		transport = httpmiddlewares.NewLogger(traceConfig)(transport)
 	}
 
-	// Convert to standard http.Client by using the RoundTripper
 	return &http.Client{
-		Transport: client,
+		Transport: transport,
 		Timeout:   cfg.timeout,
+	}
+}
+
+func resolveHTTPLogConfig(cfg *clientConfig) (httpmiddlewares.TraceConfig, bool) {
+	if cfg.useLevelThreshold {
+		return resolveThresholdHTTPLogConfig(cfg.headerLevel, cfg.bodyLevel)
+	}
+
+	mode := strings.TrimSpace(strings.ToLower(cfg.logMode))
+	if mode == "" {
+		mode = "access"
+	}
+	switch mode {
+	case "off", "false", "disabled", "none":
+		return httpmiddlewares.TraceConfig{}, false
+	default:
+		return httpmiddlewares.TraceConfigFromString(mode), true
+	}
+}
+
+func resolveThresholdHTTPLogConfig(headerLevel, bodyLevel logger.LogLevel) (httpmiddlewares.TraceConfig, bool) {
+	switch {
+	case logger.IsLevelEnabled(bodyLevel):
+		return httpmiddlewares.TraceConfigFromString("body"), true
+	case logger.IsLevelEnabled(headerLevel):
+		return httpmiddlewares.TraceConfigFromString("headers"), true
+	default:
+		return httpmiddlewares.TraceConfig{}, false
 	}
 }

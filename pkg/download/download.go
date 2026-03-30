@@ -15,6 +15,7 @@ import (
 	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/cache"
 	"github.com/flanksource/deps/pkg/checksum"
+	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/utils"
 )
 
@@ -25,25 +26,27 @@ type DownloadResult struct {
 	ChecksumSources []string
 }
 
-// createHTTPClient creates an HTTP client with redirect logging
-func createHTTPClient(t *task.Task) *http.Client {
-	return &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Allow up to 10 redirects (Go's default)
-			if len(via) >= 10 {
-				return fmt.Errorf("too many redirects (limit: 10)")
-			}
+var downloadHTTPClientFactory = createHTTPClient
 
-			// Log redirect chain
-			if t != nil && len(via) > 0 {
-				from := utils.ShortenURL(via[len(via)-1].URL.String())
-				to := utils.ShortenURL(req.URL.String())
-				t.V(4).Infof("Redirect: %s → %s", from, to)
-			}
+// createHTTPClient creates a shared HTTP client with redirect logging.
+func createHTTPClient(t *task.Task, timeout time.Duration) *http.Client {
+	client := depshttp.GetHttpClient(depshttp.WithTimeout(timeout))
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		// Allow up to 10 redirects (Go's default)
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects (limit: 10)")
+		}
 
-			return nil
-		},
+		// Log redirect chain
+		if t != nil && len(via) > 0 {
+			from := utils.ShortenURL(via[len(via)-1].URL.String())
+			to := utils.ShortenURL(req.URL.String())
+			t.V(4).Infof("Redirect: %s → %s", from, to)
+		}
+
+		return nil
 	}
+	return client
 }
 
 // DownloadOption is a functional option for configuring downloads
@@ -63,6 +66,7 @@ type downloadConfig struct {
 	cacheDir         string   // Directory for download cache
 	os               string   // Operating system for CEL expressions
 	arch             string   // Architecture for CEL expressions
+	timeout          time.Duration
 }
 
 // WithChecksum sets the expected checksum for verification
@@ -139,6 +143,13 @@ func WithPlatform(os, arch string) DownloadOption {
 	}
 }
 
+// WithTimeout sets the HTTP client timeout used for downloads and checksum fetches.
+func WithTimeout(timeout time.Duration) DownloadOption {
+	return func(c *downloadConfig) {
+		c.timeout = timeout
+	}
+}
+
 // ProgressReader wraps an io.Reader and reports progress
 type ProgressReader struct {
 	io.Reader
@@ -183,10 +194,10 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 }
 
 // fetchChecksumFromURL fetches checksum from a single URL
-func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task) (checksumValue, checksumType string, sources []string, err error) {
+func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task, timeout time.Duration) (checksumValue, checksumType string, sources []string, err error) {
 	utils.LogChecksumFetch(t, []string{checksumURL})
 
-	client := createHTTPClient(t)
+	client := downloadHTTPClientFactory(t, timeout)
 	resp, err := client.Get(checksumURL)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("failed to download checksum file %s: %w", checksumURL, err)
@@ -212,7 +223,7 @@ func fetchChecksumFromURL(checksumURL, downloadURL string, t *task.Task) (checks
 // fetchChecksumFromMultipleURLs fetches checksums from multiple URLs with optional CEL expression
 // Returns: checksumValue, checksumType, overrideURL, sources, error
 // If the CEL expression returns a URL, it's included as overrideURL for the caller to use
-func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string, checksumExpr, downloadURL, os, arch string, t *task.Task) (checksumValue, checksumType, overrideURL string, sources []string, err error) {
+func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string, checksumExpr, downloadURL, os, arch string, t *task.Task, timeout time.Duration) (checksumValue, checksumType, overrideURL string, sources []string, err error) {
 	checksumContents := make(map[string]string)
 	allSources := []string{}
 
@@ -221,7 +232,7 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 	// Download all checksum files
 	for _, checksumURL := range checksumURLs {
 
-		client := createHTTPClient(t)
+		client := downloadHTTPClientFactory(t, timeout)
 		resp, err := client.Get(checksumURL)
 		if err != nil {
 			return "", "", "", nil, fmt.Errorf("failed to download checksum file %s: %w", checksumURL, err)
@@ -435,7 +446,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	if len(config.checksumURLs) > 0 && config.checksumExpr != "" {
 		// Fetch checksum (and potentially URL) from API before downloading
 		checksumValue, checksumType, discoveredURL, checksumSources, err := fetchChecksumFromMultipleURLs(
-			config.checksumURLs, config.checksumNames, config.checksumExpr, url, config.os, config.arch, t)
+			config.checksumURLs, config.checksumNames, config.checksumExpr, url, config.os, config.arch, t, config.timeout)
 		if err == nil {
 			prediscoveredChecksum = checksumValue
 			// Format checksum with type prefix for later parsing
@@ -459,7 +470,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 
 	// Create HTTP client with redirect logging
-	client := createHTTPClient(t)
+	client := downloadHTTPClientFactory(t, config.timeout)
 
 	// Get the data using the actual download URL (either original or discovered from API)
 	resp, err := client.Get(actualDownloadURL)
@@ -564,7 +575,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	// Fetch checksum from URL if configured (takes precedence over expectedChecksum)
 	// Skip if we already fetched it pre-download (prediscoveredChecksum is set)
 	if config.checksumURL != "" && prediscoveredChecksum == "" {
-		checksumValue, checksumType, checksumSources, err := fetchChecksumFromURL(config.checksumURL, finalURL, t)
+		checksumValue, checksumType, checksumSources, err := fetchChecksumFromURL(config.checksumURL, finalURL, t, config.timeout)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
@@ -578,7 +589,7 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 		}
 	} else if len(config.checksumURLs) > 0 && prediscoveredChecksum == "" {
 		// Only fetch post-download if we didn't already fetch pre-download
-		checksumValue, checksumType, discoveredURL, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, finalURL, config.os, config.arch, t)
+		checksumValue, checksumType, discoveredURL, checksumSources, err := fetchChecksumFromMultipleURLs(config.checksumURLs, config.checksumNames, config.checksumExpr, finalURL, config.os, config.arch, t, config.timeout)
 		if err != nil {
 			return fmt.Errorf("failed to fetch checksum: %w", err)
 		}
@@ -706,8 +717,7 @@ func formatDuration(d time.Duration) string {
 
 // SimpleDownload performs a simple HTTP download without progress tracking
 func SimpleDownload(url, dest string) (*http.Response, error) {
-	// Create HTTP client with redirect logging (no task for logging)
-	client := createHTTPClient(nil)
+	client := downloadHTTPClientFactory(nil, 0)
 
 	// Get response first to check status
 	resp, err := client.Get(url)
@@ -721,7 +731,20 @@ func SimpleDownload(url, dest string) (*http.Response, error) {
 		return resp, nil // Return response even if not OK for caller to check
 	}
 
-	// Use new Download function without task (no progress)
-	err = Download(url, dest, nil, WithoutProgress())
-	return resp, err
+	destDir := filepath.Dir(dest)
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create directory %s: %w", destDir, err)
+	}
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create file %s: %w", dest, err)
+	}
+	defer func() { _ = out.Close() }()
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return nil, fmt.Errorf("failed to download from %s: %w", url, err)
+	}
+
+	return resp, nil
 }

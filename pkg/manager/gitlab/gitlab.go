@@ -169,27 +169,7 @@ func (m *GitLabReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		versions = append(versions, types.ParseVersion(version.Normalize(release.TagName), release.TagName))
 	}
 
-	// Apply version expression filtering if specified
-	if pkg.VersionExpr != "" {
-		filteredVersions, err := version.ApplyVersionExpr(versions, pkg.VersionExpr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
-		}
-		versions = filteredVersions
-	}
-
-	// Filter out versions that are not valid semantic versions after transformation
-	versions = version.FilterToValidSemver(versions)
-
-	// Sort versions in descending order (newest first)
-	version.SortVersions(versions)
-
-	// Apply limit if specified
-	if limit > 0 && limit < len(versions) {
-		versions = versions[:limit]
-	}
-
-	return versions, nil
+	return version.FinalizeDiscoveredVersions(versions, pkg, limit)
 }
 
 // Resolve gets the download URL and checksum for a specific version and platform

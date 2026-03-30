@@ -55,14 +55,8 @@ func newClient(tokenSources ...string) *GitHubClient {
 		}
 	}
 
-	if token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		httpClient = oauth2.NewClient(context.Background(), ts)
-		client = github.NewClient(httpClient)
-	} else {
-		client = github.NewClient(nil)
-		httpClient = depshttp.GetHttpClient()
-	}
+	httpClient = newGitHubHTTPClient(token)
+	client = github.NewClient(httpClient)
 
 	return &GitHubClient{
 		client:      client,
@@ -78,13 +72,25 @@ func (c *GitHubClient) SetToken(token string) {
 	defer c.mu.Unlock()
 
 	if token != "" {
-		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		httpClient := oauth2.NewClient(context.Background(), ts)
+		httpClient := newGitHubHTTPClient(token)
 		c.client = github.NewClient(httpClient)
 		c.httpClient = httpClient
 		c.token = token
 		c.tokenSource = "CLI-provided"
 	}
+}
+
+func newGitHubHTTPClient(token string) *http.Client {
+	httpClient := depshttp.GetHttpClient()
+	if token == "" {
+		return httpClient
+	}
+
+	httpClient.Transport = &oauth2.Transport{
+		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
+		Base:   httpClient.Transport,
+	}
+	return httpClient
 }
 
 // Client returns the REST API client
@@ -165,14 +171,10 @@ func (c *GitHubClient) doRESTRequest(ctx context.Context, method, endpoint strin
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	c.mu.RLock()
-	token := c.token
+	httpClient := c.httpClient
 	c.mu.RUnlock()
 
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := depshttp.GetHttpClient().Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
