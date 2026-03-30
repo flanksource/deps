@@ -77,6 +77,25 @@ var _ = Describe("GitHubTagsManager", func() {
 	})
 
 	Describe("Resolve", func() {
+		Context("when tag lookup is not needed", func() {
+			It("should resolve directly from version for non-GitHub download URLs", func() {
+				pkg := types.Package{
+					Name:        "go",
+					Repo:        "invalid-format",
+					URLTemplate: "https://go.dev/dl/{{.asset}}",
+					AssetPatterns: map[string]string{
+						"darwin-arm64": "go{{.version}}.darwin-arm64.tar.gz",
+					},
+				}
+				plat := platform.Platform{OS: "darwin", Arch: "arm64"}
+
+				resolution, err := manager.Resolve(ctx, pkg, "1.26.1", plat)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resolution).ToNot(BeNil())
+				Expect(resolution.DownloadURL).To(Equal("https://go.dev/dl/go1.26.1.darwin-arm64.tar.gz"))
+			})
+		})
+
 		Context("with url_template", func() {
 			It("should resolve download URL using template", func() {
 				pkg := types.Package{

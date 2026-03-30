@@ -268,7 +268,12 @@ func (g *GoreleaserStrategy) FindChecksums(ctx context.Context, resolution *type
 
 func (g *GoreleaserStrategy) parseChecksumFile(ctx context.Context, url string) (map[string]string, error) {
 	client := depshttp.GetHttpClient()
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
@@ -342,7 +347,12 @@ func (h *HashiCorpStrategy) FindChecksums(ctx context.Context, resolution *types
 
 func (h *HashiCorpStrategy) parseChecksumFile(ctx context.Context, url string) (map[string]string, error) {
 	client := depshttp.GetHttpClient()
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}
@@ -391,7 +401,12 @@ func (i *IndividualFileStrategy) FindChecksums(ctx context.Context, resolution *
 	checksumURL := resolution.DownloadURL + ".sha256"
 
 	client := depshttp.GetHttpClient()
-	resp, err := client.Get(checksumURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", checksumURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download checksum file: %w", err)
 	}

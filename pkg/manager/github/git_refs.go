@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,23 @@ type DiscoverVersionsViaGitOptions struct {
 	SkipSemverFilter bool
 }
 
+var gitRefsHTTPClient = func() *http.Client {
+	return depshttp.GetHttpClient()
+}
+
+func gitRefsURL(owner, repo string) string {
+	u := &url.URL{
+		Scheme: "https",
+		Host:   "github.com",
+		Path:   fmt.Sprintf("/%s/%s.git/info/refs", owner, repo),
+	}
+
+	query := url.Values{}
+	query.Set("service", "git-upload-pack")
+	u.RawQuery = query.Encode()
+	return u.String()
+}
+
 // DiscoverVersionsViaGit fetches tags from a GitHub repository using the git HTTP protocol.
 // This avoids GitHub API rate limits by using the git-upload-pack protocol.
 // URL format: https://github.com/{owner}/{repo}.git/info/refs?service=git-upload-pack
@@ -37,17 +55,17 @@ func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, opts ...Dis
 	if len(opts) > 0 {
 		options = opts[0]
 	}
-	url := fmt.Sprintf("https://github.com/%s/%s.git/info/refs?service=git-upload-pack", owner, repo)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", gitRefsURL(owner, repo), nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// GitHub checks user-agent to determine response format
 	req.Header.Set("User-Agent", "git/2.20.1")
+	req.Header.Set("Accept", "application/x-git-upload-pack-advertisement, */*")
 
-	client := depshttp.GetHttpClient()
+	client := gitRefsHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch git refs: %w", err)
@@ -201,19 +219,23 @@ func parseGitUploadPackRefs(r io.Reader) ([]GitRef, error) {
 // DiscoverVersionsViaGitWithFallback tries git HTTP protocol first, falls back to GraphQL
 func DiscoverVersionsViaGitWithFallback(ctx context.Context, owner, repo string, limit int, graphqlFallback func() ([]types.Version, error), opts ...DiscoverVersionsViaGitOptions) ([]types.Version, error) {
 	// Try git HTTP protocol first (no rate limits)
-	versions, err := DiscoverVersionsViaGit(ctx, owner, repo, opts...)
-	if err == nil {
+	versions, gitErr := DiscoverVersionsViaGit(ctx, owner, repo, opts...)
+	if gitErr == nil {
 		return versions, nil
 	}
 
-	logger.V(2).Infof("Git HTTP failed for %s/%s: %v, falling back to GraphQL", owner, repo, err)
+	logger.V(2).Infof("Git HTTP failed for %s/%s: %v, falling back to API discovery", owner, repo, gitErr)
 
 	// Fall back to GraphQL if git HTTP fails
 	if graphqlFallback != nil {
-		return graphqlFallback()
+		versions, fallbackErr := graphqlFallback()
+		if fallbackErr == nil {
+			return versions, nil
+		}
+		return nil, fmt.Errorf("git discovery failed: %w; fallback discovery failed: %w", gitErr, fallbackErr)
 	}
 
-	return nil, err
+	return nil, gitErr
 }
 
 // FindTagByVersionViaGit searches for a specific version tag using git HTTP protocol

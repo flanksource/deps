@@ -66,6 +66,27 @@ func ApplyVersionExpr(versions []types.Version, expr string) ([]types.Version, e
 	return filteredVersions, nil
 }
 
+// FinalizeDiscoveredVersions applies the common post-processing used by package
+// managers after raw version discovery.
+func FinalizeDiscoveredVersions(versions []types.Version, pkg types.Package, limit int) ([]types.Version, error) {
+	if pkg.VersionExpr != "" {
+		filteredVersions, err := ApplyVersionExpr(versions, pkg.VersionExpr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply version_expr for %s: %w", pkg.Name, err)
+		}
+		versions = filteredVersions
+	}
+
+	versions = FilterToValidSemver(versions)
+	SortVersions(versions)
+
+	if limit > 0 && limit < len(versions) {
+		versions = versions[:limit]
+	}
+
+	return versions, nil
+}
+
 // parseExpressionResult parses the result of a CEL expression evaluation
 // Returns (shouldInclude, modifiedVersion)
 func parseExpressionResult(evaluated string, original types.Version) (bool, types.Version) {

@@ -322,89 +322,15 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 		return nil
 	}
 
-	// Get the appropriate manager for this package
-	mgr, err := i.managers.GetForPackage(pkg)
-	if err != nil {
-		return fmt.Errorf("failed to get package manager for %s: %w", name, err)
-	}
-
-	t.Tracef("Install: selected package manager %s for package %s", mgr.Name(), name)
-
-	// Step 1: Resolve and validate version
-	resolvedVersion, alreadyInstalled, err := i.resolveAndValidateVersion(ctx, mgr, name, version, pkg, t)
+	preview, mgr, err := i.preparePackageInstallation(ctx, name, version, pkg, t)
 	if err != nil {
 		return err
 	}
-	if alreadyInstalled {
+	if preview.AlreadyInstalled {
 		return nil
 	}
 
-	// Step 2: Get resolution (pass options via context)
-	plat := i.getPlatform()
-	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
-	resolveCtx = manager.WithIterateVersions(resolveCtx, i.options.IterateVersions)
-	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, plat)
-	if err != nil {
-		return fmt.Errorf("failed to resolve package %s: %w", name, err)
-	}
-
-	// Update task with actual resolved version if different (e.g., latest -> v1.2.3, stable -> 11.0.29+7)
-	if resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
-		if actualVersion := versionpkg.Normalize(resolution.GitHubAsset.Tag); actualVersion != resolvedVersion {
-			t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
-			t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))
-			resolvedVersion = actualVersion
-		}
-	}
-
-	// Check if this manager handles installation without downloading (e.g., go install)
-	if resolution.DownloadURL == "" {
-		t.Infof("Installing %s@%s using %s", name, resolvedVersion, mgr.Name())
-
-		// Call manager's Install method directly
-		installOpts := types.InstallOptions{
-			BinDir: i.options.BinDir,
-			Force:  i.options.Force,
-		}
-
-		if err := mgr.Install(ctx, resolution, installOpts); err != nil {
-			return fmt.Errorf("installation failed: %w", err)
-		}
-
-		// Finalize installation (for wrapper scripts, symlinks, etc.)
-		finalPath := filepath.Join(i.options.BinDir, name)
-		return i.finalizeInstallation(resolvedVersion, finalPath, pkg, t)
-	}
-
-	// Step 3: Download package (resolution already obtained above)
-	downloadPath, err := i.downloadPackage(ctx, name, resolvedVersion, resolution, t)
-	if err != nil {
-		return err
-	}
-
-	// Step 4: Handle installation based on file type (installer, archive, or direct binary)
-	var finalPath string
-
-	// Check if this is a system installer first
-	if extract.IsSystemInstaller(downloadPath) {
-		finalPath, err = i.handleSystemInstaller(downloadPath, name, t)
-		if err != nil {
-			return err
-		}
-	} else if resolution.IsArchive {
-		finalPath, err = i.handleArchiveInstallation(downloadPath, name, resolvedVersion, resolution, pkg, t)
-		if err != nil {
-			return err
-		}
-	} else {
-		finalPath, err = i.handleDirectBinaryInstallation(downloadPath, name)
-		if err != nil {
-			return err
-		}
-	}
-
-	// Step 5: Finalize installation
-	return i.finalizeInstallation(resolvedVersion, finalPath, pkg, t)
+	return i.executePackageInstallation(ctx, name, pkg, preview, mgr, t, nil)
 }
 
 // installWithNewPackageManagerWithResult installs using the new package manager system and populates result
@@ -430,137 +356,146 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 		return nil
 	}
 
-	// Get the appropriate manager for this package
-	mgr, err := i.managers.GetForPackage(pkg)
-	if err != nil {
-		result.Status = types.InstallStatusFailed
-		return fmt.Errorf("failed to get package manager for %s: %w", name, err)
-	}
-
-	t.Debugf("Install: selected package manager %s for package %s", mgr.Name(), name)
-
-	// Step 1: Resolve and validate version
-	resolvedVersion, alreadyInstalled, err := i.resolveAndValidateVersion(ctx, mgr, name, version, pkg, t)
+	preview, mgr, err := i.preparePackageInstallation(ctx, name, version, pkg, t)
 	if err != nil {
 		result.Status = types.InstallStatusFailed
 		return err
 	}
 
-	result.Version = types.Version{Version: resolvedVersion}
+	result.Version = types.Version{Version: preview.DisplayVersion()}
 
-	if alreadyInstalled {
+	if preview.AlreadyInstalled {
 		result.Status = types.InstallStatusAlreadyInstalled
 		return nil
 	}
 
-	// Step 2: Get resolution (pass options via context)
-	plat := i.getPlatform()
-	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
-	resolveCtx = manager.WithIterateVersions(resolveCtx, i.options.IterateVersions)
-	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, plat)
+	return i.executePackageInstallation(ctx, name, pkg, preview, mgr, t, result)
+}
+
+func (i *Installer) preparePackageInstallation(ctx context.Context, name, version string, pkg types.Package, t *task.Task) (*InstallPreview, manager.PackageManager, error) {
+	mgr, err := i.managers.GetForPackage(pkg)
 	if err != nil {
-		result.Status = types.InstallStatusFailed
-		return fmt.Errorf("failed to resolve package %s: %w", name, err)
+		return nil, nil, fmt.Errorf("failed to get package manager for %s: %w", name, err)
 	}
 
-	// Update task with actual resolved version if different (e.g., latest -> v1.2.3)
-	actualVersion := resolvedVersion
-	if resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
-		actualVersion = versionpkg.Normalize(resolution.GitHubAsset.Tag)
-		if actualVersion != resolvedVersion {
-			t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
-			t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))
-			result.Version = types.Version{Version: actualVersion}
+	t.Tracef("Install: selected package manager %s for package %s", mgr.Name(), name)
+
+	preview, err := i.previewPackageInstallation(ctx, name, version, pkg, t)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if preview.AlreadyInstalled {
+		if preview.ExistingVersion != "" {
+			t.Infof("✓ %s@%s is already installed", name, preview.ExistingVersion)
+		} else if preview.ExistingPath != "" {
+			t.Infof("Found %s on %s: %s", name, preview.ExistingSource, preview.ExistingPath)
+		}
+		t.Success()
+		return preview, mgr, nil
+	}
+
+	if versionToShow := preview.DisplayVersion(); versionToShow != "" {
+		t.SetName(fmt.Sprintf("%s@%s", name, versionToShow))
+	}
+
+	return preview, mgr, nil
+}
+
+func (i *Installer) executePackageInstallation(ctx context.Context, name string, pkg types.Package, preview *InstallPreview, mgr manager.PackageManager, t *task.Task, result *types.InstallResult) error {
+	resolution := preview.Resolution
+	actualVersion := preview.DisplayVersion()
+	if resolution == nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return fmt.Errorf("failed to resolve package %s: empty resolution", name)
+	}
+
+	if result != nil {
+		result.Version = types.Version{Version: actualVersion}
+		result.DownloadURL = resolution.DownloadURL
+		result.ChecksumURL = resolution.ChecksumURL
+		if resolution.Size > 0 {
+			result.DownloadSize = resolution.Size
 		}
 	}
 
-	// Check if this manager handles installation without downloading (e.g., go install)
 	if resolution.DownloadURL == "" {
 		t.Infof("Installing %s@%s using %s", name, actualVersion, mgr.Name())
 
-		// Call manager's Install method directly
 		installOpts := types.InstallOptions{
 			BinDir: i.options.BinDir,
 			Force:  i.options.Force,
 		}
 
 		if err := mgr.Install(ctx, resolution, installOpts); err != nil {
-			result.Status = types.InstallStatusFailed
+			if result != nil {
+				result.Status = types.InstallStatusFailed
+			}
 			return fmt.Errorf("installation failed: %w", err)
 		}
 
-		// Finalize installation (for wrapper scripts, symlinks, etc.)
 		finalPath := filepath.Join(i.options.BinDir, name)
-		err = i.finalizeInstallation(actualVersion, finalPath, pkg, t)
-		if err != nil {
-			result.Status = types.InstallStatusFailed
+		if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
+			if result != nil {
+				result.Status = types.InstallStatusFailed
+			}
 			return err
 		}
 
-		// Installation succeeded
+		if result != nil {
+			result.BinDir = i.options.BinDir
+			if i.options.Force {
+				result.Status = types.InstallStatusForcedInstalled
+			} else {
+				result.Status = types.InstallStatusInstalled
+			}
+		}
+		return nil
+	}
+
+	downloadPath, err := i.downloadPackage(ctx, name, actualVersion, resolution, t)
+	if err != nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return err
+	}
+
+	var finalPath string
+	if extract.IsSystemInstaller(downloadPath) {
+		finalPath, err = i.handleSystemInstaller(downloadPath, name, t)
+	} else if resolution.IsArchive {
+		finalPath, err = i.handleArchiveInstallation(downloadPath, name, actualVersion, resolution, pkg, t)
+	} else {
+		finalPath, err = i.handleDirectBinaryInstallation(downloadPath, name)
+	}
+	if err != nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return err
+	}
+
+	if resolution.Package.Mode == "directory" && result != nil {
+		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.Name)
+	}
+
+	if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return err
+	}
+
+	if result != nil {
+		result.BinDir = i.options.BinDir
 		if i.options.Force {
 			result.Status = types.InstallStatusForcedInstalled
 		} else {
 			result.Status = types.InstallStatusInstalled
 		}
-		return nil
-	}
-
-	// Step 3: Download package (resolution already obtained above)
-	downloadPath, err := i.downloadPackage(ctx, name, actualVersion, resolution, t)
-	if err != nil {
-		result.Status = types.InstallStatusFailed
-		return err
-	}
-
-	// Populate download info
-	result.DownloadURL = resolution.DownloadURL
-	result.ChecksumURL = resolution.ChecksumURL
-	if resolution.Size > 0 {
-		result.DownloadSize = resolution.Size
-	}
-
-	// Step 4: Handle installation based on file type (installer, archive, or direct binary)
-	var finalPath string
-
-	// Check if this is a system installer first
-	if extract.IsSystemInstaller(downloadPath) {
-		finalPath, err = i.handleSystemInstaller(downloadPath, name, t)
-		if err != nil {
-			result.Status = types.InstallStatusFailed
-			return err
-		}
-	} else if resolution.IsArchive {
-		finalPath, err = i.handleArchiveInstallation(downloadPath, name, actualVersion, resolution, pkg, t)
-		if err != nil {
-			result.Status = types.InstallStatusFailed
-			return err
-		}
-	} else {
-		finalPath, err = i.handleDirectBinaryInstallation(downloadPath, name)
-		if err != nil {
-			result.Status = types.InstallStatusFailed
-			return err
-		}
-	}
-
-	// Track AppDir for directory mode
-	if resolution.Package.Mode == "directory" {
-		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.Name)
-	}
-
-	// Step 5: Finalize installation
-	err = i.finalizeInstallation(actualVersion, finalPath, pkg, t)
-	if err != nil {
-		result.Status = types.InstallStatusFailed
-		return err
-	}
-
-	// Installation succeeded
-	if i.options.Force {
-		result.Status = types.InstallStatusForcedInstalled
-	} else {
-		result.Status = types.InstallStatusInstalled
 	}
 
 	return nil
@@ -1216,13 +1151,13 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	// Skip checksum verification if requested
 	if i.options.SkipChecksum {
 		t.Debugf("Skipping checksum verification (--skip-checksum)")
-		return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
+		return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 	}
 
 	// Priority 1: Use checksum from resolution if available (e.g., from GitHub GraphQL digest)
 	if resolution.Checksum != "" {
 		t.V(3).Infof("Using checksum from resolution: %s", resolution.Checksum)
-		return download.Download(url, dest, t, download.WithChecksum(resolution.Checksum), download.WithCacheDir(i.options.CacheDir))
+		return download.Download(url, dest, t, download.WithChecksum(resolution.Checksum), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 	}
 
 	// Priority 2: Try the provided checksum URL if configured
@@ -1248,10 +1183,10 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 			}
 
 			// Use multi-file checksum with CEL support
-			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithPlatform(resolution.Platform.OS, resolution.Platform.Arch), download.WithCacheDir(i.options.CacheDir))
+			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithPlatform(resolution.Platform.OS, resolution.Platform.Arch), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 		} else {
 			// Use single checksum file
-			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir))
+			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 		}
 
 		if err == nil {
@@ -1269,7 +1204,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	}
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
-	return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir))
+	return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 }
 
 // archMatches returns true if nativeArch (e.g. "x86_64", "arm64") corresponds
