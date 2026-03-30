@@ -479,7 +479,7 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 	}
 
 	if resolution.Package.Mode == "directory" && result != nil {
-		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.Name)
+		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.FolderName(actualVersion))
 	}
 
 	if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
@@ -681,7 +681,7 @@ func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion s
 		}
 	} else if pkg.WrapperScript != "" {
 		// File with wrapper script - download to app directory
-		appPath := filepath.Join(i.options.AppDir, name)
+		appPath := filepath.Join(i.options.AppDir, pkg.FolderName(resolvedVersion))
 		if err := os.MkdirAll(appPath, 0755); err != nil {
 			return "", fmt.Errorf("failed to create app directory: %w", err)
 		}
@@ -859,8 +859,8 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 	if resolvedPkg.Mode == "directory" {
 		t.SetDescription("Installing directory")
 
-		// Move entire directory to app-dir/{package-name}/
-		targetDir := filepath.Join(i.options.AppDir, resolvedPkg.Name)
+		// Move entire directory to app-dir/{package-name}/ (or app-dir/{name}{version}/ when versioned)
+		targetDir := filepath.Join(i.options.AppDir, resolvedPkg.FolderName(resolvedVersion))
 		if err := i.moveExtractedDirectory(workDir, targetDir, t); err != nil {
 			return "", fmt.Errorf("failed to move directory: %w", err)
 		}
@@ -1077,12 +1077,13 @@ func (i *Installer) createWrapperScript(pkg types.Package, resolvedVersion, binD
 
 	// Template the wrapper script content
 	data := map[string]any{
-		"appDir":  i.options.AppDir,
-		"binDir":  binDir,
-		"name":    pkg.Name,
-		"version": resolvedVersion,
-		"os":      plat.OS,
-		"arch":    plat.Arch,
+		"appDir":     i.options.AppDir,
+		"binDir":     binDir,
+		"name":       pkg.Name,
+		"folderName": pkg.FolderName(resolvedVersion),
+		"version":    resolvedVersion,
+		"os":         plat.OS,
+		"arch":       plat.Arch,
 	}
 
 	scriptContent, err := gomplate.RunTemplate(data, gomplate.Template{Template: pkg.WrapperScript})

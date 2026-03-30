@@ -424,6 +424,7 @@ registry:
         name: go
         repo: golang/go
         manager: github_tags
+        versioned_folder: true
         mode: directory
         url_template: https://go.dev/dl/{{.asset}}
         asset_patterns:
@@ -434,6 +435,9 @@ registry:
         version_command: bin/go version
         version_regex: go version go(\d+\.\d+\.\d+)
         version_expr: 'tag.startsWith("go") && !tag.contains("weekly") && !tag.contains("rc") && !tag.contains("beta") ? tag.substring(2) : ""'
+        symlinks:
+            - bin/go
+            - bin/gofmt
 
     powershell:
         name: pwsh
