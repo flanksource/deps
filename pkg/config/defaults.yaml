@@ -866,7 +866,7 @@ registry:
         version_command: uv --version
         version_regex: 'uv (\d+\.\d+\.\d+)'
 
-    graalvm21:
+    graalvm:
         name: graalvm
         repo: graalvm/graalvm-ce-builds
         mode: directory
@@ -876,28 +876,9 @@ registry:
             linux-amd64: graalvm-community-jdk-{{.version}}_linux-x64_bin.tar.gz
             linux-arm64: graalvm-community-jdk-{{.version}}_linux-aarch64_bin.tar.gz
             windows-amd64: graalvm-community-jdk-{{.version}}_windows-x64_bin.zip
-        checksum_file: "{{.asset}}.sha256"
         version_command: java -version
         version_regex: '(\d+\.\d+\.\d+)'
-        version_expr: 'tag.startsWith("jdk-") && tag.substring(4).startsWith("21.") ? tag.substring(4) : ""'
-        symlinks:
-            - "darwin-*: Contents/Home/bin/*"
-            - "linux-*: bin/*"
-
-    graalvm17:
-        name: graalvm
-        repo: graalvm/graalvm-ce-builds
-        mode: directory
-        asset_patterns:
-            darwin-amd64: graalvm-community-jdk-{{.version}}_macos-x64_bin.tar.gz
-            darwin-arm64: graalvm-community-jdk-{{.version}}_macos-aarch64_bin.tar.gz
-            linux-amd64: graalvm-community-jdk-{{.version}}_linux-x64_bin.tar.gz
-            linux-arm64: graalvm-community-jdk-{{.version}}_linux-aarch64_bin.tar.gz
-            windows-amd64: graalvm-community-jdk-{{.version}}_windows-x64_bin.zip
-        checksum_file: "{{.asset}}.sha256"
-        version_command: java -version
-        version_regex: '(\d+\.\d+\.\d+)'
-        version_expr: 'tag.startsWith("jdk-") && tag.substring(4).startsWith("17.") ? tag.substring(4) : ""'
+        version_expr: 'tag.startsWith("jdk-") ? tag.substring(4) : ""'
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
