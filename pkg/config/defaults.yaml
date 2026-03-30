@@ -433,7 +433,7 @@ registry:
             linux-arm64: "go{{.version}}.linux-arm64.tar.gz"
         version_command: bin/go version
         version_regex: go version go(\d+\.\d+\.\d+)
-        version_expr: 'tag.startsWith("go") ? tag.substring(2) : tag'
+        version_expr: 'tag.startsWith("go") && !tag.contains("weekly") && !tag.contains("rc") && !tag.contains("beta") ? tag.substring(2) : ""'
 
     powershell:
         name: pwsh
@@ -865,3 +865,39 @@ registry:
             - uvx
         version_command: uv --version
         version_regex: 'uv (\d+\.\d+\.\d+)'
+
+    graalvm21:
+        name: graalvm
+        repo: graalvm/graalvm-ce-builds
+        mode: directory
+        asset_patterns:
+            darwin-amd64: graalvm-community-jdk-{{.version}}_macos-x64_bin.tar.gz
+            darwin-arm64: graalvm-community-jdk-{{.version}}_macos-aarch64_bin.tar.gz
+            linux-amd64: graalvm-community-jdk-{{.version}}_linux-x64_bin.tar.gz
+            linux-arm64: graalvm-community-jdk-{{.version}}_linux-aarch64_bin.tar.gz
+            windows-amd64: graalvm-community-jdk-{{.version}}_windows-x64_bin.zip
+        checksum_file: "{{.asset}}.sha256"
+        version_command: java -version
+        version_regex: '(\d+\.\d+\.\d+)'
+        version_expr: 'tag.startsWith("jdk-") && tag.substring(4).startsWith("21.") ? tag.substring(4) : ""'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
+
+    graalvm17:
+        name: graalvm
+        repo: graalvm/graalvm-ce-builds
+        mode: directory
+        asset_patterns:
+            darwin-amd64: graalvm-community-jdk-{{.version}}_macos-x64_bin.tar.gz
+            darwin-arm64: graalvm-community-jdk-{{.version}}_macos-aarch64_bin.tar.gz
+            linux-amd64: graalvm-community-jdk-{{.version}}_linux-x64_bin.tar.gz
+            linux-arm64: graalvm-community-jdk-{{.version}}_linux-aarch64_bin.tar.gz
+            windows-amd64: graalvm-community-jdk-{{.version}}_windows-x64_bin.zip
+        checksum_file: "{{.asset}}.sha256"
+        version_command: java -version
+        version_regex: '(\d+\.\d+\.\d+)'
+        version_expr: 'tag.startsWith("jdk-") && tag.substring(4).startsWith("17.") ? tag.substring(4) : ""'
+        symlinks:
+            - "darwin-*: Contents/Home/bin/*"
+            - "linux-*: bin/*"
