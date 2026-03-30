@@ -3,9 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
+	"github.com/flanksource/clicky/task"
 	"github.com/flanksource/deps/pkg/installer"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
@@ -40,61 +42,57 @@ func init() {
 	infoCmd.Flags().IntVar(&infoVersionLimit, "versions", 100, "Number of versions to display")
 	infoCmd.Flags().BoolVar(&infoAll, "all", false, "Show all packages in the registry with resolved versions")
 	infoCmd.Flags().BoolVar(&infoAllLatest, "all-latest", false, "With --all, include prereleases when resolving latest version")
+	infoCmd.Flags().IntVar(&iterateVersions, "iterate-versions", 0, "Number of releases to try when 'latest' has no matching assets (0=disabled)")
 }
 
 func runInfo(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+	out := cmd.OutOrStdout()
 
 	if infoAll {
-		return runInfoAll(ctx, infoAllLatest)
+		return runInfoAll(out, ctx, infoAllLatest)
 	}
 
 	if len(args) == 0 {
 		return fmt.Errorf("package name required (or use --all to list all packages)")
 	}
 
-	// Parse package@version
 	toolSpec := installer.ParseTools(args)[0]
-
-	// Get package from registry
-	depsConfig := GetDepsConfig()
-	pkg, exists := depsConfig.Registry[toolSpec.Name]
-	if !exists {
-		return fmt.Errorf("package %s not found in registry", toolSpec.Name)
+	inst := newCLIInstaller()
+	preview, err := inst.Preview(toolSpec.Name, toolSpec.Version, &task.Task{})
+	if err != nil {
+		return err
 	}
 
-	// Get manager
+	pkg := preview.Package
+
 	mgr, err := manager.GetGlobalRegistry().GetForPackage(pkg)
 	if err != nil {
 		return fmt.Errorf("failed to get manager for %s: %w", toolSpec.Name, err)
 	}
 
-	// Get current platform
-	plat := platform.Current()
-
-	// Print package info header
-	fmt.Printf("Package: %s\n", toolSpec.Name)
-	fmt.Printf("Manager: %s\n", pkg.Manager)
+	fmt.Fprintf(out, "Package: %s\n", pkg.Name)
+	fmt.Fprintf(out, "Manager: %s\n", pkg.Manager)
+	if preview.Plugin != "" {
+		fmt.Fprintf(out, "Plugin: %s\n", preview.Plugin)
+	}
 	if pkg.Repo != "" {
-		fmt.Printf("Repo: %s\n", pkg.Repo)
+		fmt.Fprintf(out, "Repo: %s\n", pkg.Repo)
 	}
 	if pkg.BinaryName != "" {
-		fmt.Printf("Binary: %s\n", pkg.BinaryName)
+		fmt.Fprintf(out, "Binary: %s\n", pkg.BinaryName)
 	}
 
-	// Discover versions
 	var versions []types.Version
-	versions, err = mgr.DiscoverVersions(ctx, pkg, plat, infoVersionLimit)
+	versions, err = mgr.DiscoverVersions(ctx, pkg, preview.Platform, infoVersionLimit)
 	if err != nil {
-		fmt.Printf("\nVersions: (error: %v)\n", err)
+		fmt.Fprintf(out, "\nVersions: (error: %v)\n", err)
 	} else if len(versions) == 0 {
-		fmt.Printf("\nVersions: (none found)\n")
+		fmt.Fprintf(out, "\nVersions: (none found)\n")
 	} else {
-		// Filter versions if a constraint is provided
 		displayVersions := versions
 		versionHeader := "Available Versions"
 		if toolSpec.Version != "" && toolSpec.Version != "latest" && toolSpec.Version != "any" && toolSpec.Version != "stable" {
-			// Try to parse as a constraint and filter matching versions
 			if constraint, parseErr := versionpkg.ParseConstraint(toolSpec.Version); parseErr == nil {
 				var filtered []types.Version
 				for _, v := range versions {
@@ -109,9 +107,8 @@ func runInfo(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		fmt.Printf("\n%s (showing %d):\n", versionHeader, len(displayVersions))
+		fmt.Fprintf(out, "\n%s (showing %d):\n", versionHeader, len(displayVersions))
 
-		// Find first stable version for marking
 		firstStableIdx := -1
 		for i, v := range displayVersions {
 			if !v.Prerelease {
@@ -128,7 +125,6 @@ func runInfo(cmd *cobra.Command, args []string) error {
 			if v.Prerelease {
 				suffixes = append(suffixes, "prerelease")
 			}
-			// Show build tag if it's a build date (github_build manager uses YYYYMMDD format)
 			if v.Tag != "" && v.Tag != v.Version && !strings.HasPrefix(v.Tag, "v") && len(v.Tag) == 8 {
 				suffixes = append(suffixes, "build: "+v.Tag)
 			}
@@ -138,74 +134,34 @@ func runInfo(cmd *cobra.Command, args []string) error {
 				suffix = " (" + strings.Join(suffixes, ", ") + ")"
 			}
 			if !v.Published.IsZero() {
-				fmt.Printf("  %s  %s%s\n", v.Version, v.Published.Format("2006-01-02"), suffix)
+				fmt.Fprintf(out, "  %s  %s%s\n", v.Version, v.Published.Format("2006-01-02"), suffix)
 			} else {
-				fmt.Printf("  %s%s\n", v.Version, suffix)
+				fmt.Fprintf(out, "  %s%s\n", v.Version, suffix)
 			}
 		}
 	}
 
-	// Resolve version constraint using the same resolver as install
-	resolveVersion := toolSpec.Version
-	if resolveVersion == "" {
-		resolveVersion = "latest"
-	}
-
-	// Use centralized version resolver (same as install command)
-	resolver := versionpkg.NewResolver(mgr)
-	resolved, err := resolver.ResolveConstraint(ctx, pkg, resolveVersion, plat)
-	if err != nil {
-		fmt.Printf("\nResolved for %s/%s:\n", plat.OS, plat.Arch)
-		fmt.Printf("  Version: %s\n", resolveVersion)
-		fmt.Printf("  Error: %v\n", err)
-		return nil
-	}
-
-	versionLabel := resolved
-	if resolveVersion != resolved {
-		versionLabel = fmt.Sprintf("%s (resolved to %s)", resolveVersion, resolved)
-	}
-	resolveVersion = resolved
-
-	// Get resolution details
-	fmt.Printf("\nResolved for %s/%s:\n", plat.OS, plat.Arch)
-	fmt.Printf("  Version: %s\n", versionLabel)
-
-	resolution, err := mgr.Resolve(ctx, pkg, resolveVersion, plat)
-	if err != nil {
-		fmt.Printf("  Error: %v\n", err)
-		return nil
-	}
-
-	fmt.Printf("  URL: %s\n", resolution.DownloadURL)
-	if resolution.Checksum != "" {
-		fmt.Printf("  Checksum: %s\n", resolution.Checksum)
-	}
-	if resolution.ChecksumURL != "" {
-		fmt.Printf("  Checksum URL: %s\n", resolution.ChecksumURL)
-	}
-	if resolution.IsArchive {
-		fmt.Printf("  Archive: yes\n")
-		if resolution.BinaryPath != "" {
-			fmt.Printf("  Binary Path: %s\n", resolution.BinaryPath)
-		}
-	}
+	printInstallPreview(out, preview)
 
 	return nil
 }
 
-func runInfoAll(ctx context.Context, includePrerelease bool) error {
+func runInfoAll(out io.Writer, ctx context.Context, includePrerelease bool) error {
 	depsConfig := GetDepsConfig()
 	plat := platform.Current()
+	if osOverride != "" {
+		plat.OS = osOverride
+	}
+	if archOverride != "" {
+		plat.Arch = archOverride
+	}
 
-	// Get sorted package names
 	var names []string
 	for name := range depsConfig.Registry {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
-	// Calculate column widths
 	maxNameLen := 7 // minimum "PACKAGE"
 	for _, name := range names {
 		if len(name) > maxNameLen {
@@ -213,11 +169,9 @@ func runInfoAll(ctx context.Context, includePrerelease bool) error {
 		}
 	}
 
-	// Print header
-	fmt.Printf("%-*s  %-12s  %-20s  %s\n", maxNameLen, "PACKAGE", "MANAGER", "VERSION", "STATUS")
-	fmt.Printf("%s  %s  %s  %s\n", strings.Repeat("-", maxNameLen), strings.Repeat("-", 12), strings.Repeat("-", 20), strings.Repeat("-", 20))
+	fmt.Fprintf(out, "%-*s  %-12s  %-20s  %s\n", maxNameLen, "PACKAGE", "MANAGER", "VERSION", "STATUS")
+	fmt.Fprintf(out, "%s  %s  %s  %s\n", strings.Repeat("-", maxNameLen), strings.Repeat("-", 12), strings.Repeat("-", 20), strings.Repeat("-", 20))
 
-	// Use "latest" to include prereleases, "stable" for stable only
 	constraint := "stable"
 	if includePrerelease {
 		constraint = "latest"
@@ -228,21 +182,80 @@ func runInfoAll(ctx context.Context, includePrerelease bool) error {
 
 		mgr, err := manager.GetGlobalRegistry().GetForPackage(pkg)
 		if err != nil {
-			fmt.Printf("%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, "-", fmt.Sprintf("error: %v", err))
+			fmt.Fprintf(out, "%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, "-", fmt.Sprintf("error: %v", err))
 			continue
 		}
 
 		resolver := versionpkg.NewResolver(mgr)
 		resolved, err := resolver.ResolveConstraint(ctx, pkg, constraint, plat)
 		if err != nil {
-			fmt.Printf("%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, "-", fmt.Sprintf("error: %v", truncateError(err)))
+			fmt.Fprintf(out, "%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, "-", fmt.Sprintf("error: %v", truncateError(err)))
 			continue
 		}
 
-		fmt.Printf("%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, truncateVersion(resolved, 20), "ok")
+		fmt.Fprintf(out, "%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, truncateVersion(resolved, 20), "ok")
 	}
 
 	return nil
+}
+
+func printInstallPreview(out io.Writer, preview *installer.InstallPreview) {
+	fmt.Fprintf(out, "\nInstall Preview for %s/%s:\n", preview.Platform.OS, preview.Platform.Arch)
+	requested := preview.RequestedVersion
+	if preview.RequestedInput != "" {
+		requested = preview.RequestedInput
+	}
+	fmt.Fprintf(out, "  Requested: %s\n", requested)
+	if preview.RequestedVersion != "" && preview.RequestedVersion != requested {
+		fmt.Fprintf(out, "  Effective Request: %s\n", preview.RequestedVersion)
+	}
+	if preview.ResolvedVersion != "" {
+		fmt.Fprintf(out, "  Resolved Version: %s\n", preview.ResolvedVersion)
+	}
+	if preview.EffectiveVersion != "" && preview.EffectiveVersion != preview.ResolvedVersion {
+		fmt.Fprintf(out, "  Effective Version: %s\n", preview.EffectiveVersion)
+	}
+	if preview.AlreadyInstalled {
+		fmt.Fprintf(out, "  Status: already installed\n")
+		if preview.ExistingVersion != "" {
+			fmt.Fprintf(out, "  Installed Version: %s\n", preview.ExistingVersion)
+		}
+		if preview.ExistingPath != "" {
+			fmt.Fprintf(out, "  Existing Path: %s\n", preview.ExistingPath)
+		}
+		if preview.ExistingSource != "" {
+			fmt.Fprintf(out, "  Existing Source: %s\n", preview.ExistingSource)
+		}
+		return
+	}
+	if preview.Plugin != "" {
+		fmt.Fprintf(out, "  Method: plugin (%s)\n", preview.Plugin)
+		return
+	}
+	if preview.Resolution == nil {
+		fmt.Fprintf(out, "  Status: unresolved\n")
+		return
+	}
+
+	fmt.Fprintf(out, "  Method: %s\n", preview.InstallMethod())
+	if preview.Resolution.DownloadURL != "" {
+		fmt.Fprintf(out, "  URL: %s\n", preview.Resolution.DownloadURL)
+	}
+	if preview.Resolution.Checksum != "" {
+		fmt.Fprintf(out, "  Checksum: %s\n", preview.Resolution.Checksum)
+	}
+	if preview.Resolution.ChecksumURL != "" {
+		fmt.Fprintf(out, "  Checksum URL: %s\n", preview.Resolution.ChecksumURL)
+	}
+	if preview.Resolution.IsArchive {
+		fmt.Fprintf(out, "  Archive: yes\n")
+		if preview.Resolution.BinaryPath != "" {
+			fmt.Fprintf(out, "  Binary Path: %s\n", preview.Resolution.BinaryPath)
+		}
+	}
+	if preview.Resolution.GitHubAsset != nil {
+		fmt.Fprintf(out, "  Asset: %s@%s\n", preview.Resolution.GitHubAsset.Repo, preview.Resolution.GitHubAsset.Tag)
+	}
 }
 
 func truncateVersion(version string, maxLen int) string {

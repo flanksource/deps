@@ -31,3 +31,4 @@ tmp/
 apps/
 *.tar.gz
 .todos
+.*/
