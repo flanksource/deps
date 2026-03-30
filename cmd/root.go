@@ -9,6 +9,7 @@ import (
 
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/commons/logger"
+	"github.com/flanksource/commons/properties"
 	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
@@ -126,6 +127,7 @@ func GetDepsConfig() *types.DepsConfig {
 func init() {
 
 	clicky.BindAllFlags(rootCmd.PersistentFlags(), "tasks", "!format")
+	properties.BindFlags(rootCmd.PersistentFlags())
 	home := "/usr/local"
 	if os.Geteuid() != 0 {
 		if userHome, err := os.UserHomeDir(); err == nil {

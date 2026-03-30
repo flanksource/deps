@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	installCheck     bool
-	iterateVersions  int
+	installCheck    bool
+	iterateVersions int
 )
 
 var installCmd = &cobra.Command{
@@ -43,27 +43,7 @@ func init() {
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
-	// Get cache dir from flag or config
-	cacheDirToUse := cacheDir
-	if cacheDirToUse == "" {
-		cacheDirToUse = GetDepsConfig().Settings.CacheDir
-	}
-
-	// Create installer with options from global flags and depsConfig
-	inst := installer.NewWithConfig(
-		GetDepsConfig(),
-		installer.WithBinDir(binDir),
-		installer.WithAppDir(appDir),
-		installer.WithTmpDir(tmpDir),
-		installer.WithCacheDir(cacheDirToUse),
-		installer.WithForce(force),
-		installer.WithSkipChecksum(skipChecksum),
-		installer.WithStrictChecksum(strictChecksum),
-		installer.WithDebug(debug),
-		installer.WithOS(osOverride, archOverride),
-		installer.WithTimeout(timeout),
-		installer.WithIterateVersions(iterateVersions),
-	)
+	inst := newCLIInstaller()
 
 	// If no arguments provided, install from deps.yaml
 	if len(args) == 0 {
