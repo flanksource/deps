@@ -75,6 +75,8 @@ type Package struct {
 	PostProcess []string `json:"post_process,omitempty" yaml:"post_process,omitempty"`
 	// Mode specifies the installation mode: "binary" (default) or "directory"
 	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
+	// VersionedFolder when true installs directory-mode packages to {appDir}/{name}{version} instead of {appDir}/{name}
+	VersionedFolder bool `json:"versioned_folder,omitempty" yaml:"versioned_folder,omitempty"`
 	// Symlinks contains glob patterns of paths in app-dir to symlink to bin-dir (directory mode only, supports platform prefixes)
 	Symlinks []string `json:"symlinks,omitempty" yaml:"symlinks,omitempty"`
 	// WrapperScript is a template for creating a wrapper script in bin-dir (supports {{.appDir}}, {{.binDir}}, {{.name}}, {{.version}}, {{.os}}, {{.arch}})
@@ -83,6 +85,15 @@ type Package struct {
 	Extra map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`
 	// FallbackVersion is used when GitHub API rate limits are reached (defaults to "latest")
 	FallbackVersion string `json:"fallback_version,omitempty" yaml:"fallback_version,omitempty"`
+}
+
+// FolderName returns the directory name for this package under appDir.
+// When VersionedFolder is true, the name includes the version (e.g. "go1.25.8").
+func (p Package) FolderName(version string) string {
+	if p.VersionedFolder && version != "" {
+		return p.Name + version
+	}
+	return p.Name
 }
 
 func (p Package) TemplateURL(platform platform.Platform, v string) (string, error) {

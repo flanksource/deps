@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/flanksource/clicky"
@@ -14,6 +15,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	// Register all package managers via init functions
 	_ "github.com/flanksource/deps/pkg/manager/apache"
@@ -41,8 +43,22 @@ var (
 	depsConfig     *types.DepsConfig
 	versionInfo    VersionInfo
 	showVersion    bool
+	systemInstall  bool
 	timeout        time.Duration
 )
+
+var clickyFlagNames = map[string]struct{}{
+	"graceful-timeout": {},
+	"json-logs":        {},
+	"log-level":        {},
+	"log-to-stderr":    {},
+	"loglevel":         {},
+	"max-concurrent":   {},
+	"max-retries":      {},
+	"no-progress":      {},
+	"report-caller":    {},
+	"retry-delay":      {},
+}
 
 type VersionInfo struct {
 	Version string
@@ -86,6 +102,11 @@ It can download and install various tools like kubectl, helm, terraform, and mor
 			os.Exit(0)
 		}
 
+		if systemInstall {
+			binDir = "/usr/local/bin"
+			appDir = "/usr/local"
+		}
+
 		// Apply clicky flags after command line parsing
 		clicky.Flags.UseFlags()
 
@@ -125,9 +146,9 @@ func GetDepsConfig() *types.DepsConfig {
 }
 
 func init() {
-
 	clicky.BindAllFlags(rootCmd.PersistentFlags(), "tasks", "!format")
 	properties.BindFlags(rootCmd.PersistentFlags())
+	rootCmd.SetUsageFunc(groupedUsageFunc)
 	home := "/usr/local"
 	if os.Geteuid() != 0 {
 		if userHome, err := os.UserHomeDir(); err == nil {
@@ -155,5 +176,60 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&osOverride, "os", runtime.GOOS, "Target OS (linux, darwin, windows)")
 	rootCmd.PersistentFlags().StringVar(&archOverride, "arch", runtime.GOARCH, "Target architecture (amd64, arm64, etc.)")
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Path to deps.yaml config file")
+	rootCmd.PersistentFlags().BoolVar(&systemInstall, "system", false, "Install system-wide (--bin-dir /usr/local/bin --app-dir /usr/local)")
 	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout for downloads and installations")
+}
+
+func groupedUsageFunc(cmd *cobra.Command) error {
+	out := cmd.OutOrStderr()
+
+	fmt.Fprintf(out, "Usage:\n  %s\n", cmd.UseLine())
+
+	if cmd.HasAvailableSubCommands() {
+		fmt.Fprintln(out, "\nAvailable Commands:")
+		for _, sub := range cmd.Commands() {
+			if !sub.IsAvailableCommand() || sub.Hidden {
+				continue
+			}
+			fmt.Fprintf(out, "  %-12s %s\n", sub.Name(), sub.Short)
+		}
+	}
+
+	if flags := filteredFlagUsages(cmd.Flags(), func(flag *pflag.Flag) bool {
+		return !isClickyFlag(flag)
+	}); flags != "" {
+		fmt.Fprintln(out, "\nFlags:")
+		fmt.Fprintln(out, flags)
+	}
+
+	if flags := filteredFlagUsages(cmd.Flags(), isClickyFlag); flags != "" {
+		fmt.Fprintln(out, "\nClicky Flags:")
+		fmt.Fprintln(out, flags)
+	}
+
+	if cmd.HasAvailableSubCommands() {
+		fmt.Fprintf(out, "\nUse %q for more information about a command.\n", cmd.CommandPath()+" [command] --help")
+	}
+
+	return nil
+}
+
+func filteredFlagUsages(flags *pflag.FlagSet, include func(*pflag.Flag) bool) string {
+	filtered := pflag.NewFlagSet(flags.Name(), pflag.ContinueOnError)
+	filtered.SortFlags = true
+
+	flags.VisitAll(func(flag *pflag.Flag) {
+		if !include(flag) {
+			return
+		}
+		cloned := *flag
+		filtered.AddFlag(&cloned)
+	})
+
+	return strings.TrimRight(filtered.FlagUsagesWrapped(80), "\n")
+}
+
+func isClickyFlag(flag *pflag.Flag) bool {
+	_, ok := clickyFlagNames[flag.Name]
+	return ok
 }
