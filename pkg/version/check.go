@@ -378,7 +378,9 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	normalizedInstalled := Normalize(installedVersion)
 	normalizedRequested := Normalize(requestedVersion)
 
-	if normalizedInstalled == normalizedRequested {
+	if normalizedInstalled == normalizedRequested ||
+		strings.HasPrefix(normalizedInstalled, normalizedRequested+".") ||
+		strings.HasPrefix(normalizedInstalled, normalizedRequested+"-") {
 		t.V(3).Infof("Existing installation matches requested version: %s", installedVersion)
 		return installedVersion
 	}
