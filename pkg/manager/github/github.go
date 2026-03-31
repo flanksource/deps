@@ -948,7 +948,8 @@ func isRateLimitError(err error) bool {
 	errMsg := err.Error()
 	return strings.Contains(errMsg, "API rate limit exceeded") ||
 		strings.Contains(errMsg, "403 Forbidden") ||
-		strings.Contains(errMsg, "rate limit")
+		strings.Contains(errMsg, "rate limit") ||
+		strings.Contains(errMsg, "forbidden (remaining=")
 }
 
 // handleRateLimitFallback handles rate limit errors by using fallback version

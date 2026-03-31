@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -184,7 +185,9 @@ func (c *GitHubClient) doRESTRequest(ctx context.Context, method, endpoint strin
 		return fmt.Errorf("not found: %s", endpoint)
 	}
 	if resp.StatusCode == 403 {
-		return fmt.Errorf("rate limit exceeded or forbidden: %s", endpoint)
+		body, _ := io.ReadAll(resp.Body)
+		remaining := resp.Header.Get("X-RateLimit-Remaining")
+		return fmt.Errorf("forbidden (remaining=%s): %s: %s", remaining, endpoint, string(body))
 	}
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, endpoint)
