@@ -736,14 +736,25 @@ func SimpleDownload(url, dest string) (*http.Response, error) {
 		return nil, fmt.Errorf("failed to create directory %s: %w", destDir, err)
 	}
 
-	out, err := os.Create(dest)
+	tmpFile := dest + ".tmp"
+	out, err := os.Create(tmpFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create file %s: %w", dest, err)
+		return nil, fmt.Errorf("failed to create file %s: %w", tmpFile, err)
 	}
-	defer func() { _ = out.Close() }()
+	defer func() {
+		_ = out.Close()
+		_ = os.Remove(tmpFile)
+	}()
 
 	if _, err := io.Copy(out, resp.Body); err != nil {
 		return nil, fmt.Errorf("failed to download from %s: %w", url, err)
+	}
+
+	if err := out.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close file %s: %w", tmpFile, err)
+	}
+	if err := os.Rename(tmpFile, dest); err != nil {
+		return nil, fmt.Errorf("failed to rename %s to %s: %w", tmpFile, dest, err)
 	}
 
 	return resp, nil

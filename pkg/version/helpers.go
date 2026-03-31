@@ -95,8 +95,7 @@ func CompareVersions(installed, expected string) (types.CheckStatus, error) {
 		return types.CheckStatusOK, nil
 	}
 
-	// Prefix match: "26.2.5.45" matches "26.2.5.45-stable", "7.4.6" matches "7.4.6.1"
-	if strings.HasPrefix(normalizedExpected, normalizedInstalled) || strings.HasPrefix(normalizedInstalled, normalizedExpected) {
+	if hasVersionPrefix(normalizedInstalled, normalizedExpected) || hasVersionPrefix(normalizedExpected, normalizedInstalled) {
 		return types.CheckStatusOK, nil
 	}
 
@@ -118,4 +117,18 @@ func CompareVersions(installed, expected string) (types.CheckStatus, error) {
 	}
 
 	return types.CheckStatusUnknown, nil
+}
+
+// hasVersionPrefix checks if full starts with prefix followed by a version
+// separator (., -, +) or end of string. This avoids false matches like
+// "1.2.30" matching prefix "1.2.3".
+func hasVersionPrefix(full, prefix string) bool {
+	if !strings.HasPrefix(full, prefix) {
+		return false
+	}
+	if len(full) == len(prefix) {
+		return true
+	}
+	sep := full[len(prefix)]
+	return sep == '.' || sep == '-' || sep == '+'
 }

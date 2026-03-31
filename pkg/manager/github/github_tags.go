@@ -325,7 +325,7 @@ func (m *GitHubTagsManager) requiresOriginalTag(pkg types.Package) bool {
 		return true
 	}
 
-	if strings.Contains(pkg.ChecksumFile, "{{.tag") || strings.Contains(pkg.ChecksumFile, "tag") {
+	if strings.Contains(pkg.ChecksumFile, "{{.tag") {
 		return true
 	}
 

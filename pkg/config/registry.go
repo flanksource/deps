@@ -1,14 +1,15 @@
 package config
 
 import (
+	"sync"
+
 	"github.com/flanksource/deps/pkg/types"
 )
 
-var globalRegistry *types.DepsConfig
-
-func init() {
-	initGlobalRegistry()
-}
+var (
+	globalRegistry     *types.DepsConfig
+	globalRegistryOnce sync.Once
+)
 
 func initGlobalRegistry() {
 	defaultConfig, err := LoadDefaultConfig()
@@ -30,11 +31,8 @@ func initGlobalRegistry() {
 }
 
 // GetGlobalRegistry returns the pre-loaded global registry (defaults + user config).
-// If the registry is nil (e.g., after ResetGlobalRegistry), it re-initializes from defaults.
 func GetGlobalRegistry() *types.DepsConfig {
-	if globalRegistry == nil {
-		initGlobalRegistry()
-	}
+	globalRegistryOnce.Do(initGlobalRegistry)
 	return globalRegistry
 }
 
@@ -66,6 +64,7 @@ func PackageExists(name string) bool {
 // since init functions only run once per program execution
 func ResetGlobalRegistry() {
 	globalRegistry = nil
+	globalRegistryOnce = sync.Once{}
 }
 
 // SetGlobalRegistry sets the global registry (useful for testing)
