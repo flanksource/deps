@@ -57,6 +57,7 @@ func isExcludedPackage(packageName string) bool {
 		"ketall",     // Binary extraction/validation issues
 		"go",         // Direct URL manager requires explicit version
 		"gcloud-cli", // Direct URL manager requires explicit version
+		"trivy",      // aquasecurity org IP allowlist blocks GitHub Actions runners
 	}
 	return contains(excludedPackages, packageName)
 }
@@ -75,9 +76,15 @@ var platformExclusions = map[string][]string{
 		"opensearch", // Not available for darwin
 		"svu",        // No darwin-arm64 asset
 	},
+	"linux-amd64": {
+		"aws-cli", // PyInstaller bundle missing libpython3.14.so
+		"tomee",   // Version check requires Java runtime
+	},
 	"linux-arm64": {
+		"aws-cli",       // PyInstaller bundle missing libpython3.14.so
 		"expenv",        // No linux-arm64 release
 		"gitlab-runner", // Build/asset issue on arm64
+		"tomee",         // Version check requires Java runtime
 	},
 	"windows-amd64": {
 		"aws-cli",        // Different installer mechanism
