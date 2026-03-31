@@ -31,4 +31,6 @@ tmp/
 apps/
 *.tar.gz
 .todos
-.*/
+.env
+.cache/
+.venv/
