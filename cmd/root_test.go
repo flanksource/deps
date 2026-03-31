@@ -22,11 +22,11 @@ func TestSystemFlagOverridesDirs(t *testing.T) {
 		t.Fatalf("expected --system flag to be registered")
 	}
 
-	oldBin, oldApp := binDir, appDir
+	oldBin, oldApp, oldSystem := binDir, appDir, systemInstall
 	t.Cleanup(func() {
 		binDir = oldBin
 		appDir = oldApp
-		systemInstall = false
+		systemInstall = oldSystem
 	})
 
 	systemInstall = true

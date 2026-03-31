@@ -25,11 +25,6 @@ jobs:
           go-version: "1.26"
           cache: true
 
-      - name: Build deps from source
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          go build -o "$HOME/.local/bin/deps" ./cmd/deps
-
       - name: Test action with multiple tools
         id: install-tools
         uses: ./
@@ -43,6 +38,18 @@ jobs:
             python@3.11
           version: latest
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Replace deps with source-built binary
+        run: |
+          go build -o "$HOME/.local/bin/deps" ./cmd/deps
+          deps --version
+
+      - name: Re-run install with source-built binary
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          deps install --no-progress --force python@3.11
 
       - name: Verify yq installation
         shell: bash
