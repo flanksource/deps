@@ -165,7 +165,7 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	preview.Resolution = resolution
 	preview.EffectiveVersion = resolvedVersion
 
-	if resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
+	if mgr.Name() != "github_build" && resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
 		if actualVersion := versionpkg.Normalize(resolution.GitHubAsset.Tag); actualVersion != resolvedVersion {
 			t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
 			t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))

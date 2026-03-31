@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -582,76 +581,6 @@ func (i *Installer) moveAllContents(workDir, targetDir string, entries []os.DirE
 	return nil
 }
 
-// resolveAndValidateVersion handles version resolution and existing installation check
-func (i *Installer) resolveAndValidateVersion(ctx context.Context, mgr manager.PackageManager, name string, version string, pkg types.Package, t *task.Task) (string, bool, error) {
-	// Handle @any: check if binary exists anywhere (PATH or bin-dir) before resolving version
-	if version == "any" {
-		binaryName := name
-		if pkg.BinaryName != "" {
-			binaryName = pkg.BinaryName
-		}
-
-		// Check PATH first
-		if path, err := exec.LookPath(binaryName); err == nil {
-			t.Infof("Found %s on PATH: %s", name, path)
-			t.Success()
-			return "", true, nil
-		}
-
-		// Check bin-dir
-		binPath := filepath.Join(i.options.BinDir, binaryName)
-		if _, err := os.Stat(binPath); err == nil {
-			t.Infof("Found %s in bin-dir: %s", name, binPath)
-			t.Success()
-			return "", true, nil
-		}
-
-		// Not found anywhere, fall back to latest
-		version = "latest"
-	}
-
-	// If no version specified, resolve it
-	if version == "" {
-		version = "latest"
-	}
-
-	t.SetDescription(fmt.Sprintf("Resolving version %s", version))
-
-	// Resolve version constraint to specific version
-	resolvedVersion, err := i.resolveVersionConstraint(ctx, mgr, pkg, version, t)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to resolve version constraint for %s: %w", name, err)
-	}
-
-	t.Debugf("Resolved %s version: %s -> %s", name, version, resolvedVersion)
-
-	// Update task name to include the resolved version
-	t.SetName(fmt.Sprintf("%s@%s", name, resolvedVersion))
-
-	// Check if binary already exists with correct version (unless force flag is set)
-	if !i.options.Force {
-		// Skip existing-install check if the binary's architecture doesn't match the requested one
-		if i.options.ArchOverride != "" {
-			binaryName := name
-			if pkg.BinaryName != "" {
-				binaryName = pkg.BinaryName
-			}
-			binPath := filepath.Join(i.options.BinDir, binaryName)
-			if nativeArch := pipeline.DetectBinaryArch(binPath); nativeArch != "" && !archMatches(nativeArch, i.options.ArchOverride) {
-				t.Debugf("Existing %s is %s but %s requested, reinstalling", binaryName, nativeArch, i.options.ArchOverride)
-				return resolvedVersion, false, nil
-			}
-		}
-
-		if existingVersion := versionpkg.CheckExistingInstallation(t, name, pkg, resolvedVersion, i.options.BinDir, i.options.OSOverride); existingVersion != "" {
-			t.Infof("✓ %s@%s is already installed", name, resolvedVersion)
-			t.Success()
-			return resolvedVersion, true, nil // true indicates already installed
-		}
-	}
-
-	return resolvedVersion, false, nil // false indicates needs installation
-}
 
 // downloadPackage handles package download using an already-resolved resolution
 func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion string, resolution *types.Resolution, t *task.Task) (string, error) {
@@ -880,8 +809,6 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 		}
 
 		// Find and copy the binary from the extract dir to finalPath.
-		// Always copy — if we reached this point, resolveAndValidateVersion
-		// already decided a (re)install is needed.
 		{
 			t.SetDescription("Searching for binary")
 			binaryPath, err := extract.FindBinaryInDir(workDir, resolution.BinaryPath, t)
