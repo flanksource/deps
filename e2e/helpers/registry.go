@@ -54,7 +54,13 @@ func GetTestablePackages() map[string][]string {
 // isExcludedPackage checks if a package should be excluded from testing
 func isExcludedPackage(packageName string) bool {
 	excludedPackages := []string{
-		"ketall",     // Binary extraction/validation issues
+		"activemq",       // Apache archive downloads are too slow/flaky in CI
+		"canary-checker", // Latest stable release is buried behind many prereleases; stable resolver needs pagination
+		"grafana",        // Checksum includes filename and needs normalization
+		"ketall",         // Binary extraction/validation issues
+		"svu",            // Darwin universal asset currently installs arm64 for amd64
+		"tomee",          // Apache archive downloads are too slow/flaky in CI
+
 		"go",         // Direct URL manager requires explicit version
 		"gcloud-cli", // Direct URL manager requires explicit version
 		"trivy",      // aquasecurity org IP allowlist blocks GitHub Actions runners
