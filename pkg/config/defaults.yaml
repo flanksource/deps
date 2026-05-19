@@ -63,27 +63,33 @@ registry:
             - unarchive(glob("*.txz")[0])
             # - move(glob("*:dir")[0], "postgres")
     postgres-mc-plugin:
-        name: postgres-mc-plugin
-        manager: go
+        name: postgres
+        manager: github_release
         repo: flanksource/mission-control-plugins
-        version_expr: 'tag.startsWith("postgres/") ? tag.substring(9) : ""'
-        binary_name: postgres
-        extra:
-            import_path: github.com/flanksource/mission-control-plugins/postgres
+        binary_path: postgres_mc_plugin
+        asset_patterns:
+            darwin-amd64: postgres_{{.tag}}_darwin_amd64.tar.gz
+            darwin-arm64: postgres_{{.tag}}_darwin_arm64.tar.gz
+            linux-amd64: postgres_{{.tag}}_linux_amd64.tar.gz
+            linux-arm64: postgres_{{.tag}}_linux_arm64.tar.gz
+        checksum_file: "{{.tag}}_checksums.txt"
         wrapper_script: |
             #!/bin/sh
-            exec "{{.binDir}}/postgres" "$@"
+            exec "{{.binDir}}/postgres-mc-plugin" "$@"
     kubernetes-logs-mc-plugin:
-        name: kubernetes-logs-mc-plugin
-        manager: go
+        name: kubernetes-logs
+        manager: github_release
         repo: flanksource/mission-control-plugins
-        version_expr: 'tag.startsWith("kubernetes-logs/") ? tag.substring(16) : ""'
-        binary_name: kubernetes-logs
-        extra:
-            import_path: github.com/flanksource/mission-control-plugins/kubernetes-logs
+        binary_path: kubernetes-logs_mc_plugin
+        asset_patterns:
+            darwin-amd64: kubernetes-logs_{{.tag}}_darwin_amd64.tar.gz
+            darwin-arm64: kubernetes-logs_{{.tag}}_darwin_arm64.tar.gz
+            linux-amd64: kubernetes-logs_{{.tag}}_linux_amd64.tar.gz
+            linux-arm64: kubernetes-logs_{{.tag}}_linux_arm64.tar.gz
+        checksum_file: "{{.tag}}_checksums.txt"
         wrapper_script: |
             #!/bin/sh
-            exec "{{.binDir}}/kubernetes-logs" "$@"
+            exec "{{.binDir}}/kubernetes-logs-mc-plugin" "$@"
     gomplate:
         repo: hairyhenderson/gomplate
         asset_patterns:
