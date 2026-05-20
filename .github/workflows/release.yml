@@ -128,6 +128,7 @@ jobs:
           file_glob: true
           file: deps-*.{exe,tar.gz,zip,sha256}
           tag: ${{ needs.version.outputs.tag }}
+          draft: true
 
   release:
     name: Create Release
@@ -145,4 +146,4 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes -f tag_name="$TAG" --jq '.body')
-          gh release edit "$TAG" --title "Release $TAG" --notes "$NOTES"
+          gh release edit "$TAG" --title "Release $TAG" --notes "$NOTES" --draft=false
