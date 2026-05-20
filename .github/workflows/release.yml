@@ -2,148 +2,75 @@ name: Release
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
 
 permissions:
-  contents: write
-  packages: write
-  issues: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 env:
-  GO_VERSION: "1.25"
+  GO_VERSION: "1.26.x"
 
 jobs:
-  version:
-    name: Determine Version
+  semantic-release:
+    name: Semantic Release
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.svu.outputs.version }}
-      tag: ${{ steps.svu.outputs.tag }}
+      release-version: ${{ steps.semantic.outputs.release-version }}
+      new-release-published: ${{ steps.semantic.outputs.new-release-published }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install svu
-        run: |
-          curl -sL https://github.com/caarlos0/svu/releases/download/v3.2.4/svu_3.2.4_linux_amd64.tar.gz | tar xz
-          sudo mv svu /usr/local/bin/
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
 
-      - name: Get next version
-        id: svu
-        run: |
-          git fetch --tags
-          NEXT_VERSION=$(svu patch --tag.pattern "v*")
-          echo "version=${NEXT_VERSION#v}" >> $GITHUB_OUTPUT
-          echo "tag=$NEXT_VERSION" >> $GITHUB_OUTPUT
-          echo "Next version: $NEXT_VERSION"
-
-      - name: Create and push tag
+      - name: Create draft release
+        uses: codfish/semantic-release-action@6abd188d2458e2fd6c99073454f6cc49196362e8 # v5.0.0
+        id: semantic
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ steps.svu.outputs.tag }}
-          git push origin ${{ steps.svu.outputs.tag }}
-  build:
-    name: Build
-    needs: version
+
+  binary:
+    name: Build binaries
+    if: needs.semantic-release.outputs.new-release-published == 'true'
+    needs: semantic-release
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Build binary
+      - name: Build release assets
+        run: make release
         env:
-          CGO_ENABLED: 0
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          GOOS="${{ matrix.goos }}"
-          GOARCH="${{ matrix.goarch }}"
+          VERSION: ${{ needs.semantic-release.outputs.release-version }}
 
-          BINARY_NAME="deps-${GOOS}-${GOARCH}"
-          if [ "$GOOS" = "windows" ]; then
-            BINARY_NAME="$BINARY_NAME.exe"
-          fi
+      - name: Upload binaries to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.semantic-release.outputs.release-version }}
+        run: gh release upload "$TAG" ./.release/* --clobber --repo "${{ github.repository }}"
 
-          GOOS="${{ matrix.goos }}" GOARCH="${{ matrix.goarch }}" go build -ldflags="-s -w -X main.version=$VERSION -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o "$BINARY_NAME" ./cmd/deps/main.go
-
-
-          sha256sum "$BINARY_NAME" > "$BINARY_NAME".sha256
-
-      - name: Create archive
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          GOOS="${{ matrix.goos }}"
-          GOARCH="${{ matrix.goarch }}"
-
-
-          ARCHIVE_NAME="deps-${GOOS}-${GOARCH}"
-
-          BINARY_NAME="deps-${GOOS}-${GOARCH}"
-          if [ "$GOOS" = "windows" ]; then
-            BINARY_NAME="$BINARY_NAME.exe"
-          fi
-
-          if [ "$GOOS" = "windows" ]; then
-            cp "$BINARY_NAME" deps.exe
-            zip "${ARCHIVE_NAME}.zip" deps.exe
-            rm deps.exe
-            sha256sum  "${ARCHIVE_NAME}.zip" >  "${ARCHIVE_NAME}.sha256"
-          else
-            cp "$BINARY_NAME" deps
-            tar czf "${ARCHIVE_NAME}.tar.gz" deps
-            rm deps
-            sha256sum  "${ARCHIVE_NAME}.tar.gz" >  "${ARCHIVE_NAME}.tar.gz.sha256"
-          fi
-
-      - name: Upload binaries to release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file_glob: true
-          file: deps-*.{exe,tar.gz,zip,sha256}
-          tag: ${{ needs.version.outputs.tag }}
-          draft: true
-
-  release:
-    name: Create Release
-    needs: [version, build]
+  publish-release:
+    name: Publish Release
+    if: needs.semantic-release.outputs.new-release-published == 'true'
+    needs: [semantic-release, binary]
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Update GitHub Release Notes
+      - name: Publish draft release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.version.outputs.tag }}
-        run: |
-          NOTES=$(gh api repos/${{ github.repository }}/releases/generate-notes -f tag_name="$TAG" --jq '.body')
-          gh release edit "$TAG" --title "Release $TAG" --notes "$NOTES" --draft=false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.semantic-release.outputs.release-version }}
+        run: gh release edit "$TAG" --draft=false --repo "${{ github.repository }}"
