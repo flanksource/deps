@@ -73,9 +73,6 @@ registry:
             linux-amd64: postgres_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: postgres_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
-        wrapper_script: |
-            #!/bin/sh
-            exec "{{.binDir}}/postgres-mc-plugin" "$@"
     kubernetes-logs-mc-plugin:
         name: kubernetes-logs
         manager: github_release
@@ -87,9 +84,6 @@ registry:
             linux-amd64: kubernetes-logs_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: kubernetes-logs_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
-        wrapper_script: |
-            #!/bin/sh
-            exec "{{.binDir}}/kubernetes-logs-mc-plugin" "$@"
     arthas-mc-plugin:
         name: arthas
         manager: github_release
@@ -101,9 +95,6 @@ registry:
             linux-amd64: arthas_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: arthas_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
-        wrapper_script: |
-            #!/bin/sh
-            exec "{{.binDir}}/arthas-mc-plugin" "$@"
     golang-mc-plugin:
         name: golang
         manager: github_release
@@ -115,9 +106,6 @@ registry:
             linux-amd64: golang_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: golang_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
-        wrapper_script: |
-            #!/bin/sh
-            exec "{{.binDir}}/golang-mc-plugin" "$@"
     inspektor-gadget-mc-plugin:
         name: inspektor-gadget
         manager: github_release
@@ -129,9 +117,6 @@ registry:
             linux-amd64: inspektor-gadget_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: inspektor-gadget_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
-        wrapper_script: |
-            #!/bin/sh
-            exec "{{.binDir}}/inspektor-gadget-mc-plugin" "$@"
     sql-server-mc-plugin:
         name: sql-server
         manager: github_release
@@ -143,9 +128,17 @@ registry:
             linux-amd64: sql-server_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: sql-server_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
-        wrapper_script: |
-            #!/bin/sh
-            exec "{{.binDir}}/sql-server-mc-plugin" "$@"
+    s3-mc-plugin:
+        name: s3
+        manager: github_release
+        repo: flanksource/mission-control-plugins
+        binary_path: s3_mc_plugin
+        asset_patterns:
+            darwin-amd64: s3_{{.tag}}_darwin_amd64.tar.gz
+            darwin-arm64: s3_{{.tag}}_darwin_arm64.tar.gz
+            linux-amd64: s3_{{.tag}}_linux_amd64.tar.gz
+            linux-arm64: s3_{{.tag}}_linux_arm64.tar.gz
+        checksum_file: "{{.tag}}_checksums.txt"
     gomplate:
         repo: hairyhenderson/gomplate
         asset_patterns:
