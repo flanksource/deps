@@ -1013,19 +1013,34 @@ func (m *GitHubReleaseManager) handleRateLimitFallback(ctx context.Context, pkg 
 		versionForTemplate = fallbackVersion
 	}
 
-	// For "latest" with no concrete fallback_version, resolve the real tag via redirect
-	// rather than building a bogus "vlatest" URL.
+	var resolution *types.Resolution
+	var err error
 	if versionForTemplate == "latest" || versionForTemplate == "" {
+		// No concrete version to template; resolve the real tag via redirect rather than
+		// building a bogus "vlatest" URL.
 		parts := strings.Split(pkg.Repo, "/")
-		if len(parts) == 2 {
-			if tag, tagErr := ResolveLatestTagViaRedirect(ctx, parts[0], parts[1]); tagErr == nil {
-				return m.buildDeterministicResolution(pkg, versionpkg.Normalize(tag), tag, plat)
-			}
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("rate limited and could not resolve a concrete version for fallback: %w", originalErr)
 		}
-		return nil, fmt.Errorf("rate limited and could not resolve a concrete version for fallback: %w", originalErr)
+		tag, tagErr := ResolveLatestTagViaRedirect(ctx, parts[0], parts[1])
+		if tagErr != nil {
+			return nil, fmt.Errorf("rate limited and could not resolve a concrete version for fallback: %w", originalErr)
+		}
+		resolution, err = m.buildDeterministicResolution(pkg, versionpkg.Normalize(tag), tag, plat)
+	} else {
+		resolution, err = m.buildFallbackResolution(pkg, versionForTemplate, plat)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return m.buildFallbackResolution(pkg, versionForTemplate, plat)
+	// checksum_file may fail to resolve a URL (e.g. template/CEL error); strict mode must
+	// still end up with a real checksum source rather than silently skipping verification.
+	if manager.GetStrictChecksum(ctx) && resolution.ChecksumURL == "" && resolution.Checksum == "" {
+		return nil, fmt.Errorf("rate limited and --strict-checksum requires checksum verification: %w", originalErr)
+	}
+
+	return resolution, nil
 }
 
 // hasNonWildcardAssetPattern checks if the package has an asset pattern for the platform
@@ -1084,32 +1099,43 @@ func (m *GitHubReleaseManager) resolveWithoutAPI(ctx context.Context, pkg types.
 	return resolution, nil
 }
 
-// buildChecksumURL turns pkg.ChecksumFile (a full URL, or a release asset name) into a URL.
+// buildChecksumURL turns pkg.ChecksumFile (a full URL, or a release asset name; comma-
+// separated for multiple) into a comma-separated list of URLs.
 func (m *GitHubReleaseManager) buildChecksumURL(pkg types.Package, assetName, version, tag string, plat platform.Platform) string {
 	if pkg.ChecksumFile == "" {
 		return ""
 	}
 
-	checksumFile, err := depstemplate.EvaluateCELOrTemplate(pkg.ChecksumFile, map[string]interface{}{
+	data := map[string]interface{}{
 		"os":      plat.OS,
 		"arch":    plat.Arch,
 		"name":    pkg.Name,
 		"version": depstemplate.NormalizeVersion(version),
 		"tag":     tag,
 		"asset":   assetName,
-	})
-	if err != nil || checksumFile == "" {
-		logger.V(4).Infof("Failed to evaluate checksum_file %q for %s: %v", pkg.ChecksumFile, pkg.Name, err)
-		return ""
 	}
 
-	// Already a full URL (e.g. external checksum host) - use as-is.
-	if hasURLSchema(checksumFile) {
-		return checksumFile
+	var urls []string
+	for _, entry := range strings.Split(pkg.ChecksumFile, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		checksumFile, err := depstemplate.EvaluateCELOrTemplate(entry, data)
+		if err != nil || checksumFile == "" {
+			logger.V(4).Infof("Failed to evaluate checksum_file %q for %s: %v", entry, pkg.Name, err)
+			return ""
+		}
+		if hasURLSchema(checksumFile) {
+			// Already a full URL (e.g. external checksum host) - use as-is.
+			urls = append(urls, checksumFile)
+		} else {
+			// Otherwise it is a release asset name - build the GitHub release download URL.
+			urls = append(urls, fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", pkg.Repo, tag, checksumFile))
+		}
 	}
 
-	// Otherwise it is a release asset name - build the GitHub release download URL.
-	return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", pkg.Repo, tag, checksumFile)
+	return strings.Join(urls, ",")
 }
 
 // buildFallbackResolution resolves a pinned version, deriving the tag as "v"+version.

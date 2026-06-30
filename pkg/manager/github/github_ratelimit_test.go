@@ -47,6 +47,17 @@ var _ = Describe("Rate Limit Fallback", func() {
 				Expect(err.Error()).To(ContainSubstring("strict-checksum"))
 				Expect(resolution).To(BeNil())
 			})
+
+			It("should fail when checksum_file is set but yields no checksum URL", func() {
+				pkg.URLTemplate = ""
+				pkg.AssetPatterns = map[string]string{"linux-amd64": "test-tool_{{.tag}}_linux_amd64.tar.gz"}
+				pkg.ChecksumFile = `{{ "" }}` // evaluates to empty -> no checksum URL
+				strictCtx := manager.WithStrictChecksum(ctx, true)
+				resolution, err := mgr.handleRateLimitFallback(strictCtx, pkg, "1.0.0", plat, rateLimitErr)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("strict-checksum"))
+				Expect(resolution).To(BeNil())
+			})
 		})
 
 		Context("with strict checksum disabled", func() {
@@ -148,6 +159,28 @@ var _ = Describe("Rate Limit Fallback", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resolution.IsArchive).To(BeTrue())
 			Expect(resolution.BinaryPath).ToNot(BeEmpty())
+		})
+	})
+
+	Describe("buildChecksumURL", func() {
+		plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+		It("builds a release download URL from a checksum_file asset name", func() {
+			pkg := types.Package{Name: "postgres", Repo: "flanksource/mission-control-plugins", ChecksumFile: "{{.tag}}_checksums.txt"}
+			Expect(mgr.buildChecksumURL(pkg, "postgres_v1.7.1_linux_amd64.tar.gz", "1.7.1", "v1.7.1", plat)).
+				To(Equal("https://github.com/flanksource/mission-control-plugins/releases/download/v1.7.1/v1.7.1_checksums.txt"))
+		})
+
+		It("builds a comma-separated list for multiple checksum files", func() {
+			pkg := types.Package{Name: "tool", Repo: "o/r", ChecksumFile: "{{.tag}}_checksums.txt, {{.tag}}_sha512.txt"}
+			Expect(mgr.buildChecksumURL(pkg, "tool_linux_amd64.tar.gz", "1.0.0", "v1.0.0", plat)).
+				To(Equal("https://github.com/o/r/releases/download/v1.0.0/v1.0.0_checksums.txt,https://github.com/o/r/releases/download/v1.0.0/v1.0.0_sha512.txt"))
+		})
+
+		It("uses a full checksum URL as-is", func() {
+			pkg := types.Package{Name: "tool", Repo: "o/r", ChecksumFile: "https://example.com/{{.tag}}/checksums.txt"}
+			Expect(mgr.buildChecksumURL(pkg, "tool.tar.gz", "1.0.0", "v1.0.0", plat)).
+				To(Equal("https://example.com/v1.0.0/checksums.txt"))
 		})
 	})
 
