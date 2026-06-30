@@ -195,6 +195,34 @@ var _ = Describe("Rate Limit Fallback", func() {
 		})
 	})
 
+	Describe("resolveWithoutAPI", func() {
+		plat := platform.Platform{OS: "linux", Arch: "amd64"}
+		pkg := types.Package{
+			Name:          "postgres",
+			Repo:          "flanksource/mission-control-plugins",
+			ChecksumFile:  "{{.tag}}_checksums.txt",
+			AssetPatterns: map[string]string{"linux-amd64": "postgres_{{.tag}}_linux_amd64.tar.gz"},
+		}
+
+		It("resolves a pinned version with no REST API call", func() {
+			res, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "v1.7.1", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.DownloadURL).To(Equal("https://github.com/flanksource/mission-control-plugins/releases/download/v1.7.1/postgres_v1.7.1_linux_amd64.tar.gz"))
+			Expect(res.ChecksumURL).To(Equal("https://github.com/flanksource/mission-control-plugins/releases/download/v1.7.1/v1.7.1_checksums.txt"))
+		})
+
+		It("derives the v-prefixed tag for a bare pinned version", func() {
+			res, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "1.7.1", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.DownloadURL).To(ContainSubstring("/download/v1.7.1/postgres_v1.7.1_linux_amd64.tar.gz"))
+		})
+
+		It("defers 'stable' to the REST path", func() {
+			_, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "stable", plat)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
 	Describe("isRateLimitError", func() {
 		It("should detect rate limit messages in error string", func() {
 			Expect(isRateLimitError(fmt.Errorf("API rate limit exceeded"))).To(BeTrue())

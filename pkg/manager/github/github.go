@@ -170,24 +170,32 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	}
 	owner, repo := parts[0], parts[1]
 
-	// No-API fast path for "latest": packages with deterministic asset_patterns and a
-	// checksum_file can be fully resolved without touching the rate-limited REST API.
-	// The tag is resolved via the releases/latest redirect and the checksum comes from
-	// the configured checksum_file (a release asset), so no api.github.com call is made.
-	if version == "latest" && m.canResolveWithoutAPI(pkg, plat) {
-		if resolution, err := m.resolveLatestWithoutAPI(ctx, pkg, owner, repo, plat); err == nil {
-			logger.V(3).Infof("Resolved %s@latest without REST API", pkg.Name)
+	// No-API fast path: packages with a deterministic asset pattern and a checksum_file can
+	// be resolved entirely without the rate-limited REST API — the download URL is computed
+	// from the pattern and the checksum comes from the checksum_file. Covers both "latest"
+	// (tag via the releases/latest redirect) and pinned versions (tag derived from version).
+	if m.canResolveWithoutAPI(pkg, plat) {
+		if resolution, err := m.resolveWithoutAPI(ctx, pkg, owner, repo, version, plat); err == nil {
+			logger.V(3).Infof("Resolved %s@%s without REST API", pkg.Name, version)
 			return resolution, nil
 		} else {
-			logger.V(3).Infof("No-API latest resolution failed for %s: %v, falling back to REST API", pkg.Name, err)
+			logger.V(3).Infof("No-API resolution failed for %s@%s: %v, falling back to REST API", pkg.Name, version, err)
 		}
 	}
 
-	// Fast path: use REST API for "latest" when no url_template is configured
+	// Fast path for "latest" (no url_template). Resolve the concrete tag via the
+	// releases/latest redirect first (no API) so the single REST call is only for the
+	// asset list + digest (the checksum), never for the tag itself.
 	var tagName string
 	if version == "latest" && pkg.URLTemplate == "" {
-		logger.V(3).Infof("Using REST API fast path for latest release of %s/%s", owner, repo)
-		release, err := m.fetchReleaseViaREST(ctx, owner, repo, "latest")
+		endpoint := "latest"
+		if tag, rerr := ResolveLatestTagViaRedirect(ctx, owner, repo); rerr == nil {
+			endpoint = "tags/" + tag
+			logger.V(3).Infof("Resolved %s/%s latest -> %s via redirect (tag without API)", owner, repo, tag)
+		} else {
+			logger.V(3).Infof("latest redirect failed for %s/%s: %v, using REST 'latest'", owner, repo, rerr)
+		}
+		release, err := m.fetchReleaseViaREST(ctx, owner, repo, endpoint)
 		if err == nil {
 			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
 			if buildErr == nil {
@@ -1053,22 +1061,34 @@ func (m *GitHubReleaseManager) canResolveWithoutAPI(pkg types.Package, plat plat
 		m.hasNonWildcardAssetPattern(pkg, plat)
 }
 
-// resolveLatestWithoutAPI resolves "latest" without the REST API by finding the tag via
-// the releases/latest redirect and building a deterministic resolution whose checksum
-// comes from the configured checksum_file. Returns an error (to fall back to the REST
-// path) if the tag can't be resolved or no checksum source could be derived.
-func (m *GitHubReleaseManager) resolveLatestWithoutAPI(ctx context.Context, pkg types.Package, owner, repo string, plat platform.Platform) (*types.Resolution, error) {
-	tag, err := ResolveLatestTagViaRedirect(ctx, owner, repo)
+// resolveWithoutAPI resolves a version entirely off the REST API for packages that have a
+// deterministic asset pattern and a checksum_file. The tag comes from the releases/latest
+// redirect for "latest", or is derived from the version for pinned versions; the checksum
+// comes from the checksum_file. Returns an error (so the caller falls back to the REST
+// path) for "stable" (needs the release list) or when no checksum source could be derived.
+func (m *GitHubReleaseManager) resolveWithoutAPI(ctx context.Context, pkg types.Package, owner, repo, version string, plat platform.Platform) (*types.Resolution, error) {
+	var resolution *types.Resolution
+	var err error
+
+	switch version {
+	case "latest", "":
+		tag, tagErr := ResolveLatestTagViaRedirect(ctx, owner, repo)
+		if tagErr != nil {
+			return nil, tagErr
+		}
+		logger.V(3).Infof("Resolved latest tag for %s/%s via redirect: %s (no API)", owner, repo, tag)
+		resolution, err = m.buildDeterministicResolution(pkg, versionpkg.Normalize(tag), tag, plat)
+	case "stable":
+		// "stable" needs the release list to pick the first non-prerelease; defer to REST.
+		return nil, fmt.Errorf("no-API path does not support %q", version)
+	default:
+		// Pinned version: derive the tag (typically "v"+version) and build deterministically.
+		resolution, err = m.buildFallbackResolution(pkg, version, plat)
+	}
+
 	if err != nil {
 		return nil, err
 	}
-	logger.V(3).Infof("Resolved latest tag for %s/%s via redirect: %s (no API)", owner, repo, tag)
-
-	resolution, err := m.buildDeterministicResolution(pkg, versionpkg.Normalize(tag), tag, plat)
-	if err != nil {
-		return nil, err
-	}
-
 	if resolution.ChecksumURL == "" && resolution.Checksum == "" {
 		return nil, fmt.Errorf("could not derive checksum source for %s from checksum_file", pkg.Name)
 	}
