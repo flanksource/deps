@@ -1011,7 +1011,20 @@ func (m *GitHubReleaseManager) handleRateLimitFallback(ctx context.Context, pkg 
 		versionForTemplate = fallbackVersion
 	}
 
-	// Build resolution without checksum
+	// "latest" with no concrete fallback_version has no version to template — deriving a
+	// tag as "v"+"latest" would produce a bogus "vlatest" download URL. Resolve the real
+	// tag via the releases/latest redirect instead (still no REST API call).
+	if versionForTemplate == "latest" || versionForTemplate == "" {
+		parts := strings.Split(pkg.Repo, "/")
+		if len(parts) == 2 {
+			if tag, tagErr := ResolveLatestTagViaRedirect(ctx, parts[0], parts[1]); tagErr == nil {
+				return m.buildDeterministicResolution(pkg, versionpkg.Normalize(tag), tag, plat)
+			}
+		}
+		return nil, fmt.Errorf("rate limited and could not resolve a concrete version for fallback: %w", originalErr)
+	}
+
+	// Build resolution from the concrete fallback version
 	return m.buildFallbackResolution(pkg, versionForTemplate, plat)
 }
 
