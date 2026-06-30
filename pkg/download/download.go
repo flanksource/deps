@@ -323,6 +323,37 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 	}
 }
 
+// resolveConfiguredChecksum fetches the expected checksum from the configured checksum
+// URL(s) when no literal checksum was provided. fileURL identifies which entry to match
+// in a multi-file checksum list (matched by basename). Returns ok=false when no checksum
+// URL is configured or the fetch/parse fails (e.g. offline), so callers can fall back to
+// the existing no-checksum behavior rather than hard-failing.
+func resolveConfiguredChecksum(config *downloadConfig, fileURL string, t *task.Task) (formatted, checksumType string, ok bool) {
+	switch {
+	case config.checksumURL != "":
+		value, ctype, sources, err := fetchChecksumFromURL(config.checksumURL, fileURL, t, config.timeout)
+		if err != nil {
+			return "", "", false
+		}
+		if config.checksumSource == "" {
+			config.checksumSource = strings.Join(sources, ",")
+		}
+		return checksum.FormatChecksum(value, checksum.HashType(ctype)), ctype, true
+	case len(config.checksumURLs) > 0:
+		value, ctype, _, sources, err := fetchChecksumFromMultipleURLs(
+			config.checksumURLs, config.checksumNames, config.checksumExpr, fileURL, config.os, config.arch, t, config.timeout)
+		if err != nil {
+			return "", "", false
+		}
+		if config.checksumSource == "" {
+			config.checksumSource = strings.Join(sources, ",")
+		}
+		return checksum.FormatChecksum(value, checksum.HashType(ctype)), ctype, true
+	default:
+		return "", "", false
+	}
+}
+
 // Download downloads a file with optional configuration
 func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	// Parse options
@@ -341,6 +372,18 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	if cachePath, isCached := cache.IsCached(config.cacheDir, url, filename); isCached {
 		if t != nil {
 			t.V(3).Infof("Found in cache: %s", cachePath)
+		}
+
+		// If no literal checksum was provided but a checksum URL/file is configured,
+		// fetch it now so cached files are validated too — not just fresh downloads.
+		// (matches by basename of the original asset URL).
+		if config.expectedChecksum == "" {
+			if formatted, ctype, ok := resolveConfiguredChecksum(config, url, t); ok {
+				config.expectedChecksum = formatted
+				if config.checksumType == "" {
+					config.checksumType = ctype
+				}
+			}
 		}
 
 		// If we have a checksum, validate cached file
