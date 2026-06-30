@@ -47,11 +47,8 @@ func gitRefsURL(owner, repo string) string {
 	return u.String()
 }
 
-// ResolveLatestTagViaRedirect resolves the "latest" release tag without using the
-// rate-limited GitHub REST API.
-//
-// GitHub serves https://github.com/{owner}/{repo}/releases/latest
-// as a 302 redirect to .../releases/tag/{tag}; this reads that redirect's Location header.
+// ResolveLatestTagViaRedirect resolves the "latest" tag with no REST API call by reading
+// the Location header of the github.com/{owner}/{repo}/releases/latest 302 redirect.
 func ResolveLatestTagViaRedirect(ctx context.Context, owner, repo string) (string, error) {
 	releaseURL := fmt.Sprintf("https://github.com/%s/%s/releases/latest", owner, repo)
 

@@ -323,35 +323,36 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 	}
 }
 
-// resolveConfiguredChecksum fetches the expected checksum from the configured checksum
-// URL(s) when no literal checksum was provided. fileURL identifies which entry to match
-// in a multi-file checksum list (matched by basename). Returns ok=false when no checksum
-// URL is configured or the fetch/parse fails (e.g. offline), so callers can fall back to
-// the existing no-checksum behavior rather than hard-failing.
-func resolveConfiguredChecksum(config *downloadConfig, fileURL string, t *task.Task) (formatted, checksumType string, ok bool) {
+// getChecksum returns the expected checksum and hash type: the inline value if set,
+// otherwise fetched from the configured checksum URL/file. Empty if none or the fetch fails.
+func getChecksum(config *downloadConfig, fileURL string, t *task.Task) (value, hashType string) {
+	// Inline checksum already provided — nothing to fetch.
+	if config.expectedChecksum != "" {
+		return config.expectedChecksum, config.checksumType
+	}
+
 	switch {
 	case config.checksumURL != "":
-		value, ctype, sources, err := fetchChecksumFromURL(config.checksumURL, fileURL, t, config.timeout)
+		v, ct, sources, err := fetchChecksumFromURL(config.checksumURL, fileURL, t, config.timeout)
 		if err != nil {
-			return "", "", false
+			return "", ""
 		}
 		if config.checksumSource == "" {
 			config.checksumSource = strings.Join(sources, ",")
 		}
-		return checksum.FormatChecksum(value, checksum.HashType(ctype)), ctype, true
+		return checksum.FormatChecksum(v, checksum.HashType(ct)), ct
 	case len(config.checksumURLs) > 0:
-		value, ctype, _, sources, err := fetchChecksumFromMultipleURLs(
+		v, ct, _, sources, err := fetchChecksumFromMultipleURLs(
 			config.checksumURLs, config.checksumNames, config.checksumExpr, fileURL, config.os, config.arch, t, config.timeout)
 		if err != nil {
-			return "", "", false
+			return "", ""
 		}
 		if config.checksumSource == "" {
 			config.checksumSource = strings.Join(sources, ",")
 		}
-		return checksum.FormatChecksum(value, checksum.HashType(ctype)), ctype, true
-	default:
-		return "", "", false
+		return checksum.FormatChecksum(v, checksum.HashType(ct)), ct
 	}
+	return "", ""
 }
 
 // Download downloads a file with optional configuration
@@ -374,15 +375,11 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 			t.V(3).Infof("Found in cache: %s", cachePath)
 		}
 
-		// If no literal checksum was provided but a checksum URL/file is configured,
-		// fetch it now so cached files are validated too — not just fresh downloads.
-		// (matches by basename of the original asset URL).
-		if config.expectedChecksum == "" {
-			if formatted, ctype, ok := resolveConfiguredChecksum(config, url, t); ok {
-				config.expectedChecksum = formatted
-				if config.checksumType == "" {
-					config.checksumType = ctype
-				}
+		// Validate cached files just like fresh downloads.
+		if value, hashType := getChecksum(config, url, t); value != "" {
+			config.expectedChecksum = value
+			if hashType != "" {
+				config.checksumType = hashType
 			}
 		}
 
