@@ -170,6 +170,19 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	}
 	owner, repo := parts[0], parts[1]
 
+	// No-API fast path for "latest": packages with deterministic asset_patterns and a
+	// checksum_file can be fully resolved without touching the rate-limited REST API.
+	// The tag is resolved via the releases/latest redirect and the checksum comes from
+	// the configured checksum_file (a release asset), so no api.github.com call is made.
+	if version == "latest" && m.canResolveWithoutAPI(pkg, plat) {
+		if resolution, err := m.resolveLatestWithoutAPI(ctx, pkg, owner, repo, plat); err == nil {
+			logger.V(3).Infof("Resolved %s@latest without REST API", pkg.Name)
+			return resolution, nil
+		} else {
+			logger.V(3).Infof("No-API latest resolution failed for %s: %v, falling back to REST API", pkg.Name, err)
+		}
+	}
+
 	// Fast path: use REST API for "latest" when no url_template is configured
 	var tagName string
 	if version == "latest" && pkg.URLTemplate == "" {
@@ -434,6 +447,14 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 	// Set checksum from digest if available
 	if matched.Digest != "" {
 		resolution.Checksum = matched.Digest // Already in "sha256:..." format from REST API
+	}
+
+	// Wire checksum_file as a checksum source (used when the asset has no digest, and
+	// keeps verification possible without the REST API on subsequent installs).
+	if resolution.Checksum == "" && pkg.ChecksumFile != "" {
+		if checksumURL := m.buildChecksumURL(pkg, matched.Name, version, tagName, plat); checksumURL != "" {
+			resolution.ChecksumURL = checksumURL
+		}
 	}
 
 	if resolution.IsArchive {
@@ -956,8 +977,11 @@ func isRateLimitError(err error) bool {
 // If strict checksum mode is enabled, it returns the error. Otherwise, it builds
 // a resolution without checksum using the fallback version and url_template or asset_patterns.
 func (m *GitHubReleaseManager) handleRateLimitFallback(ctx context.Context, pkg types.Package, version string, plat platform.Platform, originalErr error) (*types.Resolution, error) {
-	// Check if strict checksum mode is enabled
-	if manager.GetStrictChecksum(ctx) {
+	// Strict checksum mode requires a verifiable checksum. The REST API (the usual
+	// source via the asset digest) is rate limited, but a configured checksum_file is
+	// fetched directly from the release assets and is not rate limited — so strict mode
+	// can still be honored when checksum_file is set.
+	if manager.GetStrictChecksum(ctx) && pkg.ChecksumFile == "" {
 		return nil, fmt.Errorf("rate limited and --strict-checksum requires checksum verification: %w", originalErr)
 	}
 
@@ -975,7 +999,11 @@ func (m *GitHubReleaseManager) handleRateLimitFallback(ctx context.Context, pkg 
 		return nil, fmt.Errorf("rate limited and no url_template or asset_patterns configured for fallback: %w", originalErr)
 	}
 
-	logger.Warnf("GitHub rate limited, using fallback version '%s' without checksum verification", fallbackVersion)
+	if pkg.ChecksumFile != "" {
+		logger.Warnf("GitHub rate limited, using fallback version '%s' (checksum verified via checksum_file)", fallbackVersion)
+	} else {
+		logger.Warnf("GitHub rate limited, using fallback version '%s' without checksum verification", fallbackVersion)
+	}
 
 	// Use the requested version for templating if it looks like a specific version
 	versionForTemplate := version
@@ -1001,8 +1029,85 @@ func (m *GitHubReleaseManager) hasNonWildcardAssetPattern(pkg types.Package, pla
 	return !strings.Contains(pattern, "*") && !strings.Contains(pattern, "?")
 }
 
-// buildFallbackResolution builds a resolution using url_template or asset_patterns without checksum
+// canResolveWithoutAPI reports whether a package can be fully resolved without the
+// rate-limited REST API: it needs a deterministic (non-wildcard) asset pattern for the
+// platform to build the download URL, and a checksum_file to verify it. Packages relying
+// on version_expr/version_fallback transforms keep using the REST path for correctness.
+func (m *GitHubReleaseManager) canResolveWithoutAPI(pkg types.Package, plat platform.Platform) bool {
+	return pkg.ChecksumFile != "" &&
+		pkg.VersionExpr == "" &&
+		pkg.VersionFallback == "" &&
+		m.hasNonWildcardAssetPattern(pkg, plat)
+}
+
+// resolveLatestWithoutAPI resolves "latest" without the REST API by finding the tag via
+// the releases/latest redirect and building a deterministic resolution whose checksum
+// comes from the configured checksum_file. Returns an error (to fall back to the REST
+// path) if the tag can't be resolved or no checksum source could be derived.
+func (m *GitHubReleaseManager) resolveLatestWithoutAPI(ctx context.Context, pkg types.Package, owner, repo string, plat platform.Platform) (*types.Resolution, error) {
+	tag, err := ResolveLatestTagViaRedirect(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	logger.V(3).Infof("Resolved latest tag for %s/%s via redirect: %s (no API)", owner, repo, tag)
+
+	resolution, err := m.buildDeterministicResolution(pkg, versionpkg.Normalize(tag), tag, plat)
+	if err != nil {
+		return nil, err
+	}
+
+	if resolution.ChecksumURL == "" && resolution.Checksum == "" {
+		return nil, fmt.Errorf("could not derive checksum source for %s from checksum_file", pkg.Name)
+	}
+
+	return resolution, nil
+}
+
+// buildChecksumURL constructs the checksum file URL from pkg.ChecksumFile. ChecksumFile
+// may be a CEL expression, a Go template, a full URL, or (most commonly for github_release)
+// a release asset filename, in which case it is resolved to the release's download URL.
+func (m *GitHubReleaseManager) buildChecksumURL(pkg types.Package, assetName, version, tag string, plat platform.Platform) string {
+	if pkg.ChecksumFile == "" {
+		return ""
+	}
+
+	checksumFile, err := depstemplate.EvaluateCELOrTemplate(pkg.ChecksumFile, map[string]interface{}{
+		"os":      plat.OS,
+		"arch":    plat.Arch,
+		"name":    pkg.Name,
+		"version": depstemplate.NormalizeVersion(version),
+		"tag":     tag,
+		"asset":   assetName,
+	})
+	if err != nil || checksumFile == "" {
+		logger.V(4).Infof("Failed to evaluate checksum_file %q for %s: %v", pkg.ChecksumFile, pkg.Name, err)
+		return ""
+	}
+
+	// Already a full URL (e.g. external checksum host) - use as-is.
+	if hasURLSchema(checksumFile) {
+		return checksumFile
+	}
+
+	// Otherwise it is a release asset name - build the GitHub release download URL.
+	return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", pkg.Repo, tag, checksumFile)
+}
+
+// buildFallbackResolution builds a resolution using url_template or asset_patterns when the
+// REST API is unavailable, deriving the tag from the version using the conventional
+// "v"+version GitHub tag format.
 func (m *GitHubReleaseManager) buildFallbackResolution(pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
+	tagName := version
+	if !strings.HasPrefix(version, "v") {
+		tagName = "v" + version
+	}
+	return m.buildDeterministicResolution(pkg, version, tagName, plat)
+}
+
+// buildDeterministicResolution builds a resolution from a known tag using url_template or
+// asset_patterns, without any REST API call. When checksum_file is configured it also wires
+// the checksum URL so verification (including strict mode) works without the asset digest.
+func (m *GitHubReleaseManager) buildDeterministicResolution(pkg types.Package, version, tagName string, plat platform.Platform) (*types.Resolution, error) {
 	// Get the asset pattern for this platform
 	assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
 	if err != nil {
@@ -1014,12 +1119,6 @@ func (m *GitHubReleaseManager) buildFallbackResolution(pkg types.Package, versio
 	}
 	if assetPattern == "" {
 		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
-	}
-
-	// Determine tag name (typically "v" + version for GitHub releases)
-	tagName := version
-	if !strings.HasPrefix(version, "v") {
-		tagName = "v" + version
 	}
 
 	normalizedVersion := versionpkg.Normalize(version)
@@ -1059,14 +1158,20 @@ func (m *GitHubReleaseManager) buildFallbackResolution(pkg types.Package, versio
 		Platform:    plat,
 		DownloadURL: downloadURL,
 		IsArchive:   isArchiveFile(downloadURL),
-		// No checksum - rate limit fallback
+	}
+
+	// Wire checksum_file -> ChecksumURL so verification works without the REST API digest.
+	if pkg.ChecksumFile != "" {
+		if checksumURL := m.buildChecksumURL(pkg, templatedPattern, normalizedVersion, tagName, plat); checksumURL != "" {
+			resolution.ChecksumURL = checksumURL
+		}
 	}
 
 	if resolution.IsArchive {
 		resolution.BinaryPath = m.guessBinaryPath(pkg, templatedPattern, plat)
 	}
 
-	logger.Debugf("Fallback resolved %s (no checksum)", resolution.Pretty().ANSI())
+	logger.Debugf("Resolved %s", resolution.Pretty().ANSI())
 	return resolution, nil
 }
 

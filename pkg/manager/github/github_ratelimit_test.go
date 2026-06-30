@@ -82,6 +82,20 @@ var _ = Describe("Rate Limit Fallback", func() {
 				Expect(resolution.Checksum).To(BeEmpty())
 			})
 
+			It("should honor strict checksum via checksum_file without the REST API", func() {
+				pkg.URLTemplate = ""
+				pkg.AssetPatterns = map[string]string{
+					"linux-amd64": "test-tool_{{.tag}}_linux_amd64.tar.gz",
+				}
+				pkg.ChecksumFile = "{{.tag}}_checksums.txt"
+				strictCtx := manager.WithStrictChecksum(ctx, true)
+				resolution, err := mgr.handleRateLimitFallback(strictCtx, pkg, "1.0.0", plat, rateLimitErr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resolution).ToNot(BeNil())
+				Expect(resolution.DownloadURL).To(Equal("https://github.com/owner/test-tool/releases/download/v1.0.0/test-tool_v1.0.0_linux_amd64.tar.gz"))
+				Expect(resolution.ChecksumURL).To(Equal("https://github.com/owner/test-tool/releases/download/v1.0.0/v1.0.0_checksums.txt"))
+			})
+
 			It("should fail when no url_template and no asset_patterns configured", func() {
 				pkg.URLTemplate = ""
 				pkg.AssetPatterns = nil
@@ -134,6 +148,50 @@ var _ = Describe("Rate Limit Fallback", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resolution.IsArchive).To(BeTrue())
 			Expect(resolution.BinaryPath).ToNot(BeEmpty())
+		})
+	})
+
+	Describe("canResolveWithoutAPI", func() {
+		plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+		It("should be true for deterministic asset_patterns with a checksum_file", func() {
+			pkg := types.Package{
+				Name:          "postgres",
+				Repo:          "flanksource/mission-control-plugins",
+				ChecksumFile:  "{{.tag}}_checksums.txt",
+				AssetPatterns: map[string]string{"linux-amd64": "postgres_{{.tag}}_linux_amd64.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeTrue())
+		})
+
+		It("should be false without a checksum_file", func() {
+			pkg := types.Package{
+				Name:          "postgres",
+				Repo:          "flanksource/mission-control-plugins",
+				AssetPatterns: map[string]string{"linux-amd64": "postgres_{{.tag}}_linux_amd64.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeFalse())
+		})
+
+		It("should be false for wildcard asset_patterns", func() {
+			pkg := types.Package{
+				Name:          "tool",
+				Repo:          "owner/tool",
+				ChecksumFile:  "{{.tag}}_checksums.txt",
+				AssetPatterns: map[string]string{"*": "tool-*-{{.os}}-{{.arch}}.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeFalse())
+		})
+
+		It("should be false when version_expr is configured", func() {
+			pkg := types.Package{
+				Name:          "tool",
+				Repo:          "owner/tool",
+				ChecksumFile:  "{{.tag}}_checksums.txt",
+				VersionExpr:   "version",
+				AssetPatterns: map[string]string{"linux-amd64": "tool_{{.tag}}_linux_amd64.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeFalse())
 		})
 	})
 
