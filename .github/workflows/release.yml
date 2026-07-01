@@ -4,39 +4,24 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
+permissions: {} # start with no permission
 
 env:
   GO_VERSION: "1.26.x"
 
 jobs:
-  semantic-release:
-    name: Semantic Release
+  create-release:
+    name: Create Release
     permissions:
       contents: write
       issues: write
       pull-requests: write
-    runs-on: ubuntu-latest
-    outputs:
-      release-version: ${{ steps.semantic.outputs.release-version }}
-      new-release-published: ${{ steps.semantic.outputs.new-release-published }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
-
-      - name: Create draft release
-        uses: codfish/semantic-release-action@6abd188d2458e2fd6c99073454f6cc49196362e8 # v5.0.0
-        id: semantic
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    uses: flanksource/action-workflows/.github/workflows/create-release.yml@main
 
   binary:
     name: Build binaries
-    if: needs.semantic-release.outputs.new-release-published == 'true'
-    needs: semantic-release
+    if: needs.create-release.outputs.published == 'true'
+    needs: create-release
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -53,18 +38,18 @@ jobs:
       - name: Build release assets
         run: make release
         env:
-          VERSION: ${{ needs.semantic-release.outputs.release-version }}
+          VERSION: ${{ needs.create-release.outputs.version }}
 
       - name: Upload binaries to draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ needs.semantic-release.outputs.release-version }}
+          TAG: v${{ needs.create-release.outputs.version }}
         run: gh release upload "$TAG" ./.release/* --clobber --repo "${{ github.repository }}"
 
   publish-release:
     name: Publish Release
-    if: needs.semantic-release.outputs.new-release-published == 'true'
-    needs: [semantic-release, binary]
+    if: needs.create-release.outputs.published == 'true'
+    needs: [create-release, binary]
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -72,5 +57,5 @@ jobs:
       - name: Publish draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: v${{ needs.semantic-release.outputs.release-version }}
+          TAG: v${{ needs.create-release.outputs.version }}
         run: gh release edit "$TAG" --draft=false --repo "${{ github.repository }}"
