@@ -47,6 +47,52 @@ func gitRefsURL(owner, repo string) string {
 	return u.String()
 }
 
+// ResolveLatestTagViaRedirect resolves the "latest" tag with no REST API call by reading
+// the Location header of the github.com/{owner}/{repo}/releases/latest 302 redirect.
+func ResolveLatestTagViaRedirect(ctx context.Context, owner, repo string) (string, error) {
+	releaseURL := fmt.Sprintf("https://github.com/%s/%s/releases/latest", owner, repo)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, releaseURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "flanksource/deps")
+
+	client := gitRefsHTTPClient()
+	// Capture the redirect instead of following it (following it would hit the
+	// rendered release page, but the tag is already in the Location header).
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve latest release: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusMovedPermanently {
+		return "", fmt.Errorf("unexpected status %d resolving latest release for %s/%s", resp.StatusCode, owner, repo)
+	}
+
+	const marker = "/releases/tag/"
+	location := resp.Header.Get("Location")
+	idx := strings.LastIndex(location, marker)
+	if idx == -1 {
+		return "", fmt.Errorf("unexpected redirect target %q resolving latest release for %s/%s", location, owner, repo)
+	}
+
+	tag := strings.Trim(location[idx+len(marker):], "/")
+	if decoded, decErr := url.PathUnescape(tag); decErr == nil {
+		tag = decoded
+	}
+	if tag == "" {
+		return "", fmt.Errorf("empty tag in redirect target %q for %s/%s", location, owner, repo)
+	}
+
+	return tag, nil
+}
+
 // DiscoverVersionsViaGit fetches tags from a GitHub repository using the git HTTP protocol.
 // This avoids GitHub API rate limits by using the git-upload-pack protocol.
 // URL format: https://github.com/{owner}/{repo}.git/info/refs?service=git-upload-pack

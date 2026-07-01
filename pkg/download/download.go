@@ -323,6 +323,38 @@ func fetchChecksumFromMultipleURLs(checksumURLs []string, checksumNames []string
 	}
 }
 
+// getChecksum returns the expected checksum and hash type: the inline value if set,
+// otherwise fetched from the configured checksum URL/file. Empty if none or the fetch fails.
+func getChecksum(config *downloadConfig, fileURL string, t *task.Task) (value, hashType string) {
+	// Inline checksum already provided — nothing to fetch.
+	if config.expectedChecksum != "" {
+		return config.expectedChecksum, config.checksumType
+	}
+
+	switch {
+	case config.checksumURL != "":
+		v, ct, sources, err := fetchChecksumFromURL(config.checksumURL, fileURL, t, config.timeout)
+		if err != nil {
+			return "", ""
+		}
+		if config.checksumSource == "" {
+			config.checksumSource = strings.Join(sources, ",")
+		}
+		return checksum.FormatChecksum(v, checksum.HashType(ct)), ct
+	case len(config.checksumURLs) > 0:
+		v, ct, _, sources, err := fetchChecksumFromMultipleURLs(
+			config.checksumURLs, config.checksumNames, config.checksumExpr, fileURL, config.os, config.arch, t, config.timeout)
+		if err != nil {
+			return "", ""
+		}
+		if config.checksumSource == "" {
+			config.checksumSource = strings.Join(sources, ",")
+		}
+		return checksum.FormatChecksum(v, checksum.HashType(ct)), ct
+	}
+	return "", ""
+}
+
 // Download downloads a file with optional configuration
 func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	// Parse options
@@ -341,6 +373,14 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	if cachePath, isCached := cache.IsCached(config.cacheDir, url, filename); isCached {
 		if t != nil {
 			t.V(3).Infof("Found in cache: %s", cachePath)
+		}
+
+		// Validate cached files just like fresh downloads.
+		if value, hashType := getChecksum(config, url, t); value != "" {
+			config.expectedChecksum = value
+			if hashType != "" {
+				config.checksumType = hashType
+			}
 		}
 
 		// If we have a checksum, validate cached file

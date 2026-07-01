@@ -47,6 +47,17 @@ var _ = Describe("Rate Limit Fallback", func() {
 				Expect(err.Error()).To(ContainSubstring("strict-checksum"))
 				Expect(resolution).To(BeNil())
 			})
+
+			It("should fail when checksum_file is set but yields no checksum URL", func() {
+				pkg.URLTemplate = ""
+				pkg.AssetPatterns = map[string]string{"linux-amd64": "test-tool_{{.tag}}_linux_amd64.tar.gz"}
+				pkg.ChecksumFile = `{{ "" }}` // evaluates to empty -> no checksum URL
+				strictCtx := manager.WithStrictChecksum(ctx, true)
+				resolution, err := mgr.handleRateLimitFallback(strictCtx, pkg, "1.0.0", plat, rateLimitErr)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("strict-checksum"))
+				Expect(resolution).To(BeNil())
+			})
 		})
 
 		Context("with strict checksum disabled", func() {
@@ -80,6 +91,20 @@ var _ = Describe("Rate Limit Fallback", func() {
 				Expect(resolution).ToNot(BeNil())
 				Expect(resolution.DownloadURL).To(Equal("https://github.com/owner/test-tool/releases/download/v1.0.0/test-tool-linux-amd64.tar.gz"))
 				Expect(resolution.Checksum).To(BeEmpty())
+			})
+
+			It("should honor strict checksum via checksum_file without the REST API", func() {
+				pkg.URLTemplate = ""
+				pkg.AssetPatterns = map[string]string{
+					"linux-amd64": "test-tool_{{.tag}}_linux_amd64.tar.gz",
+				}
+				pkg.ChecksumFile = "{{.tag}}_checksums.txt"
+				strictCtx := manager.WithStrictChecksum(ctx, true)
+				resolution, err := mgr.handleRateLimitFallback(strictCtx, pkg, "1.0.0", plat, rateLimitErr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resolution).ToNot(BeNil())
+				Expect(resolution.DownloadURL).To(Equal("https://github.com/owner/test-tool/releases/download/v1.0.0/test-tool_v1.0.0_linux_amd64.tar.gz"))
+				Expect(resolution.ChecksumURL).To(Equal("https://github.com/owner/test-tool/releases/download/v1.0.0/v1.0.0_checksums.txt"))
 			})
 
 			It("should fail when no url_template and no asset_patterns configured", func() {
@@ -134,6 +159,100 @@ var _ = Describe("Rate Limit Fallback", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resolution.IsArchive).To(BeTrue())
 			Expect(resolution.BinaryPath).ToNot(BeEmpty())
+		})
+	})
+
+	Describe("buildChecksumURL", func() {
+		plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+		It("builds a release download URL from a checksum_file asset name", func() {
+			pkg := types.Package{Name: "postgres", Repo: "flanksource/mission-control-plugins", ChecksumFile: "{{.tag}}_checksums.txt"}
+			Expect(mgr.buildChecksumURL(pkg, "postgres_v1.7.1_linux_amd64.tar.gz", "1.7.1", "v1.7.1", plat)).
+				To(Equal("https://github.com/flanksource/mission-control-plugins/releases/download/v1.7.1/v1.7.1_checksums.txt"))
+		})
+
+		It("builds a comma-separated list for multiple checksum files", func() {
+			pkg := types.Package{Name: "tool", Repo: "o/r", ChecksumFile: "{{.tag}}_checksums.txt, {{.tag}}_sha512.txt"}
+			Expect(mgr.buildChecksumURL(pkg, "tool_linux_amd64.tar.gz", "1.0.0", "v1.0.0", plat)).
+				To(Equal("https://github.com/o/r/releases/download/v1.0.0/v1.0.0_checksums.txt,https://github.com/o/r/releases/download/v1.0.0/v1.0.0_sha512.txt"))
+		})
+
+		It("uses a full checksum URL as-is", func() {
+			pkg := types.Package{Name: "tool", Repo: "o/r", ChecksumFile: "https://example.com/{{.tag}}/checksums.txt"}
+			Expect(mgr.buildChecksumURL(pkg, "tool.tar.gz", "1.0.0", "v1.0.0", plat)).
+				To(Equal("https://example.com/v1.0.0/checksums.txt"))
+		})
+	})
+
+	Describe("canResolveWithoutAPI", func() {
+		plat := platform.Platform{OS: "linux", Arch: "amd64"}
+
+		It("should be true for deterministic asset_patterns with a checksum_file", func() {
+			pkg := types.Package{
+				Name:          "postgres",
+				Repo:          "flanksource/mission-control-plugins",
+				ChecksumFile:  "{{.tag}}_checksums.txt",
+				AssetPatterns: map[string]string{"linux-amd64": "postgres_{{.tag}}_linux_amd64.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeTrue())
+		})
+
+		It("should be false without a checksum_file", func() {
+			pkg := types.Package{
+				Name:          "postgres",
+				Repo:          "flanksource/mission-control-plugins",
+				AssetPatterns: map[string]string{"linux-amd64": "postgres_{{.tag}}_linux_amd64.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeFalse())
+		})
+
+		It("should be false for wildcard asset_patterns", func() {
+			pkg := types.Package{
+				Name:          "tool",
+				Repo:          "owner/tool",
+				ChecksumFile:  "{{.tag}}_checksums.txt",
+				AssetPatterns: map[string]string{"*": "tool-*-{{.os}}-{{.arch}}.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeFalse())
+		})
+
+		It("should be false when version_expr is configured", func() {
+			pkg := types.Package{
+				Name:          "tool",
+				Repo:          "owner/tool",
+				ChecksumFile:  "{{.tag}}_checksums.txt",
+				VersionExpr:   "version",
+				AssetPatterns: map[string]string{"linux-amd64": "tool_{{.tag}}_linux_amd64.tar.gz"},
+			}
+			Expect(mgr.canResolveWithoutAPI(pkg, plat)).To(BeFalse())
+		})
+	})
+
+	Describe("resolveWithoutAPI", func() {
+		plat := platform.Platform{OS: "linux", Arch: "amd64"}
+		pkg := types.Package{
+			Name:          "postgres",
+			Repo:          "flanksource/mission-control-plugins",
+			ChecksumFile:  "{{.tag}}_checksums.txt",
+			AssetPatterns: map[string]string{"linux-amd64": "postgres_{{.tag}}_linux_amd64.tar.gz"},
+		}
+
+		It("resolves a pinned version with no REST API call", func() {
+			res, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "v1.7.1", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.DownloadURL).To(Equal("https://github.com/flanksource/mission-control-plugins/releases/download/v1.7.1/postgres_v1.7.1_linux_amd64.tar.gz"))
+			Expect(res.ChecksumURL).To(Equal("https://github.com/flanksource/mission-control-plugins/releases/download/v1.7.1/v1.7.1_checksums.txt"))
+		})
+
+		It("derives the v-prefixed tag for a bare pinned version", func() {
+			res, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "1.7.1", plat)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(res.DownloadURL).To(ContainSubstring("/download/v1.7.1/postgres_v1.7.1_linux_amd64.tar.gz"))
+		})
+
+		It("defers 'stable' to the REST path", func() {
+			_, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "stable", plat)
+			Expect(err).To(HaveOccurred())
 		})
 	})
 
