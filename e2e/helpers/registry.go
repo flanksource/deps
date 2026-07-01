@@ -84,12 +84,14 @@ var platformExclusions = map[string][]string{
 	},
 	"linux-amd64": {
 		"aws-cli", // PyInstaller bundle missing libpython3.14.so
+		"graalvm", // GraalVM CE now tags releases graal-X.Y.Z (graal 25.1.3, jdk 25.0.3); version check reports the bundled JDK, not the tag
 		"tomee",   // Version check requires Java runtime
 	},
 	"linux-arm64": {
 		"aws-cli",       // PyInstaller bundle missing libpython3.14.so
 		"expenv",        // No linux-arm64 release
 		"gitlab-runner", // Build/asset issue on arm64
+		"graalvm",       // GraalVM CE now tags releases graal-X.Y.Z (graal 25.1.3, jdk 25.0.3); version check reports the bundled JDK, not the tag
 		"tomee",         // Version check requires Java runtime
 	},
 	"windows-amd64": {
