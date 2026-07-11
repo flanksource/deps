@@ -63,6 +63,53 @@ tasks:
       - GOOS=darwin GOARCH=arm64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-darwin-arm64 {{.MAIN_PATH}}
       - GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY_NAME}}-windows-amd64.exe {{.MAIN_PATH}}
 
+  build-start:
+    desc: Build the deps-start binary (start/ submodule)
+    dir: start
+    vars:
+      VERSION:
+        sh: git describe --tags --always 2>/dev/null || echo "dev"
+      COMMIT:
+        sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+      DATE:
+        sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
+      LDFLAGS: -s -w -X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}
+    cmds:
+      - mkdir -p ../{{.BUILD_DIR}}
+      - go build -ldflags "{{.LDFLAGS}}" -o ../{{.BUILD_DIR}}/deps-start ./cmd/deps-start
+    sources:
+      - "**/*.go"
+      - go.mod
+    generates:
+      - "../{{.BUILD_DIR}}/deps-start"
+
+  test-start:
+    desc: Run start/ submodule unit tests
+    dir: start
+    cmds:
+      - "{{.GINKGO}} -v --label-filter '!integration' ./..."
+    sources:
+      - "**/*.go"
+
+  test-start:integration:
+    desc: Run start/ submodule integration tests (needs docker)
+    dir: start
+    cmds:
+      - "{{.GINKGO}} -v --label-filter 'integration' ./..."
+
+  lint-start:
+    desc: Run golangci-lint on the start/ submodule
+    dir: start
+    cmds:
+      - golangci-lint run
+
+  tidy:
+    desc: Tidy all modules and sync the workspace
+    cmds:
+      - go mod tidy
+      - cd start && go mod tidy
+      - go work sync
+
   dup:
     desc: Run jscpd against production Go source
     cmds:

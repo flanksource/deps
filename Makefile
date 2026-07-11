@@ -66,6 +66,18 @@ build: $(TASK_BIN)
 build-all: $(TASK_BIN)
 	@$(TASK_BIN) build-all
 
+.PHONY: build-start
+build-start: $(TASK_BIN)
+	@$(TASK_BIN) build-start
+
+.PHONY: test-start
+test-start: $(TASK_BIN)
+	@$(TASK_BIN) test-start
+
+.PHONY: lint-start
+lint-start: $(TASK_BIN)
+	@$(TASK_BIN) lint-start
+
 .PHONY: linux
 linux:
 	mkdir -p .bin

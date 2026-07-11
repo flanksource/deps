@@ -1,0 +1,98 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
+	"github.com/flanksource/deps/start"
+)
+
+type rootFlags struct {
+	runtime     string
+	version     string
+	port        int
+	namespace   string
+	dataDir     string
+	stateDir    string
+	detach      bool
+	waitTimeout time.Duration
+	output      string
+}
+
+func newRootCmd() *cobra.Command {
+	flags := &rootFlags{}
+	cmd := &cobra.Command{
+		Use:     "deps-start <service>",
+		Short:   "Start services (postgres, opensearch, valkey, ...) via binary, docker or helm",
+		Long:    "deps-start launches services from the deps registry and prints a commons-db connection.\n\nAvailable services: " + strings.Join(start.ServiceNames(), ", "),
+		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runStart(cmd, args[0], flags)
+		},
+		SilenceUsage: true,
+	}
+	cmd.Flags().StringVar(&flags.runtime, "runtime", "", "runtime to use: binary, docker or helm (default: first supported)")
+	cmd.Flags().StringVar(&flags.version, "version-of", "", "service version to install/run (default: latest)")
+	cmd.Flags().IntVar(&flags.port, "port", 0, "host port override for the primary service port")
+	cmd.Flags().StringVarP(&flags.namespace, "namespace", "n", "default", "kubernetes namespace (helm runtime)")
+	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "service data directory override")
+	cmd.Flags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
+	cmd.Flags().BoolVarP(&flags.detach, "detach", "d", false, "run the service in the background")
+	cmd.Flags().DurationVar(&flags.waitTimeout, "wait-timeout", 2*time.Minute, "readiness wait timeout")
+	cmd.Flags().StringVarP(&flags.output, "output", "o", "yaml", "connection output format: yaml, json or env")
+
+	return cmd
+}
+
+func (f *rootFlags) options() []start.Option {
+	var opts []start.Option
+	if f.runtime != "" {
+		opts = append(opts, start.WithRuntime(start.RuntimeKind(f.runtime)))
+	}
+	if f.version != "" {
+		opts = append(opts, start.WithVersion(f.version))
+	}
+	if f.port != 0 {
+		opts = append(opts, start.WithPort(f.port))
+	}
+	if f.dataDir != "" {
+		opts = append(opts, start.WithDataDir(f.dataDir))
+	}
+	if f.stateDir != "" {
+		opts = append(opts, start.WithStateDir(f.stateDir))
+	}
+	opts = append(opts,
+		start.WithNamespace(f.namespace),
+		start.WithDetach(f.detach),
+		start.WithWaitTimeout(f.waitTimeout),
+	)
+	return opts
+}
+
+func runStart(cmd *cobra.Command, name string, flags *rootFlags) error {
+	instance, err := start.Start(cmd.Context(), name, flags.options()...)
+	if err != nil {
+		return err
+	}
+	if err := printConnection(instance, flags.output); err != nil {
+		return err
+	}
+	return instance.Wait(cmd.Context())
+}
+
+func printConnection(instance *start.Instance, format string) error {
+	switch format {
+	case "yaml":
+		return yaml.NewEncoder(os.Stdout).Encode(instance.Connection)
+	case "json", "env":
+		return fmt.Errorf("output format %q not implemented yet", format)
+	default:
+		return fmt.Errorf("unknown output format %q (yaml, json, env)", format)
+	}
+}

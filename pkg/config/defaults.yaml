@@ -801,15 +801,18 @@ registry:
         name: grafana
         repo: grafana/grafana
         manager: github_tags
+        mode: directory # grafana server needs --homepath with conf/ and public/
         url_template: 'https://grafana.com/api/grafana/versions/{{.version | strings.TrimPrefix "v"}}'
         assets_expr: |
             json.packages.filter(p, p.os == os && p.arch == arch).size() > 0 ? {
                 'url': json.packages.filter(p, p.os == os && p.arch == arch)[0].url,
                 'checksum': 'sha256:' + json.packages.filter(p, p.os == os && p.arch == arch)[0].sha256
             } : {}
-        version_command: --version
+        symlinks:
+            - bin/grafana
+            - bin/grafana-cli
+        version_command: bin/grafana --version
         version_regex: 'Version (\d+\.\d+\.\d+)'
-        binary_path: grafana
 
     localstack:
         name: localstack
@@ -822,6 +825,76 @@ registry:
             windows-amd64: localstack-cli-{{.version}}-windows-amd64-onefile.zip
         version_command: --version
         version_regex: 'localstack (\d+\.\d+\.\d+)'
+
+    elasticsearch:
+        name: elasticsearch
+        repo: elastic/elasticsearch
+        mode: directory
+        url_template: https://artifacts.elastic.co/downloads/elasticsearch/{{.asset}}
+        asset_patterns:
+            darwin-amd64: elasticsearch-{{.version}}-darwin-x86_64.tar.gz
+            darwin-arm64: elasticsearch-{{.version}}-darwin-aarch64.tar.gz
+            linux-amd64: elasticsearch-{{.version}}-linux-x86_64.tar.gz
+            linux-arm64: elasticsearch-{{.version}}-linux-aarch64.tar.gz
+        symlinks:
+            - bin/elasticsearch
+        version_command: bin/elasticsearch --version
+        version_regex: 'Version: (\d+\.\d+\.\d+)'
+
+    nats:
+        name: nats-server
+        repo: nats-io/nats-server
+        asset_patterns:
+            darwin-amd64: nats-server-{{.tag}}-darwin-amd64.zip
+            darwin-arm64: nats-server-{{.tag}}-darwin-arm64.zip
+            linux-amd64: nats-server-{{.tag}}-linux-amd64.zip
+            linux-arm64: nats-server-{{.tag}}-linux-arm64.zip
+            windows-amd64: nats-server-{{.tag}}-windows-amd64.zip
+        binary_path: nats-server-{{.tag}}-{{.os}}-{{.arch}}/nats-server
+        checksum_file: SHA256SUMS
+        version_command: --version
+        version_regex: 'nats-server: v(\d+\.\d+\.\d+)'
+
+    rclone:
+        name: rclone
+        repo: rclone/rclone
+        asset_patterns:
+            darwin-amd64: rclone-{{.tag}}-osx-amd64.zip
+            darwin-arm64: rclone-{{.tag}}-osx-arm64.zip
+            linux-amd64: rclone-{{.tag}}-linux-amd64.zip
+            linux-arm64: rclone-{{.tag}}-linux-arm64.zip
+            windows-amd64: rclone-{{.tag}}-windows-amd64.zip
+        binary_path: |
+            "rclone-v" + version + "-" + (os == "darwin" ? "osx" : os) + "-" + arch + "/rclone"
+        version_command: --version
+        version_regex: 'rclone v(\d+\.\d+\.\d+)'
+
+    jaeger:
+        name: jaeger
+        repo: jaegertracing/jaeger
+        version_expr: 'tag.startsWith("v2.")' # v1 and v2 are tagged in the same repo
+        asset_patterns:
+            darwin-amd64: jaeger-{{.version}}-darwin-amd64.tar.gz
+            darwin-arm64: jaeger-{{.version}}-darwin-arm64.tar.gz
+            linux-amd64: jaeger-{{.version}}-linux-amd64.tar.gz
+            linux-arm64: jaeger-{{.version}}-linux-arm64.tar.gz
+        binary_path: jaeger-{{.version}}-{{.os}}-{{.arch}}/jaeger
+        version_command: version
+        version_regex: '"gitVersion":"v(\d+\.\d+\.\d+)"'
+
+    otel-collector:
+        name: otelcol-contrib
+        repo: open-telemetry/opentelemetry-collector-releases
+        binary_name: otelcol-contrib
+        asset_patterns:
+            darwin-amd64: otelcol-contrib_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: otelcol-contrib_{{.version}}_darwin_arm64.tar.gz
+            linux-amd64: otelcol-contrib_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: otelcol-contrib_{{.version}}_linux_arm64.tar.gz
+            windows-amd64: otelcol-contrib_{{.version}}_windows_amd64.tar.gz
+        checksum_file: opentelemetry-collector-releases_otelcol-contrib_checksums.txt
+        version_command: --version
+        version_regex: 'version (\d+\.\d+\.\d+)'
 
     ginkgo:
         name: ginkgo

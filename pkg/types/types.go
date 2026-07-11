@@ -85,6 +85,8 @@ type Package struct {
 	Extra map[string]interface{} `json:"extra,omitempty" yaml:"extra,omitempty"`
 	// FallbackVersion is used when GitHub API rate limits are reached (defaults to "latest")
 	FallbackVersion string `json:"fallback_version,omitempty" yaml:"fallback_version,omitempty"`
+	// Service describes how to run this package as a long-lived service (consumed by deps-start)
+	Service *ServiceSpec `json:"service,omitempty" yaml:"service,omitempty"`
 }
 
 // FolderName returns the directory name for this package under appDir.

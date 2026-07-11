@@ -1,0 +1,397 @@
+# Service runtime metadata consumed by github.com/flanksource/deps/start.
+# Keys match registry entries in defaults.yaml where an installable artifact
+# exists; other keys create service-only registry entries (no binary runtime).
+# Runtime support = presence of binary/docker/helm blocks.
+# No bitnami images or charts. Simple single-instance charts come from
+# groundhog2k (https://groundhog2k.github.io/helm-charts/).
+services:
+    postgres:
+        type: postgres
+        ports: [{name: postgres, port: 5432}]
+        credentials: {username: postgres, database: postgres}
+        url: "postgres://{{.username}}:{{.password}}@{{.host}}/{{.database}}?sslmode=disable"
+        binary:
+            command: bin/postgres
+            args: ["-D", "{{.dataDir}}", "-p", "{{.port}}", "-c", "listen_addresses=127.0.0.1"]
+            init:
+                - command: bin/initdb -D {{.dataDir}} -U {{.username}} --pwfile={{.passwordFile}} -A scram-sha-256 -E UTF8
+                  creates: "{{.dataDir}}/PG_VERSION"
+            health: {stdout_match: "ready to accept connections", timeout: 60s}
+        docker:
+            image: "postgres:{{.major}}"
+            env: {POSTGRES_USER: "{{.username}}", POSTGRES_PASSWORD: "{{.password}}", POSTGRES_DB: "{{.database}}"}
+            data_path: /var/lib/postgresql/data
+            health: {exec: ["pg_isready", "-U", "{{.username}}"], timeout: 60s}
+        helm:
+            repo: https://groundhog2k.github.io/helm-charts/
+            chart: postgres
+            set: {settings.superuserPassword: "{{.password}}", userDatabase.name: "{{.database}}"}
+            # VERIFY: groundhog2k postgres secret name/key convention
+            secret: {name: "{{.release}}", key: POSTGRES_PASSWORD}
+            service: {name: "{{.release}}", port: 5432}
+
+    mysql:
+        type: mysql
+        ports: [{name: mysql, port: 3306}]
+        credentials: {username: root, database: app}
+        url: "mysql://{{.username}}:{{.password}}@{{.host}}/{{.database}}"
+        docker:
+            image: "mysql:{{.version}}"
+            env: {MYSQL_ROOT_PASSWORD: "{{.password}}", MYSQL_DATABASE: "{{.database}}"}
+            data_path: /var/lib/mysql
+            health: {exec: ["mysqladmin", "ping", "-h", "127.0.0.1", "-p{{.password}}"], timeout: 120s}
+        helm:
+            repo: https://groundhog2k.github.io/helm-charts/
+            chart: mysql
+            set: {settings.rootPassword: "{{.password}}", userDatabase.name: "{{.database}}"}
+            # VERIFY: groundhog2k mysql secret name/key convention
+            secret: {name: "{{.release}}", key: MYSQL_ROOT_PASSWORD}
+            service: {name: "{{.release}}", port: 3306}
+
+    mssql:
+        type: sql_server
+        ports: [{name: mssql, port: 1433}]
+        credentials: {username: sa, database: master}
+        url: "sqlserver://{{.username}}:{{.password}}@{{.host}}?database={{.database}}"
+        docker:
+            image: "mcr.microsoft.com/mssql/server:{{.version}}-latest" # version e.g. "2022"
+            env: {ACCEPT_EULA: "Y", MSSQL_SA_PASSWORD: "{{.password}}"}
+            data_path: /var/opt/mssql
+            health: {port: mssql, timeout: 120s}
+        helm:
+            repo: https://simcubeltd.github.io/simcube-helm-charts/
+            chart: mssqlserver-2022
+            set: {acceptEula.value: "Y", sapassword: "{{.password}}"}
+            # VERIFY: SimCube chart secret name/key convention
+            secret: {name: "{{.release}}-mssqlserver-2022-secret", key: sapassword}
+            service: {name: "{{.release}}-mssqlserver-2022", port: 1433}
+
+    valkey:
+        type: redis
+        ports: [{name: valkey, port: 6379}]
+        credentials: {username: default}
+        url: "redis://{{.username}}:{{.password}}@{{.host}}"
+        docker:
+            image: "valkey/valkey:{{.version}}"
+            args: ["--requirepass", "{{.password}}"]
+            data_path: /data
+            health: {exec: ["valkey-cli", "-a", "{{.password}}", "ping"], timeout: 30s}
+        helm:
+            repo: https://groundhog2k.github.io/helm-charts/
+            chart: valkey
+            set: {password: "{{.password}}"}
+            # VERIFY: groundhog2k valkey secret name/key convention
+            secret: {name: "{{.release}}", key: VALKEY_PASSWORD}
+            service: {name: "{{.release}}", port: 6379}
+
+    opensearch:
+        type: opensearch
+        ports: [{name: http, port: 9200}]
+        credentials: {username: admin}
+        url: "http://{{.username}}:{{.password}}@{{.host}}"
+        health: {http: /_cluster/health, port: http, timeout: 180s}
+        binary:
+            command: bin/opensearch
+            args: ["-Ediscovery.type=single-node", "-Eplugins.security.disabled=true", "-Ehttp.port={{.port}}", "-Epath.data={{.dataDir}}"]
+            env: {OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"}
+        docker:
+            image: "opensearchproject/opensearch:{{.version}}"
+            env: {discovery.type: single-node, DISABLE_SECURITY_PLUGIN: "true", OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            data_path: /usr/share/opensearch/data
+        helm:
+            repo: https://opensearch-project.github.io/helm-charts/
+            chart: opensearch
+            # chart creates no credential secret; password is passed via env and
+            # emitted literally in the connection
+            set: {singleNode: "true", "extraEnvs[0].name": OPENSEARCH_INITIAL_ADMIN_PASSWORD, "extraEnvs[0].value": "{{.password}}"}
+            service: {name: opensearch-cluster-master, port: 9200}
+
+    elasticsearch:
+        type: elasticsearch
+        ports: [{name: http, port: 9200}, {name: transport, port: 9300}]
+        credentials: {username: elastic}
+        url: "http://{{.host}}"
+        health: {http: /_cluster/health, port: http, timeout: 180s}
+        binary:
+            command: bin/elasticsearch
+            args: ["-Ediscovery.type=single-node", "-Expack.security.enabled=false", "-Ehttp.port={{.port}}", "-Epath.data={{.dataDir}}"]
+            env: {ES_JAVA_OPTS: "-Xms512m -Xmx512m"}
+        docker:
+            image: "docker.elastic.co/elasticsearch/elasticsearch:{{.version}}"
+            env: {discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            data_path: /usr/share/elasticsearch/data
+        helm:
+            repo: https://helm.elastic.co
+            chart: elasticsearch
+            set: {replicas: "1", minimumMasterNodes: "1"}
+            # elastic chart resource names are clusterName-based, not release-prefixed
+            secret: {name: elasticsearch-master-credentials, key: password, username_key: username}
+            service: {name: elasticsearch-master, port: 9200}
+
+    loki:
+        type: loki
+        ports: [{name: http, port: 3100}, {name: grpc, port: 9096}]
+        url: "http://{{.host}}"
+        health: {http: /ready, port: http, timeout: 90s}
+        binary:
+            command: "{{.binDir}}/loki"
+            args: ["-config.file={{.runDir}}/loki.yaml"]
+            files:
+                loki.yaml: |
+                    auth_enabled: false
+                    server:
+                      http_listen_port: {{.port}}
+                      grpc_listen_port: {{.ports.grpc}}
+                    common:
+                      path_prefix: {{.dataDir}}
+                      storage:
+                        filesystem:
+                          chunks_directory: {{.dataDir}}/chunks
+                          rules_directory: {{.dataDir}}/rules
+                      replication_factor: 1
+                      ring:
+                        kvstore:
+                          store: inmemory
+                    schema_config:
+                      configs:
+                        - from: "2024-01-01"
+                          store: tsdb
+                          object_store: filesystem
+                          schema: v13
+                          index:
+                            prefix: index_
+                            period: 24h
+        docker:
+            image: "grafana/loki:{{.version}}"
+            data_path: /loki
+        helm:
+            repo: https://grafana.github.io/helm-charts
+            chart: loki
+            values: |
+                deploymentMode: SingleBinary
+                loki:
+                  auth_enabled: false
+                  commonConfig:
+                    replication_factor: 1
+                  storage:
+                    type: filesystem
+                  schemaConfig:
+                    configs:
+                      - from: "2024-01-01"
+                        store: tsdb
+                        object_store: filesystem
+                        schema: v13
+                        index:
+                          prefix: index_
+                          period: 24h
+                singleBinary:
+                  replicas: 1
+                read:
+                  replicas: 0
+                write:
+                  replicas: 0
+                backend:
+                  replicas: 0
+            # VERIFY: single-binary service name for the loki chart
+            service: {name: "{{.release}}", port: 3100}
+
+    prometheus:
+        type: prometheus
+        ports: [{name: http, port: 9090}]
+        url: "http://{{.host}}"
+        health: {http: /-/ready, port: http, timeout: 60s}
+        binary:
+            command: "{{.binDir}}/prometheus"
+            args: ["--config.file={{.runDir}}/prometheus.yml", "--storage.tsdb.path={{.dataDir}}", "--web.listen-address=127.0.0.1:{{.port}}"]
+            files:
+                prometheus.yml: |
+                    global:
+                      scrape_interval: 15s
+                    scrape_configs:
+                      - job_name: self
+                        static_configs:
+                          - targets: ["localhost:{{.port}}"]
+        docker:
+            image: "prom/prometheus:v{{.version}}"
+            data_path: /prometheus
+        helm:
+            repo: https://prometheus-community.github.io/helm-charts
+            chart: prometheus
+            set: {alertmanager.enabled: "false", prometheus-pushgateway.enabled: "false", prometheus-node-exporter.enabled: "false"}
+            service: {name: "{{.release}}-server", port: 80}
+
+    grafana:
+        type: http
+        ports: [{name: http, port: 3000}]
+        credentials: {username: admin}
+        url: "http://{{.host}}"
+        health: {http: /api/health, port: http, timeout: 60s}
+        binary:
+            command: bin/grafana
+            args: ["server", "--homepath", "{{.appDir}}"]
+            env:
+                GF_SECURITY_ADMIN_USER: "{{.username}}"
+                GF_SECURITY_ADMIN_PASSWORD: "{{.password}}"
+                GF_PATHS_DATA: "{{.dataDir}}"
+                GF_SERVER_HTTP_PORT: "{{.port}}"
+        docker:
+            image: "grafana/grafana:{{.version}}"
+            env: {GF_SECURITY_ADMIN_USER: "{{.username}}", GF_SECURITY_ADMIN_PASSWORD: "{{.password}}"}
+            data_path: /var/lib/grafana
+        helm:
+            repo: https://grafana.github.io/helm-charts
+            chart: grafana
+            secret: {name: "{{.release}}", key: admin-password, username_key: admin-user}
+            service: {name: "{{.release}}", port: 80}
+
+    jaeger:
+        type: http
+        ports: [{name: ui, port: 16686}, {name: grpc, port: 4317}, {name: http, port: 4318}]
+        url: "http://{{.host}}"
+        health: {http: /, port: ui, timeout: 60s}
+        binary:
+            command: "{{.binDir}}/jaeger"
+        docker:
+            image: "jaegertracing/jaeger:{{.version}}"
+        helm:
+            repo: https://jaegertracing.github.io/helm-charts
+            chart: jaeger
+            values: |
+                provisionDataStore:
+                  cassandra: false
+                allInOne:
+                  enabled: true
+                storage:
+                  type: memory
+                agent:
+                  enabled: false
+                collector:
+                  enabled: false
+                query:
+                  enabled: false
+            # VERIFY: allInOne service name for the jaeger chart
+            service: {name: "{{.release}}-query", port: 16686}
+
+    otel-collector:
+        type: http
+        ports: [{name: grpc, port: 4317}, {name: http, port: 4318, primary: true}, {name: health, port: 13133}]
+        url: "http://{{.host}}"
+        health: {http: /, port: health, timeout: 30s}
+        binary:
+            command: "{{.binDir}}/otelcol-contrib"
+            args: ["--config", "{{.runDir}}/config.yaml"]
+            files:
+                config.yaml: |
+                    receivers:
+                      otlp:
+                        protocols:
+                          grpc:
+                            endpoint: "127.0.0.1:{{.ports.grpc}}"
+                          http:
+                            endpoint: "127.0.0.1:{{.ports.http}}"
+                    exporters:
+                      debug: {}
+                    extensions:
+                      health_check:
+                        endpoint: "127.0.0.1:{{.ports.health}}"
+                    service:
+                      extensions: [health_check]
+                      pipelines:
+                        traces:
+                          receivers: [otlp]
+                          exporters: [debug]
+                        metrics:
+                          receivers: [otlp]
+                          exporters: [debug]
+                        logs:
+                          receivers: [otlp]
+                          exporters: [debug]
+        docker:
+            image: "otel/opentelemetry-collector-contrib:{{.version}}"
+        helm:
+            repo: https://open-telemetry.github.io/opentelemetry-helm-charts
+            chart: opentelemetry-collector
+            set: {mode: deployment, image.repository: otel/opentelemetry-collector-contrib}
+            # VERIFY: fullname convention (release does not contain chart name)
+            service: {name: "{{.release}}-opentelemetry-collector", port: 4318}
+
+    clickhouse:
+        type: clickhouse
+        ports: [{name: native, port: 9000}, {name: http, port: 8123}]
+        credentials: {username: default, database: default}
+        url: "clickhouse://{{.username}}:{{.password}}@{{.host}}/{{.database}}"
+        health: {http: /ping, port: http, timeout: 60s}
+        binary:
+            # binary runtime runs the default user without a password
+            command: "{{.binDir}}/clickhouse"
+            args: ["server", "--", "--path={{.dataDir}}", "--tcp_port={{.port}}", "--http_port={{.ports.http}}", "--listen_host=127.0.0.1"]
+        docker:
+            image: "clickhouse/clickhouse-server:{{.version}}"
+            env: {CLICKHOUSE_USER: "{{.username}}", CLICKHOUSE_PASSWORD: "{{.password}}", CLICKHOUSE_DB: "{{.database}}"}
+            data_path: /var/lib/clickhouse
+        # no vendor helm chart; Altinity operator is out of scope
+
+    nats:
+        type: nats
+        ports: [{name: client, port: 4222}, {name: monitor, port: 8222}]
+        url: "nats://{{.host}}"
+        health: {http: /healthz, port: monitor, timeout: 30s}
+        binary:
+            command: "{{.binDir}}/nats-server"
+            args: ["-p", "{{.port}}", "-m", "{{.ports.monitor}}", "-js", "-sd", "{{.dataDir}}"]
+            health: {stdout_match: "Server is ready"}
+        docker:
+            image: "nats:{{.version}}"
+            args: ["-js", "-m", "8222", "-sd", "/data"]
+            data_path: /data
+        helm:
+            repo: https://nats-io.github.io/k8s/helm/charts/
+            chart: nats
+            set: {config.jetstream.enabled: "true"}
+            service: {name: "{{.release}}", port: 4222}
+
+    rabbitmq:
+        type: rabbitmq
+        ports: [{name: amqp, port: 5672}, {name: management, port: 15672}]
+        credentials: {username: admin}
+        url: "amqp://{{.username}}:{{.password}}@{{.host}}"
+        docker:
+            image: "rabbitmq:{{.version}}-management"
+            env: {RABBITMQ_DEFAULT_USER: "{{.username}}", RABBITMQ_DEFAULT_PASS: "{{.password}}"}
+            data_path: /var/lib/rabbitmq
+            health: {exec: ["rabbitmq-diagnostics", "-q", "ping"], timeout: 120s}
+        helm:
+            repo: https://groundhog2k.github.io/helm-charts/
+            chart: rabbitmq
+            set: {authentication.user: "{{.username}}", authentication.password: "{{.password}}"}
+            # VERIFY: groundhog2k rabbitmq secret name/key convention
+            secret: {name: "{{.release}}", key: RABBITMQ_DEFAULT_PASS}
+            service: {name: "{{.release}}", port: 5672}
+
+    rclone:
+        # S3-compatible object store: emits an aws connection where
+        # Username/Password are the access/secret key
+        type: aws
+        ports: [{name: s3, port: 8333}]
+        credentials: {username: rclone}
+        url: "http://{{.host}}"
+        properties: {endpoint: "http://{{.host}}", region: us-east-1}
+        health: {port: s3, timeout: 30s}
+        binary:
+            command: "{{.binDir}}/rclone"
+            args: ["serve", "s3", "{{.dataDir}}", "--addr", "127.0.0.1:{{.port}}", "--auth-key", "{{.username}},{{.password}}"]
+        docker:
+            image: "rclone/rclone:{{.version}}"
+            args: ["serve", "s3", "/data", "--addr", ":8333", "--auth-key", "{{.username}},{{.password}}"]
+            data_path: /data
+
+    ministack:
+        # https://ministack.org/ - AWS emulator (LocalStack alternative)
+        type: aws
+        ports: [{name: edge, port: 4566}]
+        credentials: {username: test, password: test}
+        url: "http://{{.host}}"
+        properties: {endpoint: "http://{{.host}}", region: us-east-1}
+        health: {http: /, port: edge, timeout: 60s}
+        docker:
+            image: "ministackorg/ministack:{{.version}}"
