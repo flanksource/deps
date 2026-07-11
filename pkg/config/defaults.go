@@ -11,6 +11,9 @@ import (
 //go:embed defaults.yaml
 var defaultDepsYAML []byte
 
+//go:embed services.yaml
+var defaultServicesYAML []byte
+
 // LoadDefaultConfig loads the embedded default configuration
 func LoadDefaultConfig() (*types.DepsConfig, error) {
 	var config types.DepsConfig
@@ -52,7 +55,33 @@ func LoadDefaultConfig() (*types.DepsConfig, error) {
 		config.Registry[name] = pkg
 	}
 
+	if err := attachServiceSpecs(&config); err != nil {
+		return nil, err
+	}
+
 	return &config, nil
+}
+
+// attachServiceSpecs merges the embedded services.yaml into the registry:
+// existing entries gain a Service block, unknown keys become service-only
+// entries (no installable artifact, e.g. mysql, mssql, valkey).
+func attachServiceSpecs(config *types.DepsConfig) error {
+	var services struct {
+		Services map[string]*types.ServiceSpec `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(defaultServicesYAML, &services); err != nil {
+		return fmt.Errorf("failed to parse embedded services config: %w", err)
+	}
+
+	for name, spec := range services.Services {
+		if pkg, exists := config.Registry[name]; exists {
+			pkg.Service = spec
+			config.Registry[name] = pkg
+		} else {
+			config.Registry[name] = types.Package{Name: name, Service: spec}
+		}
+	}
+	return nil
 }
 
 // mergePackage intelligently merges a user package with default package.
@@ -95,6 +124,9 @@ func mergePackage(defaultPkg, userPkg types.Package) types.Package {
 		for k, v := range userPkg.Extra {
 			merged.Extra[k] = v
 		}
+	}
+	if userPkg.Service != nil {
+		merged.Service = userPkg.Service
 	}
 
 	return merged

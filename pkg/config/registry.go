@@ -59,6 +59,16 @@ func PackageExists(name string) bool {
 	return exists
 }
 
+// GetService returns the package and its service spec, or ok=false when the
+// package does not exist or has no service block.
+func GetService(name string) (types.Package, *types.ServiceSpec, bool) {
+	pkg, exists := GetPackage(name)
+	if !exists || pkg.Service == nil {
+		return types.Package{}, nil, false
+	}
+	return pkg, pkg.Service, true
+}
+
 // ResetGlobalRegistry resets the global registry (useful for testing)
 // Note: This will not reload the registry until the program is restarted
 // since init functions only run once per program execution
