@@ -3,24 +3,264 @@ package start
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
+	"github.com/flanksource/clicky/exec"
+	"github.com/flanksource/deps"
 	"github.com/flanksource/deps/start/state"
 )
 
 // binaryRuntime installs the service artifact via deps and runs it under a
 // clicky supervised process.
-type binaryRuntime struct{}
+type binaryRuntime struct {
+	mu   sync.Mutex
+	sup  *exec.SupervisedProcess
+	proc *exec.Process
+}
 
 func (r *binaryRuntime) Kind() RuntimeKind { return RuntimeBinary }
 
 func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.State, error) {
-	return nil, fmt.Errorf("binary runtime not implemented yet")
+	spec := svc.Spec.Binary
+	if err := checkPlatform(spec.Platforms, svc.OS, svc.Arch); err != nil {
+		return nil, err
+	}
+
+	if prior, err := state.Load(svc.Opts.StateDir, svc.Name); err == nil && processAlive(prior.PID) {
+		return prior, nil
+	}
+
+	if err := r.install(ctx, svc); err != nil {
+		return nil, err
+	}
+
+	data := templateData(svc, fmt.Sprintf("localhost:%d", hostPort(svc)), "")
+	if err := writeRunFiles(svc, data); err != nil {
+		return nil, err
+	}
+	if err := runInitSteps(svc, data); err != nil {
+		return nil, err
+	}
+
+	command, args, env, err := renderCommand(svc, data)
+	if err != nil {
+		return nil, err
+	}
+
+	started := make(chan *exec.Process, 1)
+	proc := exec.NewExec(command, args...).WithProcessGroup().WithEnv(env).WithCwd(svc.RunDir)
+	sup := proc.Supervise(exec.SuperviseOptions{
+		RestartPolicy: exec.RestartNo,
+		StopGrace:     10 * time.Second,
+		DetectPorts:   true,
+		OnStarted: func(p *exec.Process) {
+			select {
+			case started <- p:
+			default:
+			}
+		},
+	})
+	sup.Start()
+
+	select {
+	case p := <-started:
+		r.mu.Lock()
+		r.sup, r.proc = sup, p
+		r.mu.Unlock()
+	case <-time.After(10 * time.Second):
+		sup.Stop()
+		return nil, fmt.Errorf("%s did not start within 10s", command)
+	case <-ctx.Done():
+		sup.Stop()
+		return nil, ctx.Err()
+	}
+
+	watch := &processWatch{
+		alive:  func() bool { return sup.Status() != exec.StatusCrashed && sup.Status() != exec.StatusExited && sup.Status() != exec.StatusStopped },
+		output: func() string { return r.processOutput() },
+	}
+	if err := awaitHealthy(ctx, svc, spec.Health, watch); err != nil {
+		sup.Stop()
+		return nil, err
+	}
+
+	ports := map[string]int{}
+	for _, p := range svc.Spec.Ports {
+		ports[p.Name] = p.Port
+	}
+	if primary, ok := svc.Spec.PrimaryPort(); ok && svc.Opts.Port != 0 {
+		ports[primary.Name] = svc.Opts.Port
+	}
+	return &state.State{PID: sup.Pid(), Ports: ports}, nil
+}
+
+func (r *binaryRuntime) processOutput() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.proc == nil {
+		return ""
+	}
+	return r.proc.GetOutput()
+}
+
+// install ensures the artifact is present and fills AppDir/BinDir/Version.
+func (r *binaryRuntime) install(ctx context.Context, svc *ServiceContext) error {
+	pkgName := svc.Spec.Binary.Package
+	if pkgName == "" {
+		pkgName = svc.Name
+	}
+	version := svc.Opts.Version
+	if version == "" {
+		version = "latest"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	result, err := deps.InstallWithContext(ctx, pkgName, version,
+		deps.WithBinDir(filepath.Join(home, ".deps", "bin")),
+		deps.WithAppDir(filepath.Join(home, ".deps", "opt")))
+	if err != nil {
+		return fmt.Errorf("failed to install %s: %w", pkgName, err)
+	}
+	svc.AppDir = result.AppDir
+	svc.BinDir = result.BinDir
+	svc.Version = result.Version.Version
+	return nil
+}
+
+// renderCommand resolves the executable path, args and env from the spec.
+// Relative commands resolve against the installed AppDir.
+func renderCommand(svc *ServiceContext, data map[string]any) (string, []string, map[string]string, error) {
+	spec := svc.Spec.Binary
+	command, err := render("binary.command", spec.Command, data)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	if !filepath.IsAbs(command) && strings.Contains(command, "/") {
+		command = filepath.Join(svc.AppDir, command)
+	}
+
+	var args []string
+	for i, arg := range spec.Args {
+		rendered, err := render(fmt.Sprintf("binary.args[%d]", i), arg, data)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		args = append(args, rendered)
+	}
+
+	env := map[string]string{}
+	for k, v := range spec.Env {
+		rendered, err := render("binary.env."+k, v, data)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		env[k] = rendered
+	}
+	for k, v := range svc.Opts.Env {
+		env[k] = v
+	}
+	return command, args, env, nil
+}
+
+// writeRunFiles renders spec files (configs) into the run dir and the
+// password file used by init steps.
+func writeRunFiles(svc *ServiceContext, data map[string]any) error {
+	pwfile, _ := data["passwordFile"].(string)
+	if err := os.WriteFile(pwfile, []byte(svc.Password), 0o600); err != nil {
+		return err
+	}
+	for name, content := range svc.Spec.Binary.Files {
+		rendered, err := render("binary.files."+name, content, data)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(svc.RunDir, name), []byte(rendered), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// runInitSteps executes one-time setup commands (e.g. initdb) with the
+// installed AppDir as working directory.
+func runInitSteps(svc *ServiceContext, data map[string]any) error {
+	for i, step := range svc.Spec.Binary.Init {
+		if step.Creates != "" {
+			creates, err := render(fmt.Sprintf("binary.init[%d].creates", i), step.Creates, data)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(creates); err == nil {
+				continue
+			}
+		}
+		command, err := render(fmt.Sprintf("binary.init[%d].command", i), step.Command, data)
+		if err != nil {
+			return err
+		}
+		proc := exec.NewExec(command).WithCwd(svc.AppDir).Run()
+		if result := proc.Result(); !result.IsOk() {
+			return fmt.Errorf("init step %q failed (exit %d): %s", command, result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 20))
+		}
+	}
+	return nil
 }
 
 func (r *binaryRuntime) Stop(ctx context.Context, st *state.State) error {
-	return fmt.Errorf("binary runtime not implemented yet")
+	r.mu.Lock()
+	sup := r.sup
+	r.mu.Unlock()
+	if sup != nil {
+		sup.Stop()
+		return nil
+	}
+	return killProcessGroup(st.PID, 10*time.Second)
 }
 
 func (r *binaryRuntime) Status(ctx context.Context, st *state.State) (state.Status, error) {
-	return state.StatusUnknown, fmt.Errorf("binary runtime not implemented yet")
+	if processAlive(st.PID) {
+		return state.StatusRunning, nil
+	}
+	return state.StatusStopped, nil
+}
+
+// Wait blocks until the supervised process exits or ctx is cancelled.
+func (r *binaryRuntime) Wait(ctx context.Context) error {
+	r.mu.Lock()
+	sup := r.sup
+	r.mu.Unlock()
+	if sup == nil {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		sup.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		sup.Stop()
+		return ctx.Err()
+	}
+}
+
+func checkPlatform(patterns []string, os, arch string) error {
+	if len(patterns) == 0 {
+		return nil
+	}
+	platform := os + "-" + arch
+	for _, p := range patterns {
+		if matched, _ := filepath.Match(p, platform); matched {
+			return nil
+		}
+	}
+	return fmt.Errorf("binary runtime not supported on %s (supported: %s)", platform, strings.Join(patterns, ", "))
 }

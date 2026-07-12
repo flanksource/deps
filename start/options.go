@@ -30,6 +30,27 @@ type Options struct {
 
 type Option func(*Options)
 
+// resolveOptions applies opts over the defaults and absolutizes paths: init
+// steps and the supervised process run with their own working directories,
+// so every path handed to them must be absolute.
+func resolveOptions(opts []Option) (Options, error) {
+	options := DefaultOptions()
+	for _, o := range opts {
+		o(&options)
+	}
+	for _, p := range []*string{&options.StateDir, &options.DataDir} {
+		if *p == "" {
+			continue
+		}
+		abs, err := filepath.Abs(*p)
+		if err != nil {
+			return options, err
+		}
+		*p = abs
+	}
+	return options, nil
+}
+
 func DefaultOptions() Options {
 	home, err := os.UserHomeDir()
 	if err != nil {

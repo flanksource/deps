@@ -22,9 +22,9 @@ import (
 // instance with its connection. Idempotent: an already-running service is
 // reused.
 func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) {
-	options := DefaultOptions()
-	for _, o := range opts {
-		o(&options)
+	options, err := resolveOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	pkg, spec, ok := config.GetService(name)
@@ -58,29 +58,35 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 
 	st.Name = name
 	st.Runtime = string(kind)
-	st.Version = svc.Version
 	st.LogFile = svc.LogFile
+	if svc.Version != "" {
+		st.Version = svc.Version
+	}
 	if st.StartedAt.IsZero() {
 		st.StartedAt = time.Now()
 	}
-	conn, err := BuildConnection(svc, st, kind)
-	if err != nil {
-		return nil, err
+	// A runtime that reused an already-running service returns its persisted
+	// state; keep that connection (it reflects the ports it started with).
+	if st.Connection.URL == "" {
+		conn, err := BuildConnection(svc, st, kind)
+		if err != nil {
+			return nil, err
+		}
+		st.Connection = conn
 	}
-	st.Connection = conn
 	st.Ready = true
 	if err := st.Save(options.StateDir); err != nil {
 		return nil, err
 	}
 
-	return &Instance{Name: name, Runtime: kind, Connection: conn, State: st, runtime: rt}, nil
+	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, State: st, runtime: rt}, nil
 }
 
 // Get returns a previously started service, or os.IsNotExist error.
 func Get(ctx context.Context, name string, opts ...Option) (*Instance, error) {
-	options := DefaultOptions()
-	for _, o := range opts {
-		o(&options)
+	options, err := resolveOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 	st, err := state.Load(options.StateDir, name)
 	if err != nil {
@@ -119,9 +125,9 @@ func Status(ctx context.Context, name string, opts ...Option) (state.Status, err
 
 // List returns every service with persisted state.
 func List(ctx context.Context, opts ...Option) ([]*Instance, error) {
-	options := DefaultOptions()
-	for _, o := range opts {
-		o(&options)
+	options, err := resolveOptions(opts)
+	if err != nil {
+		return nil, err
 	}
 	states, err := state.List(options.StateDir)
 	if err != nil {
@@ -198,11 +204,20 @@ func newServiceContext(name string, pkg types.Package, spec types.ServiceSpec, o
 		svc.Database = creds.Database
 	}
 	if svc.Password == "" {
-		if prior, err := state.Load(options.StateDir, name); err == nil && prior.Connection.Password != "" && !strings.HasPrefix(prior.Connection.Password, "secret://") {
-			svc.Password = prior.Connection.Password
-		} else {
-			svc.Password = generatePassword()
-		}
+		svc.Password = resolvePassword(name, svc.RunDir, options.StateDir)
 	}
 	return svc, nil
+}
+
+// resolvePassword reuses the password a data dir was initialized with: the
+// run-dir password file is authoritative (written before init steps, so it
+// survives failed starts), then prior state, then a fresh random password.
+func resolvePassword(name, runDir, stateDir string) string {
+	if data, err := os.ReadFile(filepath.Join(runDir, ".password")); err == nil && len(data) > 0 {
+		return string(data)
+	}
+	if prior, err := state.Load(stateDir, name); err == nil && prior.Connection.Password != "" && !strings.HasPrefix(prior.Connection.Password, "secret://") {
+		return prior.Connection.Password
+	}
+	return generatePassword()
 }
