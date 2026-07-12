@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -76,22 +79,45 @@ func (f *rootFlags) options() []start.Option {
 }
 
 func runStart(cmd *cobra.Command, name string, flags *rootFlags) error {
-	instance, err := start.Start(cmd.Context(), name, flags.options()...)
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	instance, err := start.Start(ctx, name, flags.options()...)
 	if err != nil {
 		return err
 	}
 	if err := printConnection(instance, flags.output); err != nil {
 		return err
 	}
-	return instance.Wait(cmd.Context())
+	if err := instance.Wait(ctx); err != nil && ctx.Err() != nil {
+		return nil // interrupted: the service was stopped cleanly
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 func printConnection(instance *start.Instance, format string) error {
+	conn := instance.Connection
 	switch format {
 	case "yaml":
-		return yaml.NewEncoder(os.Stdout).Encode(instance.Connection)
-	case "json", "env":
-		return fmt.Errorf("output format %q not implemented yet", format)
+		return yaml.NewEncoder(os.Stdout).Encode(conn)
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(conn)
+	case "env":
+		fmt.Printf("URL=%s\n", conn.URL)
+		if conn.Username != "" {
+			fmt.Printf("USERNAME=%s\n", conn.Username)
+		}
+		if conn.Password != "" {
+			fmt.Printf("PASSWORD=%s\n", conn.Password)
+		}
+		for k, v := range conn.Properties {
+			fmt.Printf("%s=%s\n", strings.ToUpper(k), v)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown output format %q (yaml, json, env)", format)
 	}

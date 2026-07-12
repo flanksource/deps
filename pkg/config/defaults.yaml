@@ -53,6 +53,7 @@ registry:
     postgres:
         name: postgres-embedded
         manager: maven
+        mode: directory
         extra:
             group_id: io.zonky.test.postgres
             artifact_id: embedded-postgres-binaries-{{.os}}-{{if eq .arch "arm64"}}arm64v8{{else}}{{.arch}}{{end}}
@@ -61,7 +62,12 @@ registry:
         post_process:
             - delete("META-INF")
             - unarchive(glob("*.txz")[0])
-            # - move(glob("*:dir")[0], "postgres")
+        symlinks:
+            - bin/postgres
+            - bin/initdb
+            - bin/pg_ctl
+        version_command: bin/postgres --version
+        version_regex: 'postgres \(PostgreSQL\) (\d+\.\d+)'
     postgres-mc-plugin:
         name: postgres
         manager: github_release
