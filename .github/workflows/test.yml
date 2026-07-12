@@ -34,6 +34,36 @@ jobs:
       - name: Run unit tests
         run: task test:unit
 
+  # start/ submodule (deps-start): unit + docker integration tests
+  start-module:
+    runs-on: ubuntu-latest
+    name: Start Module
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            start/go.sum
+
+      - name: Install Task
+        uses: go-task/setup-task@v1
+
+      - name: Build deps-start
+        run: task build-start
+
+      - name: Run start unit tests
+        run: task test-start
+
+      - name: Run start integration tests (docker)
+        run: task test-start:integration
+
   # Full installation tests - downloads, extracts, and verifies binaries
   test-full:
     strategy:

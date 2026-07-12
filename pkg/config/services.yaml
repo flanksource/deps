@@ -279,7 +279,7 @@ services:
         url: "http://{{.host}}"
         health: {http: /, port: health, timeout: 30s}
         binary:
-            command: "{{.binDir}}/otelcol-contrib"
+            command: "{{.binDir}}/otel-collector"
             args: ["--config", "{{.runDir}}/config.yaml"]
             files:
                 config.yaml: |
@@ -338,7 +338,7 @@ services:
         url: "nats://{{.host}}"
         health: {http: /healthz, port: monitor, timeout: 30s}
         binary:
-            command: "{{.binDir}}/nats-server"
+            command: "{{.binDir}}/nats"
             args: ["-p", "{{.port}}", "-m", "{{.ports.monitor}}", "-js", "-sd", "{{.dataDir}}"]
             health: {stdout_match: "Server is ready"}
         docker:
