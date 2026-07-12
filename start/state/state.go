@@ -21,22 +21,38 @@ const (
 // State is the persisted record of a started service, written to
 // <stateDir>/<name>/state.yaml.
 type State struct {
-	Name        string            `yaml:"name"`
-	Runtime     string            `yaml:"runtime"`
-	Version     string            `yaml:"version,omitempty"`
-	PID         int               `yaml:"pid,omitempty"`
-	ContainerID string            `yaml:"container_id,omitempty"`
-	HelmRelease string            `yaml:"helm_release,omitempty"`
-	Namespace   string            `yaml:"namespace,omitempty"`
-	Commands    map[string]string `yaml:"commands,omitempty"` // command runtime: rendered stop/status
-	Ports       map[string]int    `yaml:"ports,omitempty"`    // port name -> host port
-	Connection  models.Connection `yaml:"connection"`
-	StartedAt   time.Time         `yaml:"started_at"`
-	LogFile     string            `yaml:"log_file,omitempty"`
-	Ready       bool              `yaml:"ready"`
+	Name    string `yaml:"name"`
+	Runtime string `yaml:"runtime"`
+	Version string `yaml:"version,omitempty"`
+	PID     int    `yaml:"pid,omitempty"`
+	// SupervisorPID is the process supervising a binary service; SIGHUP to
+	// it triggers an in-place SupervisedProcess restart.
+	SupervisorPID int               `yaml:"supervisor_pid,omitempty"`
+	ContainerID   string            `yaml:"container_id,omitempty"`
+	HelmRelease   string            `yaml:"helm_release,omitempty"`
+	Namespace     string            `yaml:"namespace,omitempty"`
+	Commands      map[string]string `yaml:"commands,omitempty"` // command runtime: rendered stop/status
+	Ports         map[string]int    `yaml:"ports,omitempty"`    // port name -> host port
+	Connection    models.Connection `yaml:"connection"`
+	StartedAt     time.Time         `yaml:"started_at"`
+	LogFile       string            `yaml:"log_file,omitempty"`
+	Ready         bool              `yaml:"ready"`
 	// Resources is the latest usage sample: the binary runtime's supervisor
 	// persists it periodically, the docker runtime samples on demand.
 	Resources *Resources `yaml:"resources,omitempty"`
+	// StartOptions are the user-supplied options the service was started
+	// with, replayed by restart.
+	StartOptions *StartOptions `yaml:"start_options,omitempty"`
+}
+
+// StartOptions is the persisted snapshot of user-supplied start options.
+type StartOptions struct {
+	Runtime   string `yaml:"runtime,omitempty"`
+	Version   string `yaml:"version,omitempty"`
+	Port      int    `yaml:"port,omitempty"`
+	Bind      string `yaml:"bind,omitempty"`
+	Namespace string `yaml:"namespace,omitempty"`
+	DataDir   string `yaml:"data_dir,omitempty"`
 }
 
 // Resources is a point-in-time usage sample of a running service.

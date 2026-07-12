@@ -270,6 +270,39 @@ func (r *dockerRuntime) containerLogs(ctx context.Context, id string) string {
 	return string(data)
 }
 
+// Restart restarts the container in place via the docker API.
+func (r *dockerRuntime) Restart(ctx context.Context, stateDir string, st *state.State) error {
+	docker, err := r.client()
+	if err != nil {
+		return err
+	}
+	if st.ContainerID == "" {
+		return fmt.Errorf("no container recorded for %s", st.Name)
+	}
+	timeout := 30
+	if err := docker.ContainerRestart(ctx, st.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+		return fmt.Errorf("failed to restart container: %w", err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		info, err := docker.ContainerInspect(ctx, st.ContainerID)
+		if err == nil && info.State != nil && info.State.Running {
+			st.StartedAt = time.Now()
+			if fresh, err := state.Load(stateDir, st.Name); err == nil {
+				fresh.StartedAt = st.StartedAt
+				_ = fresh.Save(stateDir)
+			}
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("container %s did not come back up within 60s", st.Name)
+}
+
 // Metrics samples the container's CPU and memory via the stats API.
 func (r *dockerRuntime) Metrics(ctx context.Context, st *state.State) (*state.Resources, error) {
 	docker, err := r.client()

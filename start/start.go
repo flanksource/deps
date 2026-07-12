@@ -5,6 +5,7 @@ package start
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,11 +76,19 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 		st.Connection = conn
 	}
 	st.Ready = true
+	st.StartOptions = &state.StartOptions{
+		Runtime:   string(options.Runtime),
+		Version:   options.Version,
+		Port:      options.Port,
+		Bind:      options.BindAddress,
+		Namespace: options.Namespace,
+		DataDir:   options.DataDir,
+	}
 	if err := st.Save(options.StateDir); err != nil {
 		return nil, err
 	}
 
-	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, State: st, runtime: rt}, nil
+	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, State: st, runtime: rt, stateDir: options.StateDir}, nil
 }
 
 // Get returns a previously started service, or os.IsNotExist error.
@@ -96,7 +105,7 @@ func Get(ctx context.Context, name string, opts ...Option) (*Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Instance{Name: name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt}, nil
+	return &Instance{Name: name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt, stateDir: options.StateDir}, nil
 }
 
 // Stop stops a previously started service and marks its state not-ready.
@@ -117,6 +126,43 @@ func Stop(ctx context.Context, name string, opts ...Option) error {
 	}
 	instance.State.Ready = false
 	return instance.State.Save(options.StateDir)
+}
+
+// ErrNotRunning is returned by Restart when the service has no live process
+// or container to restart in place.
+var ErrNotRunning = errors.New("service is not running")
+
+// Restart restarts a running service in place: a supervised binary via
+// SupervisedProcess.Restart (signalling its supervisor when detached), a
+// container via the docker restart API. Runtimes without in-place restart
+// return ErrRestartUnsupported; a stopped service returns ErrNotRunning —
+// in both cases callers should stop (if needed) and Start again.
+func Restart(ctx context.Context, name string, opts ...Option) (*Instance, error) {
+	options, err := ResolveOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	instance, err := Get(ctx, name, opts...)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("service %s has not been started", name)
+		}
+		return nil, err
+	}
+	if _, ok := instance.runtime.(restarter); !ok {
+		return nil, ErrRestartUnsupported
+	}
+	if status, err := instance.runtime.Status(ctx, instance.State); err != nil || status != state.StatusRunning {
+		return nil, ErrNotRunning
+	}
+	if err := instance.Restart(ctx); err != nil {
+		return nil, err
+	}
+	if fresh, err := state.Load(options.StateDir, name); err == nil {
+		instance.State = fresh
+		instance.Connection = fresh.Connection
+	}
+	return instance, nil
 }
 
 // Status returns the live status of a previously started service.
@@ -147,7 +193,7 @@ func List(ctx context.Context, opts ...Option) ([]*Instance, error) {
 		if err != nil {
 			return nil, err
 		}
-		instances = append(instances, &Instance{Name: st.Name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt})
+		instances = append(instances, &Instance{Name: st.Name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt, stateDir: options.StateDir})
 	}
 	return instances, nil
 }

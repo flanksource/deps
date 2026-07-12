@@ -55,7 +55,7 @@ func newRootCmd() *cobra.Command {
 	for _, name := range start.ServiceNames() {
 		cmd.AddCommand(newServiceCmd(name, flags))
 	}
-	for _, sub := range []*cobra.Command{newStopCmd(flags), newStatusCmd(flags), newListCmd(flags), newLogsCmd(flags)} {
+	for _, sub := range []*cobra.Command{newStopCmd(flags), newRestartCmd(flags), newStatusCmd(flags), newListCmd(flags), newLogsCmd(flags)} {
 		sub.GroupID = "management"
 		cmd.AddCommand(sub)
 	}
@@ -174,6 +174,20 @@ func runStart(cmd *cobra.Command, name string, flags *rootFlags) error {
 	if err != nil {
 		return err
 	}
+
+	// SIGHUP restarts the supervised service in place (deps-start restart
+	// signals detached supervisors this way)
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	go func() {
+		for range hup {
+			if err := instance.Restart(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "restart failed: %v\n", err)
+			}
+		}
+	}()
+
 	if err := printConnection(instance, flags.output); err != nil {
 		return err
 	}

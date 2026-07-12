@@ -1,9 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	osexec "os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +54,106 @@ func newStopCmd(flags *rootFlags) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "stop every started service")
 	return cmd
+}
+
+func newRestartCmd(flags *rootFlags) *cobra.Command {
+	var all bool
+	cmd := &cobra.Command{
+		Use:               "restart [service...]",
+		Short:             "Restart services (detached) with the options they were started with",
+		ValidArgsFunction: completeServiceNames,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			names := args
+			if all {
+				instances, err := start.List(cmd.Context(), flags.options()...)
+				if err != nil {
+					return err
+				}
+				for _, i := range instances {
+					names = append(names, i.Name)
+				}
+			}
+			if len(names) == 0 {
+				return fmt.Errorf("specify a service or --all")
+			}
+			for _, name := range names {
+				if err := restartService(cmd, name, flags); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "restart every started service")
+	return cmd
+}
+
+// restartService restarts in place where the runtime supports it (binary via
+// SupervisedProcess, docker via the restart API); otherwise it stops the
+// service and relaunches it detached with its persisted start options.
+func restartService(cmd *cobra.Command, name string, flags *rootFlags) error {
+	instance, err := start.Restart(cmd.Context(), name, flags.options()...)
+	if err == nil {
+		fmt.Fprintf(os.Stderr, "restarted %s in place\n", name)
+		return printConnection(instance, "yaml")
+	}
+	if !errors.Is(err, start.ErrRestartUnsupported) && !errors.Is(err, start.ErrNotRunning) {
+		return err
+	}
+
+	// no in-place restart: stop if running, then relaunch detached with the
+	// persisted options so a binary supervisor outlives this command
+	instance, err = start.Get(cmd.Context(), name, flags.options()...)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("service %s has not been started", name)
+		}
+		return err
+	}
+	if status, err := start.Status(cmd.Context(), name, flags.options()...); err == nil && status == state.StatusRunning {
+		if err := start.Stop(cmd.Context(), name, flags.options()...); err != nil {
+			return fmt.Errorf("failed to stop %s for restart: %w", name, err)
+		}
+		fmt.Fprintf(os.Stderr, "stopped %s\n", name)
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	child := osexec.CommandContext(cmd.Context(), exe, restartArgs(name, instance.State.StartOptions, flags.stateDir)...)
+	child.Stdout, child.Stderr, child.Stdin = os.Stdout, os.Stderr, nil
+	return child.Run()
+}
+
+func restartArgs(name string, so *state.StartOptions, stateDir string) []string {
+	args := []string{name, "--detach"}
+	if stateDir != "" {
+		args = append(args, "--state-dir", stateDir)
+	}
+	if so == nil {
+		return args
+	}
+	if so.Runtime != "" {
+		args = append(args, "--runtime", so.Runtime)
+	}
+	if so.Version != "" {
+		args = append(args, "--version", so.Version)
+	}
+	if so.Port != 0 {
+		args = append(args, "--port", strconv.Itoa(so.Port))
+	}
+	if so.Bind != "" {
+		args = append(args, "--bind", so.Bind)
+	}
+	// only helm-capable subcommands define --namespace; the default adds nothing
+	if so.Namespace != "" && so.Namespace != "default" {
+		args = append(args, "--namespace", so.Namespace)
+	}
+	if so.DataDir != "" {
+		args = append(args, "--data-dir", so.DataDir)
+	}
+	return args
 }
 
 func newStatusCmd(flags *rootFlags) *cobra.Command {

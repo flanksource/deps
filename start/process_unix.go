@@ -16,6 +16,14 @@ func processAlive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }
 
+// signalSupervisor asks a supervising process to restart its service.
+func signalSupervisor(pid int) error {
+	if err := syscall.Kill(pid, syscall.SIGHUP); err != nil {
+		return fmt.Errorf("failed to signal supervisor %d: %w", pid, err)
+	}
+	return nil
+}
+
 // killProcessGroup terminates a process group: SIGTERM, then SIGKILL after
 // the grace period. Liveness is probed on the group (not the leader pid,
 // which can linger as a zombie), and ESRCH means already-stopped, which is

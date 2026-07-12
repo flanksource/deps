@@ -103,7 +103,7 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	if primary, ok := svc.Spec.PrimaryPort(); ok && svc.Opts.Port != 0 {
 		ports[primary.Name] = svc.Opts.Port
 	}
-	return &state.State{PID: sup.Pid(), Ports: ports}, nil
+	return &state.State{PID: sup.Pid(), SupervisorPID: os.Getpid(), Ports: ports}, nil
 }
 
 // persistMetrics runs in the supervising process, copying the supervised
@@ -121,9 +121,11 @@ func persistMetrics(stateDir, name string, sup *exec.SupervisedProcess) {
 			return
 		}
 		st, err := state.Load(stateDir, name)
-		if err != nil || st.PID != sup.Pid() {
-			return // state was removed or belongs to another run
+		if err != nil || st.SupervisorPID != os.Getpid() {
+			return // state was removed or belongs to another supervisor
 		}
+		// the pid changes across in-place restarts
+		st.PID = sup.Pid()
 		res := sup.Resources()
 		st.Resources = &state.Resources{
 			CPUPercent: res.CPUPercent,
@@ -257,6 +259,66 @@ func runInitSteps(svc *ServiceContext, data map[string]any) error {
 		if result := proc.Result(); !result.IsOk() {
 			return fmt.Errorf("init step %q failed (exit %d): %s", command, result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 20))
 		}
+	}
+	return nil
+}
+
+// Restart restarts the service in place, keeping the supervisor alive: via
+// SupervisedProcess.Restart when this process supervises it, otherwise by
+// signalling the supervising process (which traps SIGHUP and restarts).
+func (r *binaryRuntime) Restart(ctx context.Context, stateDir string, st *state.State) error {
+	r.mu.Lock()
+	sup := r.sup
+	r.mu.Unlock()
+	if sup != nil {
+		return r.restartInProcess(ctx, stateDir, st, sup)
+	}
+
+	if st.SupervisorPID <= 0 || !processAlive(st.SupervisorPID) {
+		return fmt.Errorf("no supervisor running for %s", st.Name)
+	}
+	oldPID := st.PID
+	if err := signalSupervisor(st.SupervisorPID); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		fresh, err := state.Load(stateDir, st.Name)
+		if err == nil && fresh.PID != 0 && fresh.PID != oldPID && processAlive(fresh.PID) {
+			*st = *fresh
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("supervisor did not restart %s within 60s", st.Name)
+}
+
+func (r *binaryRuntime) restartInProcess(ctx context.Context, stateDir string, st *state.State, sup *exec.SupervisedProcess) error {
+	oldPID := sup.Pid()
+	sup.Restart()
+	deadline := time.Now().Add(60 * time.Second)
+	for sup.Pid() == oldPID || !sup.IsRunning() {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s did not come back up within 60s (status %s)", st.Name, sup.Status())
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+
+	st.PID = sup.Pid()
+	st.StartedAt = time.Now()
+	if fresh, err := state.Load(stateDir, st.Name); err == nil {
+		fresh.PID = st.PID
+		fresh.StartedAt = st.StartedAt
+		fresh.Ready = true
+		return fresh.Save(stateDir)
 	}
 	return nil
 }
