@@ -19,6 +19,7 @@ type rootFlags struct {
 	runtime     string
 	version     string
 	port        int
+	bind        string
 	namespace   string
 	dataDir     string
 	stateDir    string
@@ -43,6 +44,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().StringVar(&flags.runtime, "runtime", "", "runtime to use: binary, docker or helm (default: first supported)")
 	cmd.Flags().StringVar(&flags.version, "version-of", "", "service version to install/run (default: latest)")
 	cmd.Flags().IntVar(&flags.port, "port", 0, "host port override for the primary service port")
+	cmd.Flags().StringVar(&flags.bind, "bind", "", "address the service listens on (default 127.0.0.1; use 0.0.0.0 for all interfaces)")
 	cmd.Flags().StringVarP(&flags.namespace, "namespace", "n", "default", "kubernetes namespace (helm runtime)")
 	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "service data directory override")
 	cmd.PersistentFlags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
@@ -64,6 +66,9 @@ func (f *rootFlags) options() []start.Option {
 	}
 	if f.port != 0 {
 		opts = append(opts, start.WithPort(f.port))
+	}
+	if f.bind != "" {
+		opts = append(opts, start.WithBindAddress(f.bind))
 	}
 	if f.dataDir != "" {
 		opts = append(opts, start.WithDataDir(f.dataDir))

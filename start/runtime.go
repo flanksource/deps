@@ -15,9 +15,10 @@ import (
 type RuntimeKind string
 
 const (
-	RuntimeBinary RuntimeKind = "binary"
-	RuntimeDocker RuntimeKind = "docker"
-	RuntimeHelm   RuntimeKind = "helm"
+	RuntimeBinary  RuntimeKind = "binary"
+	RuntimeDocker  RuntimeKind = "docker"
+	RuntimeHelm    RuntimeKind = "helm"
+	RuntimeCommand RuntimeKind = "command"
 )
 
 // Runtime starts and stops a service using one execution backend.
@@ -58,8 +59,13 @@ type ServiceContext struct {
 	Host string
 }
 
-// serviceHost returns the hostname services are reachable at.
+// serviceHost returns the hostname services are reachable at. A specific
+// (non-loopback, non-wildcard) bind address is authoritative: the service
+// listens there and nowhere else.
 func (svc *ServiceContext) serviceHost() string {
+	if bind := svc.Opts.BindAddress; bind != "" && bind != "127.0.0.1" && bind != "0.0.0.0" {
+		return bind
+	}
 	if svc.Host != "" {
 		return svc.Host
 	}
@@ -96,6 +102,8 @@ func runtimePlatforms(spec types.ServiceSpec, kind RuntimeKind) []string {
 		return spec.Binary.Platforms
 	case RuntimeDocker:
 		return spec.Docker.Platforms
+	case RuntimeCommand:
+		return spec.Command.Platforms
 	default:
 		return nil
 	}

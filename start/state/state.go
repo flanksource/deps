@@ -28,7 +28,8 @@ type State struct {
 	ContainerID string            `yaml:"container_id,omitempty"`
 	HelmRelease string            `yaml:"helm_release,omitempty"`
 	Namespace   string            `yaml:"namespace,omitempty"`
-	Ports       map[string]int    `yaml:"ports,omitempty"` // port name -> host port
+	Commands    map[string]string `yaml:"commands,omitempty"` // command runtime: rendered stop/status
+	Ports       map[string]int    `yaml:"ports,omitempty"`    // port name -> host port
 	Connection  models.Connection `yaml:"connection"`
 	StartedAt   time.Time         `yaml:"started_at"`
 	LogFile     string            `yaml:"log_file,omitempty"`

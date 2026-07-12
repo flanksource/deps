@@ -48,8 +48,9 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return nil, err
 	}
 	if svc.Version == "" {
-		svc.Version, err = resolveServiceVersion(ctx, svc)
-		if err != nil {
+		if spec.DefaultVersion != "" {
+			svc.Version = spec.DefaultVersion
+		} else if svc.Version, err = resolveServiceVersion(ctx, svc); err != nil {
 			return nil, err
 		}
 	}
@@ -160,10 +161,16 @@ func (r *dockerRuntime) containerConfig(svc *ServiceContext, data map[string]any
 
 	exposed := nat.PortSet{}
 	bindings := nat.PortMap{}
-	// bind loopback-only for a local daemon; a remote daemon must expose on
-	// all interfaces to be reachable from here
-	bindIP := "127.0.0.1"
-	if svc.Host != "" && svc.Host != "localhost" {
+	// explicit bind address wins; otherwise loopback-only for a local daemon,
+	// while a remote daemon must expose on all interfaces to be reachable
+	bindIP := svc.Opts.BindAddress
+	if bindIP == "" {
+		bindIP = "127.0.0.1"
+		if svc.Host != "" && svc.Host != "localhost" {
+			bindIP = ""
+		}
+	}
+	if bindIP == "0.0.0.0" {
 		bindIP = ""
 	}
 	primary, _ := svc.Spec.PrimaryPort()
@@ -207,6 +214,7 @@ func (r *dockerRuntime) containerConfig(svc *ServiceContext, data map[string]any
 	hostConfig := &container.HostConfig{
 		PortBindings:  bindings,
 		Binds:         binds,
+		Privileged:    spec.Privileged,
 		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 	}
 	return config, hostConfig, nil

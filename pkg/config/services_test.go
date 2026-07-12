@@ -50,7 +50,7 @@ var _ = Describe("Service registry", func() {
 				services[name] = pkg.Service
 			}
 		}
-		Expect(len(services)).To(BeNumerically(">=", 16))
+		Expect(len(services)).To(BeNumerically(">=", 22))
 
 		for name, spec := range services {
 			Expect(spec.Type).ToNot(BeEmpty(), name)

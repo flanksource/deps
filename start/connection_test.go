@@ -125,6 +125,17 @@ var _ = Describe("selectRuntime", func() {
 		Expect(err).To(MatchError(ContainSubstring("docker, helm")))
 	})
 
+	It("selects the command runtime when it is the only one", func() {
+		spec := types.ServiceSpec{
+			Type:    "kubernetes",
+			Ports:   []types.ServicePort{{Name: "api", Port: 6443}},
+			Command: &types.CommandRuntime{Start: "kind create cluster", Stop: "kind delete cluster"},
+		}
+		kind, err := selectRuntime(spec, "", "darwin", "arm64")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(kind).To(Equal(RuntimeCommand))
+	})
+
 	It("skips platform-filtered runtimes during auto-selection", func() {
 		spec := postgresSpec()
 		spec.Binary.Platforms = []string{"linux-*"}

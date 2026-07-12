@@ -275,7 +275,46 @@ func Unarchive(src, dest string, options ...UnarchiveOption) (*Archive, error) {
 		return UntarWithFilterAndResult(src, dest, nil, opts)
 	}
 
+	// no recognizable extension (e.g. downloads from URLs with query
+	// strings): sniff magic bytes and retry under an aliased name so the
+	// extension-driven paths apply
+	if ext := sniffArchiveFormat(src); ext != "" {
+		aliased := src + ext
+		if err := os.Link(src, aliased); err != nil {
+			return nil, fmt.Errorf("failed to alias %s for extraction: %w", src, err)
+		}
+		defer func() { _ = os.Remove(aliased) }()
+		return Unarchive(aliased, dest, options...)
+	}
+
 	return nil, fmt.Errorf("unknown format type %s", src)
+}
+
+// sniffArchiveFormat detects an archive format from magic bytes, returning
+// the canonical extension or "" when unknown. Compressed formats are assumed
+// to wrap tarballs, matching how release artifacts are distributed.
+func sniffArchiveFormat(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	buf := make([]byte, 262)
+	n, _ := io.ReadFull(f, buf)
+	buf = buf[:n]
+	switch {
+	case n >= 2 && buf[0] == 0x1f && buf[1] == 0x8b:
+		return ".tar.gz"
+	case n >= 4 && bytes.HasPrefix(buf, []byte("PK\x03\x04")):
+		return ".zip"
+	case n >= 6 && bytes.HasPrefix(buf, []byte{0xFD, '7', 'z', 'X', 'Z', 0x00}):
+		return ".tar.xz"
+	case n >= 3 && bytes.HasPrefix(buf, []byte("BZh")):
+		return ".tar.bz2"
+	case n >= 262 && bytes.Equal(buf[257:262], []byte("ustar")):
+		return ".tar"
+	}
+	return ""
 }
 
 func IsTar(path string) bool {

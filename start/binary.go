@@ -34,7 +34,7 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return prior, nil
 	}
 
-	if err := r.install(ctx, svc); err != nil {
+	if err := installServicePackages(ctx, svc, spec.Package, spec.Requires...); err != nil {
 		return nil, err
 	}
 
@@ -114,9 +114,10 @@ func (r *binaryRuntime) processOutput() string {
 	return r.proc.GetOutput()
 }
 
-// install ensures the artifact is present and fills AppDir/BinDir/Version.
-func (r *binaryRuntime) install(ctx context.Context, svc *ServiceContext) error {
-	pkgName := svc.Spec.Binary.Package
+// installServicePackages ensures the service's artifact (and any extra
+// required packages) are present and fills AppDir/BinDir/Version from the
+// primary package. pkgName defaults to the service's registry key.
+func installServicePackages(ctx context.Context, svc *ServiceContext, pkgName string, extra ...string) error {
 	if pkgName == "" {
 		pkgName = svc.Name
 	}
@@ -128,15 +129,23 @@ func (r *binaryRuntime) install(ctx context.Context, svc *ServiceContext) error 
 	if err != nil {
 		return err
 	}
-	result, err := deps.InstallWithContext(ctx, pkgName, version,
+	opts := []deps.InstallOption{
 		deps.WithBinDir(filepath.Join(home, ".deps", "bin")),
-		deps.WithAppDir(filepath.Join(home, ".deps", "opt")))
+		deps.WithAppDir(filepath.Join(home, ".deps", "opt")),
+	}
+	result, err := deps.InstallWithContext(ctx, pkgName, version, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to install %s: %w", pkgName, err)
 	}
 	svc.AppDir = result.AppDir
 	svc.BinDir = result.BinDir
 	svc.Version = result.Version.Version
+
+	for _, name := range extra {
+		if _, err := deps.InstallWithContext(ctx, name, "latest", opts...); err != nil {
+			return fmt.Errorf("failed to install required package %s: %w", name, err)
+		}
+	}
 	return nil
 }
 
