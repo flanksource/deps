@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/flanksource/deps/pkg/manager"
+	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
+	"github.com/flanksource/deps/pkg/version"
 	"github.com/flanksource/deps/start/state"
 )
 
@@ -64,8 +67,9 @@ func (svc *ServiceContext) serviceHost() string {
 }
 
 // selectRuntime picks the runtime to use: the requested one (validated
-// against the spec) or the first supported in order binary > docker > helm.
-func selectRuntime(spec types.ServiceSpec, requested RuntimeKind) (RuntimeKind, error) {
+// against the spec) or the first supported in order binary > docker > helm,
+// skipping runtimes whose platform filter excludes this host.
+func selectRuntime(spec types.ServiceSpec, requested RuntimeKind, os, arch string) (RuntimeKind, error) {
 	supported := spec.Runtimes()
 	if requested != "" {
 		for _, kind := range supported {
@@ -78,5 +82,40 @@ func selectRuntime(spec types.ServiceSpec, requested RuntimeKind) (RuntimeKind, 
 	if len(supported) == 0 {
 		return "", fmt.Errorf("service defines no runtimes")
 	}
-	return RuntimeKind(supported[0]), nil
+	for _, kind := range supported {
+		if checkPlatform(runtimePlatforms(spec, RuntimeKind(kind)), os, arch) == nil {
+			return RuntimeKind(kind), nil
+		}
+	}
+	return "", fmt.Errorf("no runtime supports %s-%s (available: %s)", os, arch, strings.Join(supported, ", "))
+}
+
+func runtimePlatforms(spec types.ServiceSpec, kind RuntimeKind) []string {
+	switch kind {
+	case RuntimeBinary:
+		return spec.Binary.Platforms
+	case RuntimeDocker:
+		return spec.Docker.Platforms
+	default:
+		return nil
+	}
+}
+
+// resolveServiceVersion resolves an unset version to the latest published
+// release via the package's manager (so image tags like
+// elasticsearch:<version>, which have no "latest", still work). Service-only
+// entries without an installable artifact fall back to the "latest" tag.
+func resolveServiceVersion(ctx context.Context, svc *ServiceContext) (string, error) {
+	if svc.Package.Manager == "" {
+		return "latest", nil
+	}
+	mgr, ok := manager.GetGlobalRegistry().Get(svc.Package.Manager)
+	if !ok {
+		return "latest", nil
+	}
+	resolved, err := version.NewResolver(mgr).ResolveConstraint(ctx, svc.Package, "latest", platform.Current())
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve latest version of %s: %w", svc.Name, err)
+	}
+	return resolved, nil
 }

@@ -31,7 +31,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	if !ok {
 		return nil, fmt.Errorf("unknown service %q, available: %s", name, strings.Join(ServiceNames(), ", "))
 	}
-	kind, err := selectRuntime(*spec, options.Runtime)
+	kind, err := selectRuntime(*spec, options.Runtime, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return nil, fmt.Errorf("service %s: %w", name, err)
 	}

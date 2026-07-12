@@ -3,7 +3,6 @@ package start
 import (
 	"bytes"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"text/template"
@@ -171,11 +170,18 @@ func renderProperties(conn *models.Connection, properties map[string]string, dat
 	return nil
 }
 
-// generatePassword returns a random 24-hex-char password.
+// generatePassword returns a 24-char random password with guaranteed upper,
+// lower and digit characters: three classes satisfy strict policies like SQL
+// Server's, and avoiding symbols keeps it safe to embed in connection URLs.
 func generatePassword() string {
-	buf := make([]byte, 12)
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
+	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
 		panic(fmt.Sprintf("crypto/rand failed: %v", err))
 	}
-	return hex.EncodeToString(buf)
+	for i, b := range buf {
+		buf[i] = charset[int(b)%len(charset)]
+	}
+	copy(buf, "Dp1")
+	return string(buf)
 }
