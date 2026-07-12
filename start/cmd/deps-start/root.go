@@ -45,11 +45,12 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().IntVar(&flags.port, "port", 0, "host port override for the primary service port")
 	cmd.Flags().StringVarP(&flags.namespace, "namespace", "n", "default", "kubernetes namespace (helm runtime)")
 	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "service data directory override")
-	cmd.Flags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
+	cmd.PersistentFlags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
 	cmd.Flags().BoolVarP(&flags.detach, "detach", "d", false, "run the service in the background")
 	cmd.Flags().DurationVar(&flags.waitTimeout, "wait-timeout", 2*time.Minute, "readiness wait timeout")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "yaml", "connection output format: yaml, json or env")
 
+	cmd.AddCommand(newStopCmd(flags), newStatusCmd(flags), newListCmd(flags), newLogsCmd(flags))
 	return cmd
 }
 
@@ -79,6 +80,17 @@ func (f *rootFlags) options() []start.Option {
 }
 
 func runStart(cmd *cobra.Command, name string, flags *rootFlags) error {
+	if flags.detach && os.Getenv(supervisorEnv) == "" {
+		if err := runDetached(name, flags); err != nil {
+			return err
+		}
+		instance, err := start.Get(cmd.Context(), name, flags.options()...)
+		if err != nil {
+			return err
+		}
+		return printConnection(instance, flags.output)
+	}
+
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
