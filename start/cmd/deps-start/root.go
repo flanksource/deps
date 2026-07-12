@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/flanksource/deps/pkg/config"
+	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/start"
 )
 
@@ -32,28 +34,97 @@ func newRootCmd() *cobra.Command {
 	flags := &rootFlags{}
 	cmd := &cobra.Command{
 		Use:     "deps-start <service>",
-		Short:   "Start services (postgres, opensearch, valkey, ...) via binary, docker or helm",
-		Long:    "deps-start launches services from the deps registry and prints a commons-db connection.\n\nAvailable services: " + strings.Join(start.ServiceNames(), ", "),
+		Short:   "Start services (postgres, opensearch, valkey, ...) via binary, docker, helm or a CLI",
+		Long:    "deps-start launches services from the deps registry and prints a commons-db connection.",
 		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStart(cmd, args[0], flags)
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return fmt.Errorf("unknown service %q, available: %s", args[0], strings.Join(start.ServiceNames(), ", "))
 		},
 		SilenceUsage: true,
 	}
-	cmd.Flags().StringVar(&flags.runtime, "runtime", "", "runtime to use: binary, docker or helm (default: first supported)")
-	cmd.Flags().StringVar(&flags.version, "version-of", "", "service version to install/run (default: latest)")
+	cmd.PersistentFlags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
+
+	cmd.AddGroup(
+		&cobra.Group{ID: "services", Title: "Services:"},
+		&cobra.Group{ID: "management", Title: "Management:"},
+	)
+	for _, name := range start.ServiceNames() {
+		cmd.AddCommand(newServiceCmd(name, flags))
+	}
+	for _, sub := range []*cobra.Command{newStopCmd(flags), newStatusCmd(flags), newListCmd(flags), newLogsCmd(flags)} {
+		sub.GroupID = "management"
+		cmd.AddCommand(sub)
+	}
+	return cmd
+}
+
+// newServiceCmd builds the per-service subcommand from its registry spec.
+func newServiceCmd(name string, flags *rootFlags) *cobra.Command {
+	_, spec, _ := config.GetService(name)
+	cmd := &cobra.Command{
+		Use:     name,
+		Short:   fmt.Sprintf("Start %s (%s) via %s", name, spec.Type, strings.Join(spec.Runtimes(), ", ")),
+		Long:    serviceHelp(name, spec),
+		GroupID: "services",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runStart(cmd, name, flags)
+		},
+		SilenceUsage: true,
+	}
+	addStartFlags(cmd, flags, spec)
+	return cmd
+}
+
+func addStartFlags(cmd *cobra.Command, flags *rootFlags, spec *types.ServiceSpec) {
+	cmd.Flags().StringVar(&flags.runtime, "runtime", "", fmt.Sprintf("runtime to use: %s (default: first supported)", strings.Join(spec.Runtimes(), ", ")))
+	cmd.Flags().StringVar(&flags.version, "version", "", "service version to install/run (default: latest)")
 	cmd.Flags().IntVar(&flags.port, "port", 0, "host port override for the primary service port")
 	cmd.Flags().StringVar(&flags.bind, "bind", "", "address the service listens on (default 127.0.0.1; use 0.0.0.0 for all interfaces)")
-	cmd.Flags().StringVarP(&flags.namespace, "namespace", "n", "default", "kubernetes namespace (helm runtime)")
 	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "service data directory override")
-	cmd.PersistentFlags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
 	cmd.Flags().BoolVarP(&flags.detach, "detach", "d", false, "run the service in the background")
 	cmd.Flags().DurationVar(&flags.waitTimeout, "wait-timeout", 2*time.Minute, "readiness wait timeout")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "yaml", "connection output format: yaml, json or env")
+	if spec.Helm != nil {
+		cmd.Flags().StringVarP(&flags.namespace, "namespace", "n", "default", "kubernetes namespace (helm runtime)")
+	} else {
+		flags.namespace = "default"
+	}
+}
 
-	cmd.AddCommand(newStopCmd(flags), newStatusCmd(flags), newListCmd(flags), newLogsCmd(flags))
-	return cmd
+// serviceHelp renders the long help for a service from its spec.
+func serviceHelp(name string, spec *types.ServiceSpec) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Start %s and print its %s connection.\n\n", name, spec.Type)
+	fmt.Fprintf(&b, "Runtimes: %s\n", strings.Join(spec.Runtimes(), ", "))
+	var ports []string
+	for _, p := range spec.Ports {
+		ports = append(ports, fmt.Sprintf("%s=%d", p.Name, p.Port))
+	}
+	if len(ports) > 0 {
+		fmt.Fprintf(&b, "Ports:    %s\n", strings.Join(ports, ", "))
+	}
+	if creds := spec.Credentials; creds != nil {
+		fmt.Fprintf(&b, "Username: %s\n", creds.Username)
+		if creds.Database != "" {
+			fmt.Fprintf(&b, "Database: %s\n", creds.Database)
+		}
+	}
+	if spec.Helm != nil {
+		chart := spec.Helm.Chart
+		if spec.Helm.Repo != "" {
+			chart = spec.Helm.Repo + " " + chart
+		}
+		fmt.Fprintf(&b, "Chart:    %s\n", chart)
+	}
+	if spec.Docker != nil {
+		fmt.Fprintf(&b, "Image:    %s\n", spec.Docker.Image)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (f *rootFlags) options() []start.Option {

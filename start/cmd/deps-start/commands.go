@@ -13,11 +13,17 @@ import (
 	"github.com/flanksource/deps/start"
 )
 
+// completeServiceNames offers registry service names for shell completion.
+func completeServiceNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return start.ServiceNames(), cobra.ShellCompDirectiveNoFileComp
+}
+
 func newStopCmd(flags *rootFlags) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
-		Use:   "stop [service...]",
-		Short: "Stop started services",
+		Use:               "stop [service...]",
+		Short:             "Stop started services",
+		ValidArgsFunction: completeServiceNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			names := args
 			if all {
@@ -47,9 +53,10 @@ func newStopCmd(flags *rootFlags) *cobra.Command {
 
 func newStatusCmd(flags *rootFlags) *cobra.Command {
 	return &cobra.Command{
-		Use:   "status [service]",
-		Short: "Show the status of started services",
-		Args:  cobra.MaximumNArgs(1),
+		Use:               "status [service]",
+		Short:             "Show the status of started services",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeServiceNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			instances, err := start.List(cmd.Context(), flags.options()...)
 			if err != nil {
@@ -105,9 +112,10 @@ func printStatusTable(cmd *cobra.Command, flags *rootFlags, instances []*start.I
 func newLogsCmd(flags *rootFlags) *cobra.Command {
 	var follow bool
 	cmd := &cobra.Command{
-		Use:   "logs <service>",
-		Short: "Show service logs",
-		Args:  cobra.ExactArgs(1),
+		Use:               "logs <service>",
+		Short:             "Show service logs",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeServiceNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			instance, err := start.Get(cmd.Context(), args[0], flags.options()...)
 			if err != nil {
