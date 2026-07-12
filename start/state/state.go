@@ -34,6 +34,20 @@ type State struct {
 	StartedAt   time.Time         `yaml:"started_at"`
 	LogFile     string            `yaml:"log_file,omitempty"`
 	Ready       bool              `yaml:"ready"`
+	// Resources is the latest usage sample: the binary runtime's supervisor
+	// persists it periodically, the docker runtime samples on demand.
+	Resources *Resources `yaml:"resources,omitempty"`
+}
+
+// Resources is a point-in-time usage sample of a running service.
+type Resources struct {
+	CPUPercent float64   `yaml:"cpu_percent"`
+	RSSBytes   uint64    `yaml:"rss_bytes"`
+	PeakRSS    uint64    `yaml:"peak_rss,omitempty"`
+	OpenFiles  int       `yaml:"open_files,omitempty"`
+	Ports      []int     `yaml:"listening_ports,omitempty"` // detected listening ports
+	Restarts   int       `yaml:"restarts,omitempty"`
+	SampledAt  time.Time `yaml:"sampled_at"`
 }
 
 // Dir returns the per-service state directory, creating it if needed.

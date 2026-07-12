@@ -2,8 +2,10 @@ package start
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -266,6 +268,56 @@ func (r *dockerRuntime) containerLogs(ctx context.Context, id string) string {
 	defer func() { _ = reader.Close() }()
 	data, _ := io.ReadAll(reader)
 	return string(data)
+}
+
+// Metrics samples the container's CPU and memory via the stats API.
+func (r *dockerRuntime) Metrics(ctx context.Context, st *state.State) (*state.Resources, error) {
+	docker, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	if st.ContainerID == "" {
+		return nil, fmt.Errorf("no container recorded")
+	}
+	resp, err := docker.ContainerStats(ctx, st.ContainerID, false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var stats container.StatsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		return nil, err
+	}
+
+	// same formula as docker stats: delta over the pre-sample, scaled to cpus
+	var cpu float64
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	sysDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
+	if cpuDelta > 0 && sysDelta > 0 {
+		cpus := float64(stats.CPUStats.OnlineCPUs)
+		if cpus == 0 {
+			cpus = float64(len(stats.CPUStats.CPUUsage.PercpuUsage))
+		}
+		cpu = cpuDelta / sysDelta * cpus * 100
+	}
+	// docker CLI convention: usage minus the reclaimable page cache
+	mem := stats.MemoryStats.Usage
+	if cache, ok := stats.MemoryStats.Stats["inactive_file"]; ok && cache < mem {
+		mem -= cache
+	}
+
+	var ports []int
+	for _, p := range st.Ports {
+		ports = append(ports, p)
+	}
+	sort.Ints(ports)
+	return &state.Resources{
+		CPUPercent: cpu,
+		RSSBytes:   mem,
+		PeakRSS:    stats.MemoryStats.MaxUsage,
+		Ports:      ports,
+		SampledAt:  time.Now(),
+	}, nil
 }
 
 func (r *dockerRuntime) Stop(ctx context.Context, st *state.State) error {

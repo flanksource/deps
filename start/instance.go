@@ -36,3 +36,21 @@ func (i *Instance) Wait(ctx context.Context) error {
 	}
 	return nil
 }
+
+// metricsProvider is implemented by runtimes that can sample live resource
+// usage on demand (docker); others fall back to the persisted sample.
+type metricsProvider interface {
+	Metrics(ctx context.Context, st *state.State) (*state.Resources, error)
+}
+
+// Metrics returns the latest resource sample for the service: live for
+// runtimes that support on-demand sampling, otherwise the sample the
+// supervisor last persisted. Returns nil when nothing is available.
+func (i *Instance) Metrics(ctx context.Context) *state.Resources {
+	if m, ok := i.runtime.(metricsProvider); ok {
+		if res, err := m.Metrics(ctx, i.State); err == nil && res != nil {
+			return res
+		}
+	}
+	return i.State.Resources
+}

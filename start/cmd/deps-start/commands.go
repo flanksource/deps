@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/flanksource/deps/start"
+	"github.com/flanksource/deps/start/state"
 )
 
 // completeServiceNames offers registry service names for shell completion.
@@ -96,17 +99,69 @@ func newListCmd(flags *rootFlags) *cobra.Command {
 
 func printStatusTable(cmd *cobra.Command, flags *rootFlags, instances []*start.Instance) error {
 	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tRUNTIME\tSTATUS\tVERSION\tSTARTED\tURL")
+	fmt.Fprintln(w, "NAME\tRUNTIME\tSTATUS\tVERSION\tPORTS\tCPU\tMEM\tUPTIME\tURL")
 	for _, i := range instances {
 		status, err := start.Status(cmd.Context(), i.Name, flags.options()...)
 		if err != nil {
-			status = "unknown"
+			status = state.StatusUnknown
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			i.Name, i.Runtime, status, i.State.Version,
-			i.State.StartedAt.Format(time.RFC3339), i.Connection.String())
+		display := string(status)
+		ports, cpu, mem := "", "", ""
+		if status == state.StatusRunning {
+			if res := i.Metrics(cmd.Context()); res != nil {
+				ports = joinPorts(res.Ports)
+				cpu = fmt.Sprintf("%.1f%%", res.CPUPercent)
+				mem = humanBytes(res.RSSBytes)
+				if res.Restarts > 0 {
+					display += fmt.Sprintf(" (%d restarts)", res.Restarts)
+				}
+			}
+		}
+		if ports == "" {
+			ports = joinPorts(portValues(i.State.Ports))
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			i.Name, i.Runtime, display, i.State.Version,
+			ports, cpu, mem, uptime(i.State.StartedAt, status), i.Connection.String())
 	}
 	return w.Flush()
+}
+
+func joinPorts(ports []int) string {
+	strs := make([]string, len(ports))
+	for i, p := range ports {
+		strs[i] = strconv.Itoa(p)
+	}
+	return strings.Join(strs, ",")
+}
+
+func portValues(named map[string]int) []int {
+	var ports []int
+	for _, p := range named {
+		ports = append(ports, p)
+	}
+	sort.Ints(ports)
+	return ports
+}
+
+func humanBytes(b uint64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1fGiB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.0fMiB", float64(b)/(1<<20))
+	case b > 0:
+		return fmt.Sprintf("%.0fKiB", float64(b)/(1<<10))
+	default:
+		return ""
+	}
+}
+
+func uptime(started time.Time, status state.Status) string {
+	if started.IsZero() || status != state.StatusRunning {
+		return ""
+	}
+	return time.Since(started).Round(time.Second).String()
 }
 
 func newLogsCmd(flags *rootFlags) *cobra.Command {
