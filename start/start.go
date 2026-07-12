@@ -22,7 +22,7 @@ import (
 // instance with its connection. Idempotent: an already-running service is
 // reused.
 func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) {
-	options, err := resolveOptions(opts)
+	options, err := ResolveOptions(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 
 // Get returns a previously started service, or os.IsNotExist error.
 func Get(ctx context.Context, name string, opts ...Option) (*Instance, error) {
-	options, err := resolveOptions(opts)
+	options, err := ResolveOptions(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -99,8 +99,12 @@ func Get(ctx context.Context, name string, opts ...Option) (*Instance, error) {
 	return &Instance{Name: name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt}, nil
 }
 
-// Stop stops a previously started service.
+// Stop stops a previously started service and marks its state not-ready.
 func Stop(ctx context.Context, name string, opts ...Option) error {
+	options, err := ResolveOptions(opts)
+	if err != nil {
+		return err
+	}
 	instance, err := Get(ctx, name, opts...)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -108,7 +112,11 @@ func Stop(ctx context.Context, name string, opts ...Option) error {
 		}
 		return err
 	}
-	return instance.Stop(ctx)
+	if err := instance.Stop(ctx); err != nil {
+		return err
+	}
+	instance.State.Ready = false
+	return instance.State.Save(options.StateDir)
 }
 
 // Status returns the live status of a previously started service.
@@ -125,7 +133,7 @@ func Status(ctx context.Context, name string, opts ...Option) (state.Status, err
 
 // List returns every service with persisted state.
 func List(ctx context.Context, opts ...Option) ([]*Instance, error) {
-	options, err := resolveOptions(opts)
+	options, err := ResolveOptions(opts)
 	if err != nil {
 		return nil, err
 	}

@@ -30,10 +30,10 @@ type Options struct {
 
 type Option func(*Options)
 
-// resolveOptions applies opts over the defaults and absolutizes paths: init
+// ResolveOptions applies opts over the defaults and absolutizes paths: init
 // steps and the supervised process run with their own working directories,
 // so every path handed to them must be absolute.
-func resolveOptions(opts []Option) (Options, error) {
+func ResolveOptions(opts []Option) (Options, error) {
 	options := DefaultOptions()
 	for _, o := range opts {
 		o(&options)

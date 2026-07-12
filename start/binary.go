@@ -51,8 +51,13 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return nil, err
 	}
 
+	logf, err := os.OpenFile(svc.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
 	started := make(chan *exec.Process, 1)
-	proc := exec.NewExec(command, args...).WithProcessGroup().WithEnv(env).WithCwd(svc.RunDir)
+	proc := exec.NewExec(command, args...).WithProcessGroup().WithEnv(env).WithCwd(svc.RunDir).Stream(logf, logf)
 	sup := proc.Supervise(exec.SuperviseOptions{
 		RestartPolicy: exec.RestartNo,
 		StopGrace:     10 * time.Second,
@@ -80,7 +85,9 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	}
 
 	watch := &processWatch{
-		alive:  func() bool { return sup.Status() != exec.StatusCrashed && sup.Status() != exec.StatusExited && sup.Status() != exec.StatusStopped },
+		alive: func() bool {
+			return sup.Status() != exec.StatusCrashed && sup.Status() != exec.StatusExited && sup.Status() != exec.StatusStopped
+		},
 		output: func() string { return r.processOutput() },
 	}
 	if err := awaitHealthy(ctx, svc, spec.Health, watch); err != nil {
