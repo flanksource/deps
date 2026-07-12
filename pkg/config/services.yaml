@@ -25,8 +25,7 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: postgres
-            set: {settings.superuserPassword: "{{.password}}", userDatabase.name: "{{.database}}"}
-            # VERIFY: groundhog2k postgres secret name/key convention
+            set: {settings.superuserPassword.value: "{{.password}}"}
             secret: {name: "{{.release}}", key: POSTGRES_PASSWORD}
             service: {name: "{{.release}}", port: 5432}
 
@@ -43,8 +42,8 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: mysql
-            set: {settings.rootPassword: "{{.password}}", userDatabase.name: "{{.database}}"}
-            # VERIFY: groundhog2k mysql secret name/key convention
+            # VERIFY: userDatabase may need user/password subkeys as well
+            set: {settings.rootPassword.value: "{{.password}}", userDatabase.name.value: "{{.database}}"}
             secret: {name: "{{.release}}", key: MYSQL_ROOT_PASSWORD}
             service: {name: "{{.release}}", port: 3306}
 
@@ -79,9 +78,11 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: valkey
-            set: {password: "{{.password}}"}
-            # VERIFY: groundhog2k valkey secret name/key convention
-            secret: {name: "{{.release}}", key: VALKEY_PASSWORD}
+            # the chart has no auth values; requirepass goes via valkeyConfig
+            # and the connection carries the literal password
+            values: |
+                valkeyConfig: |
+                  requirepass {{.password}}
             service: {name: "{{.release}}", port: 6379}
 
     opensearch:
@@ -363,9 +364,8 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: rabbitmq
-            set: {authentication.user: "{{.username}}", authentication.password: "{{.password}}"}
-            # VERIFY: groundhog2k rabbitmq secret name/key convention
-            secret: {name: "{{.release}}", key: RABBITMQ_DEFAULT_PASS}
+            # the chart creates no credential secret; literal credentials emitted
+            set: {authentication.user.value: "{{.username}}", authentication.password.value: "{{.password}}"}
             service: {name: "{{.release}}", port: 5672}
 
     rclone:
