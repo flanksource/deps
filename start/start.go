@@ -206,13 +206,14 @@ func newServiceContext(name string, pkg types.Package, spec types.ServiceSpec, o
 		}
 	}
 
+	// only credentialed services get a (generated) password
 	if creds := spec.Credentials; creds != nil {
 		svc.Username = creds.Username
 		svc.Password = creds.Password
 		svc.Database = creds.Database
-	}
-	if svc.Password == "" {
-		svc.Password = resolvePassword(name, svc.RunDir, options.StateDir)
+		if svc.Password == "" {
+			svc.Password = resolvePassword(name, svc.RunDir, options.StateDir)
+		}
 	}
 	return svc, nil
 }

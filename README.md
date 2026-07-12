@@ -587,6 +587,55 @@ deps run --runtime-version=">=7.0" advanced.ps1
 
 ---
 
+## Usage: deps-start (services)
+
+`deps-start` (a separate binary from the `start/` submodule) launches services from
+the registry — postgres, opensearch, valkey, mysql, mssql, elasticsearch, loki,
+prometheus, grafana, jaeger, otel-collector, clickhouse, nats, rabbitmq, rclone,
+ministack — via three runtimes, and prints a
+[commons-db](https://github.com/flanksource/commons-db) connection:
+
+- **binary** — installs the artifact with deps and supervises it (clicky `SupervisedProcess`)
+- **docker** — named containers via the docker SDK (honors `DOCKER_HOST` and the docker CLI context)
+- **helm** — `helm upgrade --install --wait` (helm auto-installed via deps); connections
+  reference chart secrets via `secret://<name>/<key>` and in-cluster `svc://` URLs
+
+```bash
+# foreground: supervises postgres, prints the connection once ready, Ctrl-C stops it
+deps-start postgres --port 15432
+
+# background + lifecycle
+deps-start valkey -d          # docker runtime (valkey has no binary artifact)
+deps-start list
+deps-start logs valkey -f
+deps-start stop --all
+
+# helm: connection password resolves from the chart secret at hydration time
+deps-start postgres --runtime helm -n dev
+# url: svc://deps-postgres.dev:5432
+# password: secret://deps-postgres/POSTGRES_PASSWORD
+
+# output formats: yaml (default), json, env
+deps-start postgres -o env
+```
+
+As a library:
+
+```go
+import "github.com/flanksource/deps/start"
+
+instance, err := start.Start(ctx, "postgres", start.WithPort(15432))
+// instance.Connection is a commons-db models.Connection
+defer instance.Stop(ctx)
+```
+
+Service metadata (ports, credentials, health checks, images, charts, connection
+templates) lives in the registry — see `pkg/config/services.yaml`. Runtime support
+per service is implied by which of `binary`/`docker`/`helm` blocks its `service:`
+spec defines.
+
+---
+
 ## Adding Custom Dependencies
 
 ### Basic Package Definition

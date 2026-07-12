@@ -851,10 +851,10 @@ registry:
         name: nats-server
         repo: nats-io/nats-server
         asset_patterns:
-            darwin-amd64: nats-server-{{.tag}}-darwin-amd64.zip
-            darwin-arm64: nats-server-{{.tag}}-darwin-arm64.zip
-            linux-amd64: nats-server-{{.tag}}-linux-amd64.zip
-            linux-arm64: nats-server-{{.tag}}-linux-arm64.zip
+            darwin-amd64: nats-server-{{.tag}}-darwin-amd64.tar.gz
+            darwin-arm64: nats-server-{{.tag}}-darwin-arm64.tar.gz
+            linux-amd64: nats-server-{{.tag}}-linux-amd64.tar.gz
+            linux-arm64: nats-server-{{.tag}}-linux-arm64.tar.gz
             windows-amd64: nats-server-{{.tag}}-windows-amd64.zip
         binary_path: nats-server-{{.tag}}-{{.os}}-{{.arch}}/nats-server
         checksum_file: SHA256SUMS
