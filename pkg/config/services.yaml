@@ -20,7 +20,7 @@ services:
         docker:
             image: "postgres:{{.major}}"
             env: {POSTGRES_USER: "{{.username}}", POSTGRES_PASSWORD: "{{.password}}", POSTGRES_DB: "{{.database}}"}
-            data_path: /var/lib/postgresql/data
+            data_path: /var/lib/postgresql # 18+ images keep versioned data dirs under here
             health: {exec: ["pg_isready", "-U", "{{.username}}"], timeout: 60s}
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
@@ -53,7 +53,7 @@ services:
         credentials: {username: sa, database: master}
         url: "sqlserver://{{.username}}:{{.password}}@{{.host}}?database={{.database}}"
         docker:
-            image: "mcr.microsoft.com/mssql/server:{{.version}}-latest" # version e.g. "2022"
+            image: 'mcr.microsoft.com/mssql/server:{{if eq .version "latest"}}2022-latest{{else}}{{.version}}-latest{{end}}' # version e.g. "2022"
             env: {ACCEPT_EULA: "Y", MSSQL_SA_PASSWORD: "{{.password}}"}
             data_path: /var/opt/mssql
             health: {port: mssql, timeout: 120s}
@@ -89,12 +89,13 @@ services:
         type: opensearch
         ports: [{name: http, port: 9200}]
         credentials: {username: admin}
-        url: "http://{{.username}}:{{.password}}@{{.host}}"
+        url: "http://{{.host}}"
         health: {http: /_cluster/health, port: http, timeout: 180s}
         binary:
             command: bin/opensearch
             args: ["-Ediscovery.type=single-node", "-Eplugins.security.disabled=true", "-Ehttp.port={{.port}}", "-Epath.data={{.dataDir}}"]
             env: {OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            platforms: ["linux-*"] # no darwin bundles are published
         docker:
             image: "opensearchproject/opensearch:{{.version}}"
             env: {discovery.type: single-node, DISABLE_SECURITY_PLUGIN: "true", OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"}
@@ -213,7 +214,7 @@ services:
                         static_configs:
                           - targets: ["localhost:{{.port}}"]
         docker:
-            image: "prom/prometheus:v{{.version}}"
+            image: 'prom/prometheus:{{if eq .version "latest"}}latest{{else}}v{{.version}}{{end}}'
             data_path: /prometheus
         helm:
             repo: https://prometheus-community.github.io/helm-charts
@@ -323,9 +324,28 @@ services:
         url: "clickhouse://{{.username}}:{{.password}}@{{.host}}/{{.database}}"
         health: {http: /ping, port: http, timeout: 60s}
         binary:
-            # binary runtime runs the default user without a password
             command: "{{.binDir}}/clickhouse"
-            args: ["server", "--", "--path={{.dataDir}}", "--tcp_port={{.port}}", "--http_port={{.ports.http}}", "--listen_host=127.0.0.1"]
+            args: ["server", "--", "--path={{.dataDir}}", "--tcp_port={{.port}}", "--http_port={{.ports.http}}", "--listen_host=127.0.0.1", "--users_config={{.runDir}}/users.xml"]
+            files:
+                users.xml: |
+                    <clickhouse>
+                        <profiles>
+                            <default/>
+                        </profiles>
+                        <quotas>
+                            <default/>
+                        </quotas>
+                        <users>
+                            <default>
+                                <password>{{.password}}</password>
+                                <networks>
+                                    <ip>::/0</ip>
+                                </networks>
+                                <profile>default</profile>
+                                <quota>default</quota>
+                            </default>
+                        </users>
+                    </clickhouse>
         docker:
             image: "clickhouse/clickhouse-server:{{.version}}"
             env: {CLICKHOUSE_USER: "{{.username}}", CLICKHOUSE_PASSWORD: "{{.password}}", CLICKHOUSE_DB: "{{.database}}"}
@@ -357,7 +377,7 @@ services:
         credentials: {username: admin}
         url: "amqp://{{.username}}:{{.password}}@{{.host}}"
         docker:
-            image: "rabbitmq:{{.version}}-management"
+            image: 'rabbitmq:{{if eq .version "latest"}}management{{else}}{{.version}}-management{{end}}'
             env: {RABBITMQ_DEFAULT_USER: "{{.username}}", RABBITMQ_DEFAULT_PASS: "{{.password}}"}
             data_path: /var/lib/rabbitmq
             health: {exec: ["rabbitmq-diagnostics", "-q", "ping"], timeout: 120s}

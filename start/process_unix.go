@@ -3,6 +3,7 @@
 package start
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 	"time"
@@ -16,21 +17,25 @@ func processAlive(pid int) bool {
 }
 
 // killProcessGroup terminates a process group: SIGTERM, then SIGKILL after
-// the grace period.
+// the grace period. Liveness is probed on the group (not the leader pid,
+// which can linger as a zombie), and ESRCH means already-stopped, which is
+// the desired end state.
 func killProcessGroup(pid int, grace time.Duration) error {
 	if pid <= 0 {
 		return fmt.Errorf("no pid recorded")
 	}
-	if !processAlive(pid) {
+	if err := syscall.Kill(-pid, syscall.SIGTERM); errors.Is(err, syscall.ESRCH) {
 		return nil
 	}
-	_ = syscall.Kill(-pid, syscall.SIGTERM)
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {
-		if !processAlive(pid) {
+		if err := syscall.Kill(-pid, 0); errors.Is(err, syscall.ESRCH) {
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return syscall.Kill(-pid, syscall.SIGKILL)
+	if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+		return err
+	}
+	return nil
 }

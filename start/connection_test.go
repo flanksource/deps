@@ -107,13 +107,13 @@ var _ = Describe("BuildConnection", func() {
 
 var _ = Describe("selectRuntime", func() {
 	It("prefers binary over docker over helm", func() {
-		kind, err := selectRuntime(postgresSpec(), "")
+		kind, err := selectRuntime(postgresSpec(), "", "darwin", "arm64")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(kind).To(Equal(RuntimeBinary))
 	})
 
 	It("honors an explicit supported runtime", func() {
-		kind, err := selectRuntime(postgresSpec(), RuntimeHelm)
+		kind, err := selectRuntime(postgresSpec(), RuntimeHelm, "darwin", "arm64")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(kind).To(Equal(RuntimeHelm))
 	})
@@ -121,7 +121,19 @@ var _ = Describe("selectRuntime", func() {
 	It("rejects unsupported runtimes listing the supported ones", func() {
 		spec := postgresSpec()
 		spec.Binary = nil
-		_, err := selectRuntime(spec, RuntimeBinary)
+		_, err := selectRuntime(spec, RuntimeBinary, "darwin", "arm64")
 		Expect(err).To(MatchError(ContainSubstring("docker, helm")))
+	})
+
+	It("skips platform-filtered runtimes during auto-selection", func() {
+		spec := postgresSpec()
+		spec.Binary.Platforms = []string{"linux-*"}
+		kind, err := selectRuntime(spec, "", "darwin", "arm64")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(kind).To(Equal(RuntimeDocker), "binary is linux-only, docker is next")
+
+		kind, err = selectRuntime(spec, "", "linux", "amd64")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(kind).To(Equal(RuntimeBinary))
 	})
 })

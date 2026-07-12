@@ -48,7 +48,10 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return nil, err
 	}
 	if svc.Version == "" {
-		svc.Version = "latest"
+		svc.Version, err = resolveServiceVersion(ctx, svc)
+		if err != nil {
+			return nil, err
+		}
 	}
 	svc.Host = daemonHost(docker)
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
