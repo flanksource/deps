@@ -94,6 +94,7 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		sup.Stop()
 		return nil, err
 	}
+	go persistMetrics(svc.Opts.StateDir, svc.Name, sup)
 
 	ports := map[string]int{}
 	for _, p := range svc.Spec.Ports {
@@ -103,6 +104,38 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		ports[primary.Name] = svc.Opts.Port
 	}
 	return &state.State{PID: sup.Pid(), Ports: ports}, nil
+}
+
+// persistMetrics runs in the supervising process, copying the supervised
+// process's resource samples (CPU, RSS, open files, detected ports) into the
+// state file until the service exits. Readers (status/list) run in other
+// processes and can only see what is persisted here.
+func persistMetrics(stateDir, name string, sup *exec.SupervisedProcess) {
+	// let the post-start state save land before the first update
+	time.Sleep(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for ; ; <-ticker.C {
+		switch sup.Status() {
+		case exec.StatusStopped, exec.StatusExited, exec.StatusCrashed:
+			return
+		}
+		st, err := state.Load(stateDir, name)
+		if err != nil || st.PID != sup.Pid() {
+			return // state was removed or belongs to another run
+		}
+		res := sup.Resources()
+		st.Resources = &state.Resources{
+			CPUPercent: res.CPUPercent,
+			RSSBytes:   res.RSSBytes,
+			PeakRSS:    sup.Peak().RSSBytes,
+			OpenFiles:  res.OpenFiles,
+			Ports:      sup.Ports(),
+			Restarts:   sup.Restarts(),
+			SampledAt:  time.Now(),
+		}
+		_ = st.Save(stateDir)
+	}
 }
 
 func (r *binaryRuntime) processOutput() string {
