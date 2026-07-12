@@ -3,12 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	osexec "os/exec"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -274,43 +275,20 @@ func newLogsCmd(flags *rootFlags) *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeServiceNames,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			instance, err := start.Get(cmd.Context(), args[0], flags.options()...)
+			ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer cancel()
+			instance, err := start.Get(ctx, args[0], flags.options()...)
 			if err != nil {
 				if os.IsNotExist(err) {
 					return fmt.Errorf("service %s has not been started", args[0])
 				}
 				return err
 			}
-			if instance.State.LogFile == "" {
-				return fmt.Errorf("service %s (%s runtime) has no log file", args[0], instance.Runtime)
-			}
-			return printLogs(cmd.Context(), instance.State.LogFile, follow)
+			return instance.Logs(ctx, follow, os.Stdout)
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "follow log output")
 	return cmd
-}
-
-func printLogs(ctx interface{ Done() <-chan struct{} }, path string, follow bool) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	if _, err := io.Copy(os.Stdout, f); err != nil {
-		return err
-	}
-	for follow {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-time.After(500 * time.Millisecond):
-		}
-		if _, err := io.Copy(os.Stdout, f); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // tailFile returns the last n lines of a file, best effort.

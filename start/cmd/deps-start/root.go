@@ -33,9 +33,9 @@ type rootFlags struct {
 func newRootCmd() *cobra.Command {
 	flags := &rootFlags{}
 	cmd := &cobra.Command{
-		Use:     "deps-start <service>",
+		Use:     "deps-start <service>[@version]",
 		Short:   "Start services (postgres, opensearch, valkey, ...) via binary, docker, helm or a CLI",
-		Long:    "deps-start launches services from the deps registry and prints a commons-db connection.",
+		Long:    "deps-start launches services from the deps registry and prints a commons-db connection.\n\nVersions use the same syntax and constraint semantics as deps install:\n  deps-start postgres@17    deps-start nats@2.11    deps-start valkey@8.1",
 		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -99,7 +99,8 @@ func addStartFlags(cmd *cobra.Command, flags *rootFlags, spec *types.ServiceSpec
 // serviceHelp renders the long help for a service from its spec.
 func serviceHelp(name string, spec *types.ServiceSpec) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Start %s and print its %s connection.\n\n", name, spec.Type)
+	fmt.Fprintf(&b, "Start %s and print its %s connection.\n", name, spec.Type)
+	fmt.Fprintf(&b, "Pin a version with %s@<version> (same constraint semantics as deps install).\n\n", name)
 	fmt.Fprintf(&b, "Runtimes: %s\n", strings.Join(spec.Runtimes(), ", "))
 	var ports []string
 	for _, p := range spec.Ports {
