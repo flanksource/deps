@@ -113,7 +113,22 @@ func printConnection(instance *start.Instance, format string) error {
 	conn := instance.Connection
 	switch format {
 	case "yaml":
-		return yaml.NewEncoder(os.Stdout).Encode(conn)
+		// round-trip through json so omitempty tags drop zero-value fields
+		data, err := json.Marshal(conn)
+		if err != nil {
+			return err
+		}
+		var m map[string]any
+		if err := json.Unmarshal(data, &m); err != nil {
+			return err
+		}
+		delete(m, "id")
+		for k, v := range m {
+			if s, ok := v.(string); ok && (s == "" || strings.HasPrefix(s, "0001-01-01T")) {
+				delete(m, k)
+			}
+		}
+		return yaml.NewEncoder(os.Stdout).Encode(m)
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

@@ -50,6 +50,17 @@ type ServiceContext struct {
 	// OS and Arch are the host platform.
 	OS   string
 	Arch string
+	// Host is where the service is reachable, default "localhost". The
+	// docker runtime sets it to the daemon's host when remote.
+	Host string
+}
+
+// serviceHost returns the hostname services are reachable at.
+func (svc *ServiceContext) serviceHost() string {
+	if svc.Host != "" {
+		return svc.Host
+	}
+	return "localhost"
 }
 
 // selectRuntime picks the runtime to use: the requested one (validated
