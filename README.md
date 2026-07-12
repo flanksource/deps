@@ -614,6 +614,7 @@ deps-start postgres --port 15432
 deps-start valkey -d          # docker runtime (valkey has no binary artifact)
 deps-start list
 deps-start logs valkey -f
+deps-start restart valkey       # in place: SupervisedProcess restart / docker restart
 deps-start stop --all
 
 # helm: connection password resolves from the chart secret at hydration time

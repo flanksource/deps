@@ -2,6 +2,7 @@ package start
 
 import (
 	"context"
+	"errors"
 
 	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/deps/start/state"
@@ -13,8 +14,29 @@ type Instance struct {
 	Runtime    RuntimeKind       `json:"runtime" yaml:"runtime"`
 	Connection models.Connection `json:"connection" yaml:"connection"`
 
-	State   *state.State `json:"-" yaml:"-"`
-	runtime Runtime
+	State    *state.State `json:"-" yaml:"-"`
+	runtime  Runtime
+	stateDir string
+}
+
+// ErrRestartUnsupported is returned when a runtime has no in-place restart
+// (helm, command); callers should stop and start instead.
+var ErrRestartUnsupported = errors.New("in-place restart not supported for this runtime")
+
+// restarter is implemented by runtimes that can restart the service in place
+// (binary via SupervisedProcess, docker via the restart API).
+type restarter interface {
+	Restart(ctx context.Context, stateDir string, st *state.State) error
+}
+
+// Restart restarts the service in place, preserving its supervisor,
+// container and connection.
+func (i *Instance) Restart(ctx context.Context) error {
+	r, ok := i.runtime.(restarter)
+	if !ok {
+		return ErrRestartUnsupported
+	}
+	return r.Restart(ctx, i.stateDir, i.State)
 }
 
 // Waiter is implemented by runtimes whose service lives in this process
