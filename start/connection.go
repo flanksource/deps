@@ -21,6 +21,14 @@ func hostPort(svc *ServiceContext) int {
 	return primary.Port
 }
 
+// bindAddress returns the address services listen on, default loopback.
+func bindAddress(svc *ServiceContext) string {
+	if svc.Opts.BindAddress != "" {
+		return svc.Opts.BindAddress
+	}
+	return "127.0.0.1"
+}
+
 // templateData builds the variable map available to all ServiceSpec templates.
 func templateData(svc *ServiceContext, host, release string) map[string]any {
 	ports := map[string]int{}
@@ -44,7 +52,9 @@ func templateData(svc *ServiceContext, host, release string) map[string]any {
 		"arch":         svc.Arch,
 		"port":         hostPort(svc),
 		"ports":        ports,
-		"host":         host,
+		"host":         host,              // host:port of the primary port
+		"hostname":     svc.serviceHost(), // bare hostname without port
+		"bind":         bindAddress(svc),
 		"appDir":       svc.AppDir,
 		"binDir":       svc.BinDir,
 		"dataDir":      svc.DataDir,
@@ -62,9 +72,14 @@ func templateData(svc *ServiceContext, host, release string) map[string]any {
 	return data
 }
 
+var templateFuncs = template.FuncMap{
+	// pipeline-friendly: {{.tag | replace "+" "-"}}
+	"replace": func(old, new, s string) string { return strings.ReplaceAll(s, old, new) },
+}
+
 // render executes a ServiceSpec template, failing on unknown variables.
 func render(name, tmpl string, data map[string]any) (string, error) {
-	t, err := template.New(name).Option("missingkey=error").Parse(tmpl)
+	t, err := template.New(name).Option("missingkey=error").Funcs(templateFuncs).Parse(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("invalid template %s (%q): %w", name, tmpl, err)
 	}
@@ -92,11 +107,12 @@ func BuildConnection(svc *ServiceContext, st *state.State, kind RuntimeKind) (mo
 		return models.Connection{}, err
 	}
 	conn := models.Connection{
-		Name:     svc.Name,
-		Type:     svc.Spec.Type,
-		URL:      url,
-		Username: svc.Username,
-		Password: svc.Password,
+		Name:        svc.Name,
+		Type:        svc.Spec.Type,
+		URL:         url,
+		Username:    svc.Username,
+		Password:    svc.Password,
+		InsecureTLS: svc.Spec.InsecureTLS,
 	}
 	if err := renderProperties(&conn, svc.Spec.Properties, data); err != nil {
 		return models.Connection{}, err
@@ -126,12 +142,13 @@ func buildHelmConnection(svc *ServiceContext, st *state.State) (models.Connectio
 	}
 
 	conn := models.Connection{
-		Name:      svc.Name,
-		Namespace: svc.Opts.Namespace,
-		Type:      svc.Spec.Type,
-		URL:       fmt.Sprintf("svc://%s.%s:%d", svcName, svc.Opts.Namespace, port),
-		Username:  svc.Username,
-		Password:  svc.Password,
+		Name:        svc.Name,
+		Namespace:   svc.Opts.Namespace,
+		Type:        svc.Spec.Type,
+		URL:         fmt.Sprintf("svc://%s.%s:%d", svcName, svc.Opts.Namespace, port),
+		Username:    svc.Username,
+		Password:    svc.Password,
+		InsecureTLS: svc.Spec.InsecureTLS,
 	}
 
 	if helm.Secret != nil {

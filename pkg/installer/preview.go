@@ -162,6 +162,11 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve package %s: %w", name, err)
 	}
+	// Package.Extract overrides archive auto-detection (URLs without an
+	// archive suffix, e.g. get.trivy.dev/trivy?type=tar.gz)
+	if pkg.Extract != nil {
+		resolution.IsArchive = *pkg.Extract
+	}
 	preview.Resolution = resolution
 	preview.EffectiveVersion = resolvedVersion
 

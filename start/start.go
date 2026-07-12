@@ -172,6 +172,8 @@ func newRuntime(kind RuntimeKind) (Runtime, error) {
 		return &dockerRuntime{}, nil
 	case RuntimeHelm:
 		return &helmRuntime{}, nil
+	case RuntimeCommand:
+		return &commandRuntime{}, nil
 	default:
 		return nil, fmt.Errorf("unknown runtime %q", kind)
 	}

@@ -592,13 +592,19 @@ deps run --runtime-version=">=7.0" advanced.ps1
 `deps-start` (a separate binary from the `start/` submodule) launches services from
 the registry — postgres, opensearch, valkey, mysql, mssql, elasticsearch, loki,
 prometheus, grafana, jaeger, otel-collector, clickhouse, nats, rabbitmq, rclone,
-ministack — via three runtimes, and prints a
+ministack, k3s, kind, kube-apiserver, trivy, activemq, activemq-artemis — via four
+runtimes, and prints a
 [commons-db](https://github.com/flanksource/commons-db) connection:
 
 - **binary** — installs the artifact with deps and supervises it (clicky `SupervisedProcess`)
 - **docker** — named containers via the docker SDK (honors `DOCKER_HOST` and the docker CLI context)
 - **helm** — `helm upgrade --install --wait` (helm auto-installed via deps); connections
   reference chart secrets via `secret://<name>/<key>` and in-cluster `svc://` URLs
+- **command** — CLI-driven lifecycles (`kind create/delete cluster`)
+
+Services listen on 127.0.0.1 by default; `--bind 0.0.0.0` exposes them on all
+interfaces, and a specific address (e.g. `--bind 192.168.1.10`) both binds and
+becomes the connection host.
 
 ```bash
 # foreground: supervises postgres, prints the connection once ready, Ctrl-C stops it

@@ -14,6 +14,9 @@ type Options struct {
 	Version string
 	// Port overrides the host port for the primary service port.
 	Port int
+	// BindAddress is the address services listen on, default 127.0.0.1.
+	// Use 0.0.0.0 to expose services on all interfaces.
+	BindAddress string
 	// Namespace for the helm runtime.
 	Namespace string
 	// DataDir overrides the service data directory.
@@ -66,6 +69,7 @@ func DefaultOptions() Options {
 func WithRuntime(kind RuntimeKind) Option    { return func(o *Options) { o.Runtime = kind } }
 func WithVersion(version string) Option      { return func(o *Options) { o.Version = version } }
 func WithPort(port int) Option               { return func(o *Options) { o.Port = port } }
+func WithBindAddress(addr string) Option     { return func(o *Options) { o.BindAddress = addr } }
 func WithNamespace(ns string) Option         { return func(o *Options) { o.Namespace = ns } }
 func WithDataDir(dir string) Option          { return func(o *Options) { o.DataDir = dir } }
 func WithEnv(env map[string]string) Option   { return func(o *Options) { o.Env = env } }

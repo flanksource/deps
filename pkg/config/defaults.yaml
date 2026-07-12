@@ -173,6 +173,16 @@ registry:
             linux-amd64: yaml_linux-amd64
             linux-arm64: yaml_linux-arm64
             windows-amd64: yaml_windows-amd64.exe
+    k3s:
+        name: k3s
+        repo: k3s-io/k3s
+        asset_patterns:
+            linux-amd64: k3s
+            linux-arm64: k3s-arm64
+        checksum_file: sha256sum-{{.arch}}.txt
+        version_command: --version
+        version_regex: 'k3s version v(\d+\.\d+\.\d+)'
+
     kind:
         name: kind
 
@@ -280,6 +290,7 @@ registry:
         repo: aquasecurity/trivy
         checksum_file: trivy_{{.version}}_checksums.txt
         url_template: https://get.trivy.dev/trivy?type=tar.gz&version={{.version}}&os={{.os}}&arch={{.arch}}
+        extract: true # the URL has no archive suffix, so auto-detection misses it
         version_command: version
         version_regex: .*Version:\s+v?(\d+\.\d+\.\d+)
     postgrest:

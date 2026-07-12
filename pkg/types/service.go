@@ -26,10 +26,14 @@ type ServiceSpec struct {
 	Properties map[string]string `json:"properties,omitempty" yaml:"properties,omitempty"`
 	// Health is the default readiness check; runtime blocks may override it.
 	Health *HealthCheck `json:"health,omitempty" yaml:"health,omitempty"`
+	// InsecureTLS marks the emitted connection as skipping TLS verification
+	// (self-signed local API servers).
+	InsecureTLS bool `json:"insecure_tls,omitempty" yaml:"insecure_tls,omitempty"`
 
-	Binary *BinaryRuntime `json:"binary,omitempty" yaml:"binary,omitempty"`
-	Docker *DockerRuntime `json:"docker,omitempty" yaml:"docker,omitempty"`
-	Helm   *HelmRuntime   `json:"helm,omitempty" yaml:"helm,omitempty"`
+	Binary  *BinaryRuntime  `json:"binary,omitempty" yaml:"binary,omitempty"`
+	Docker  *DockerRuntime  `json:"docker,omitempty" yaml:"docker,omitempty"`
+	Helm    *HelmRuntime    `json:"helm,omitempty" yaml:"helm,omitempty"`
+	Command *CommandRuntime `json:"command,omitempty" yaml:"command,omitempty"`
 }
 
 // ServicePort is a named service port.
@@ -70,6 +74,9 @@ type BinaryRuntime struct {
 	// Package is the registry entry providing the artifact (default: the
 	// service's own registry key).
 	Package string `json:"package,omitempty" yaml:"package,omitempty"`
+	// Requires are extra registry packages installed before start (e.g.
+	// kube-apiserver requires etcd).
+	Requires []string `json:"requires,omitempty" yaml:"requires,omitempty"`
 	// Command is the executable: relative paths resolve against the installed
 	// app dir (directory mode); templates may use {{.binDir}} for binary-mode installs.
 	Command string            `json:"command" yaml:"command"`
@@ -97,6 +104,10 @@ type InitStep struct {
 type DockerRuntime struct {
 	// Image is a templated reference, e.g. "postgres:{{.major}}".
 	Image string `json:"image" yaml:"image"`
+	// DefaultVersion is used when no version is requested, instead of
+	// resolving the latest artifact release (image registries can lag the
+	// artifact archive, e.g. apache/activemq-classic).
+	DefaultVersion string `json:"default_version,omitempty" yaml:"default_version,omitempty"`
 	// Command overrides the container entrypoint arguments.
 	Command []string `json:"command,omitempty" yaml:"command,omitempty"`
 	// Args are appended CMD arguments.
@@ -108,6 +119,28 @@ type DockerRuntime struct {
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 	// Files maps container paths to templated content (mounted read-only).
 	Files     map[string]string `json:"files,omitempty" yaml:"files,omitempty"`
+	Platforms []string          `json:"platforms,omitempty" yaml:"platforms,omitempty"`
+	// Privileged runs the container in privileged mode (k3s).
+	Privileged bool         `json:"privileged,omitempty" yaml:"privileged,omitempty"`
+	Health     *HealthCheck `json:"health,omitempty" yaml:"health,omitempty"`
+}
+
+// CommandRuntime manages services whose lifecycle is driven by a CLI that
+// runs to completion (e.g. kind create/delete cluster). The CLI binary is
+// installed from the registry.
+type CommandRuntime struct {
+	// Package is the registry entry providing the CLI (default: the
+	// service's own registry key).
+	Package string `json:"package,omitempty" yaml:"package,omitempty"`
+	// Start/Stop are templated commands run to completion.
+	Start string `json:"start" yaml:"start"`
+	Stop  string `json:"stop" yaml:"stop"`
+	// Status is a templated command whose zero exit code means running.
+	Status string `json:"status,omitempty" yaml:"status,omitempty"`
+	// Files maps runDir-relative filenames to templated content rendered
+	// before start (e.g. a kind cluster config).
+	Files     map[string]string `json:"files,omitempty" yaml:"files,omitempty"`
+	Env       map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 	Platforms []string          `json:"platforms,omitempty" yaml:"platforms,omitempty"`
 	Health    *HealthCheck      `json:"health,omitempty" yaml:"health,omitempty"`
 }
@@ -175,6 +208,9 @@ func (s ServiceSpec) Runtimes() []string {
 	}
 	if s.Helm != nil {
 		kinds = append(kinds, "helm")
+	}
+	if s.Command != nil {
+		kinds = append(kinds, "command")
 	}
 	return kinds
 }
