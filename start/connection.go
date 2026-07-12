@@ -86,7 +86,7 @@ func BuildConnection(svc *ServiceContext, st *state.State, kind RuntimeKind) (mo
 		return buildHelmConnection(svc, st)
 	}
 
-	host := fmt.Sprintf("localhost:%d", hostPort(svc))
+	host := fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc))
 	data := templateData(svc, host, "")
 	url, err := render("url", svc.Spec.URL, data)
 	if err != nil {

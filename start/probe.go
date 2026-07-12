@@ -17,6 +17,9 @@ import (
 type processWatch struct {
 	alive  func() bool
 	output func() string
+	// execProbe runs an exec-style health command in the service's context
+	// (docker runtime); nil means exec probes are unsupported.
+	execProbe func(ctx context.Context, cmd []string) bool
 }
 
 // healthCheckFor resolves the effective health check: the runtime-specific
@@ -78,7 +81,7 @@ func awaitHealthy(ctx context.Context, svc *ServiceContext, override *types.Heal
 		return err
 	}
 
-	check, desc, err := buildProbe(hc, port, watch)
+	check, desc, err := buildProbe(ctx, hc, svc.serviceHost(), port, watch)
 	if err != nil {
 		return err
 	}
@@ -88,7 +91,7 @@ func awaitHealthy(ctx context.Context, svc *ServiceContext, override *types.Heal
 		if check() {
 			return nil
 		}
-		if watch != nil && !watch.alive() {
+		if watch != nil && watch.alive != nil && !watch.alive() {
 			return fmt.Errorf("process exited before becoming ready:\n%s", tail(watch.output(), 20))
 		}
 		if time.Now().After(deadline) {
@@ -102,19 +105,25 @@ func awaitHealthy(ctx context.Context, svc *ServiceContext, override *types.Heal
 	}
 }
 
-func buildProbe(hc types.HealthCheck, port int, watch *processWatch) (func() bool, string, error) {
+func buildProbe(ctx context.Context, hc types.HealthCheck, host string, port int, watch *processWatch) (func() bool, string, error) {
 	switch {
 	case hc.StdoutMatch != "":
-		if watch == nil {
+		if watch == nil || watch.output == nil {
 			return nil, "", fmt.Errorf("stdout_match health check requires the binary runtime")
 		}
 		return func() bool { return strings.Contains(watch.output(), hc.StdoutMatch) },
 			fmt.Sprintf("%q in process output", hc.StdoutMatch), nil
+	case len(hc.Exec) > 0:
+		if watch == nil || watch.execProbe == nil {
+			return nil, "", fmt.Errorf("exec health check requires the docker runtime")
+		}
+		return func() bool { return watch.execProbe(ctx, hc.Exec) },
+			fmt.Sprintf("exec %s", strings.Join(hc.Exec, " ")), nil
 	case hc.HTTP != "":
-		url := fmt.Sprintf("http://localhost:%d%s", port, hc.HTTP)
+		url := fmt.Sprintf("http://%s:%d%s", host, port, hc.HTTP)
 		return func() bool { return httpProbe(url) }, url, nil
 	default:
-		addr := fmt.Sprintf("localhost:%d", port)
+		addr := fmt.Sprintf("%s:%d", host, port)
 		return func() bool { return tcpProbe(addr) }, "tcp " + addr, nil
 	}
 }
