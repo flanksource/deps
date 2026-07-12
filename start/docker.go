@@ -5,37 +5,58 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"sort"
+	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
+	sdkclient "github.com/docker/go-sdk/client"
+	sdkcontainer "github.com/docker/go-sdk/container"
+	"github.com/moby/moby/api/pkg/stdcopy"
+	mobycontainer "github.com/moby/moby/api/types/container"
+	mobynetwork "github.com/moby/moby/api/types/network"
+	mobyclient "github.com/moby/moby/client"
+
 	"github.com/flanksource/deps/start/state"
 )
 
 const serviceLabel = "flanksource.deps/service"
 
-// dockerRuntime runs the service as a container via the docker SDK, using an
-// idempotent named container deps-start-<service>.
+// dockerRuntime runs the service as a container via the docker go-sdk, using
+// an idempotent named container deps-start-<service>. The sdk client resolves
+// DOCKER_HOST and the docker CLI's current context natively.
 type dockerRuntime struct {
-	docker *client.Client
+	docker sdkclient.SDKClient
 }
 
 func (r *dockerRuntime) Kind() RuntimeKind { return RuntimeDocker }
 
-func (r *dockerRuntime) client() (*client.Client, error) {
+func (r *dockerRuntime) client() (sdkclient.SDKClient, error) {
 	if r.docker != nil {
 		return r.docker, nil
 	}
-	c, err := newDockerClient()
+	cli, err := sdkclient.New(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
-	r.docker = c
-	return c, nil
+	r.docker = cli
+	return cli, nil
+}
+
+// daemonHost returns the hostname services on the daemon are reachable at:
+// the sdk resolves it to "localhost" for unix/npipe sockets and to the
+// endpoint hostname for tcp daemons.
+func (r *dockerRuntime) daemonHost(ctx context.Context) string {
+	cli, err := r.client()
+	if err != nil {
+		return "localhost"
+	}
+	host, err := cli.DaemonHostWithContext(ctx)
+	if err != nil || host == "" {
+		return "localhost"
+	}
+	return host
 }
 
 func containerName(service string) string { return "deps-start-" + service }
@@ -45,18 +66,16 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	if err := checkPlatform(spec.Platforms, svc.OS, svc.Arch); err != nil {
 		return nil, err
 	}
-	docker, err := r.client()
-	if err != nil {
+	if _, err := r.client(); err != nil {
 		return nil, err
 	}
-	if svc.Version == "" {
-		if spec.DefaultVersion != "" {
-			svc.Version = spec.DefaultVersion
-		} else if svc.Version, err = resolveServiceVersion(ctx, svc); err != nil {
-			return nil, err
-		}
+	var err error
+	if svc.Version == "" && spec.DefaultVersion != "" {
+		svc.Version = spec.DefaultVersion
+	} else if svc.Version, err = resolveServiceVersion(ctx, svc, svc.Version); err != nil {
+		return nil, err
 	}
-	svc.Host = daemonHost(docker)
+	svc.Host = r.daemonHost(ctx)
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
 
 	name := containerName(svc.Name)
@@ -72,11 +91,8 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	}
 
 	watch := &processWatch{
-		alive: func() bool {
-			info, err := docker.ContainerInspect(ctx, id)
-			return err == nil && info.State != nil && info.State.Running
-		},
-		output: func() string { return r.containerLogs(ctx, id) },
+		alive:  func() bool { return r.isRunning(ctx, id) },
+		output: func() string { return r.containerLogTail(ctx, id) },
 		execProbe: func(ctx context.Context, cmd []string) bool {
 			return r.execProbe(ctx, id, cmd, data)
 		},
@@ -95,102 +111,107 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	return &state.State{ContainerID: id, Ports: ports}, nil
 }
 
+func (r *dockerRuntime) isRunning(ctx context.Context, id string) bool {
+	docker, err := r.client()
+	if err != nil {
+		return false
+	}
+	res, err := docker.ContainerInspect(ctx, id, mobyclient.ContainerInspectOptions{})
+	return err == nil && res.Container.State != nil && res.Container.State.Running
+}
+
 // ensureContainer returns the id of the named service container, reusing a
-// running one, starting a stopped one, or pulling+creating a new one.
+// running one, starting a stopped one, or creating a new one via the sdk.
 func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext, data map[string]any, name string) (string, bool, error) {
 	docker, err := r.client()
 	if err != nil {
 		return "", false, err
 	}
-	if info, err := docker.ContainerInspect(ctx, name); err == nil {
-		if info.State != nil && info.State.Running {
-			return info.ID, true, nil
+	existing, err := docker.FindContainerByName(ctx, name)
+	switch {
+	case err == nil && existing != nil:
+		if existing.State == mobycontainer.StateRunning {
+			return existing.ID, true, nil
 		}
-		if err := docker.ContainerStart(ctx, info.ID, container.StartOptions{}); err != nil {
+		if _, err := docker.ContainerStart(ctx, existing.ID, mobyclient.ContainerStartOptions{}); err != nil {
 			return "", false, fmt.Errorf("failed to start existing container %s: %w", name, err)
 		}
-		return info.ID, false, nil
+		return existing.ID, false, nil
+	case err != nil && !cerrdefs.IsNotFound(err):
+		return "", false, err
 	}
 
-	config, hostConfig, err := r.containerConfig(svc, data, name)
+	opts, err := r.runOptions(svc, data, name)
 	if err != nil {
 		return "", false, err
 	}
-	reader, err := docker.ImagePull(ctx, config.Image, image.PullOptions{})
+	ctr, err := sdkcontainer.Run(ctx, append(opts, sdkcontainer.WithClient(docker))...)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to pull %s: %w", config.Image, err)
+		return "", false, fmt.Errorf("failed to run container %s: %w", name, err)
 	}
-	_, _ = io.Copy(io.Discard, reader)
-	_ = reader.Close()
-
-	created, err := docker.ContainerCreate(ctx, config, hostConfig, nil, nil, name)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to create container %s: %w", name, err)
-	}
-	if err := docker.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
-		return "", false, fmt.Errorf("failed to start container %s: %w", name, err)
-	}
-	return created.ID, false, nil
+	return ctr.ID(), false, nil
 }
 
-func (r *dockerRuntime) containerConfig(svc *ServiceContext, data map[string]any, name string) (*container.Config, *container.HostConfig, error) {
+// runOptions renders the docker spec into sdk run options.
+func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, name string) ([]sdkcontainer.ContainerCustomizer, error) {
 	spec := svc.Spec.Docker
 	imageRef, err := render("docker.image", spec.Image, data)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	var env []string
+	env := map[string]string{}
 	for k, v := range spec.Env {
 		rendered, err := render("docker.env."+k, v, data)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		env = append(env, k+"="+rendered)
+		env[k] = rendered
 	}
 	for k, v := range svc.Opts.Env {
-		env = append(env, k+"="+v)
+		env[k] = v
 	}
 
 	var cmd []string
 	for i, c := range append(append([]string{}, spec.Command...), spec.Args...) {
 		rendered, err := render(fmt.Sprintf("docker.cmd[%d]", i), c, data)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		cmd = append(cmd, rendered)
 	}
 
-	exposed := nat.PortSet{}
-	bindings := nat.PortMap{}
-	// explicit bind address wins; otherwise loopback-only for a local daemon,
-	// while a remote daemon must expose on all interfaces to be reachable
-	bindIP := svc.Opts.BindAddress
-	if bindIP == "" {
-		bindIP = "127.0.0.1"
-		if svc.Host != "" && svc.Host != "localhost" {
-			bindIP = ""
+	// bind loopback-only for a local daemon unless an explicit bind address
+	// is set; a remote daemon must expose on all interfaces to be reachable
+	var bindIP netip.Addr
+	bind := svc.Opts.BindAddress
+	if bind == "" && (svc.Host == "" || svc.Host == "localhost") {
+		bind = "127.0.0.1"
+	}
+	if bind != "" && bind != "0.0.0.0" {
+		if bindIP, err = netip.ParseAddr(bind); err != nil {
+			return nil, fmt.Errorf("invalid bind address %q: %w", bind, err)
 		}
 	}
-	if bindIP == "0.0.0.0" {
-		bindIP = ""
-	}
+
+	var exposed []string
+	bindings := mobynetwork.PortMap{}
 	primary, _ := svc.Spec.PrimaryPort()
 	for _, p := range svc.Spec.Ports {
 		proto := p.Protocol
 		if proto == "" {
 			proto = "tcp"
 		}
-		port, err := nat.NewPort(proto, fmt.Sprint(p.Port))
+		port, err := mobynetwork.ParsePort(fmt.Sprintf("%d/%s", p.Port, proto))
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		hostPort := p.Port
 		if p.Name == primary.Name && svc.Opts.Port != 0 {
 			hostPort = svc.Opts.Port
 		}
-		exposed[port] = struct{}{}
-		bindings[port] = []nat.PortBinding{{HostIP: bindIP, HostPort: fmt.Sprint(hostPort)}}
+		exposed = append(exposed, port.String())
+		bindings[port] = []mobynetwork.PortBinding{{HostIP: bindIP, HostPort: fmt.Sprint(hostPort)}}
 	}
 
 	// a named volume (not a host bind) so data survives on remote daemons too
@@ -201,25 +222,28 @@ func (r *dockerRuntime) containerConfig(svc *ServiceContext, data map[string]any
 	for i, v := range spec.Volumes {
 		rendered, err := render(fmt.Sprintf("docker.volumes[%d]", i), v, data)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		binds = append(binds, rendered)
 	}
 
-	config := &container.Config{
-		Image:        imageRef,
-		Env:          env,
-		Cmd:          cmd,
-		ExposedPorts: exposed,
-		Labels:       map[string]string{serviceLabel: svc.Name},
+	opts := []sdkcontainer.ContainerCustomizer{
+		sdkcontainer.WithImage(imageRef),
+		sdkcontainer.WithName(name),
+		sdkcontainer.WithEnv(env),
+		sdkcontainer.WithLabels(map[string]string{serviceLabel: svc.Name}),
+		sdkcontainer.WithExposedPorts(exposed...),
+		sdkcontainer.WithHostConfigModifier(func(hc *mobycontainer.HostConfig) {
+			hc.PortBindings = bindings
+			hc.Binds = binds
+			hc.Privileged = spec.Privileged
+			hc.RestartPolicy = mobycontainer.RestartPolicy{Name: mobycontainer.RestartPolicyUnlessStopped}
+		}),
 	}
-	hostConfig := &container.HostConfig{
-		PortBindings:  bindings,
-		Binds:         binds,
-		Privileged:    spec.Privileged,
-		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
+	if len(cmd) > 0 {
+		opts = append(opts, sdkcontainer.WithCmd(cmd...))
 	}
-	return config, hostConfig, nil
+	return opts, nil
 }
 
 // execProbe runs a health command inside the container, rendering each
@@ -235,16 +259,16 @@ func (r *dockerRuntime) execProbe(ctx context.Context, id string, cmd []string, 
 			return false
 		}
 	}
-	exec, err := docker.ContainerExecCreate(ctx, id, container.ExecOptions{Cmd: rendered})
+	created, err := docker.ExecCreate(ctx, id, mobyclient.ExecCreateOptions{Cmd: rendered})
 	if err != nil {
 		return false
 	}
-	if err := docker.ContainerExecStart(ctx, exec.ID, container.ExecStartOptions{}); err != nil {
+	if _, err := docker.ExecStart(ctx, created.ID, mobyclient.ExecStartOptions{Detach: true}); err != nil {
 		return false
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		info, err := docker.ContainerExecInspect(ctx, exec.ID)
+		info, err := docker.ExecInspect(ctx, created.ID, mobyclient.ExecInspectOptions{})
 		if err != nil {
 			return false
 		}
@@ -256,18 +280,51 @@ func (r *dockerRuntime) execProbe(ctx context.Context, id string, cmd []string, 
 	return false
 }
 
-func (r *dockerRuntime) containerLogs(ctx context.Context, id string) string {
+// Logs streams the container's demultiplexed logs; with follow it blocks
+// until ctx is cancelled.
+func (r *dockerRuntime) Logs(ctx context.Context, st *state.State, follow bool, w io.Writer) error {
+	docker, err := r.client()
+	if err != nil {
+		return err
+	}
+	if st.ContainerID == "" {
+		return fmt.Errorf("no container recorded for %s", st.Name)
+	}
+	reader, err := docker.ContainerLogs(ctx, st.ContainerID, mobyclient.ContainerLogsOptions{
+		ShowStdout: true, ShowStderr: true, Follow: follow, Tail: "500",
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+
+	if res, err := docker.ContainerInspect(ctx, st.ContainerID, mobyclient.ContainerInspectOptions{}); err == nil &&
+		res.Container.Config != nil && res.Container.Config.Tty {
+		_, err = io.Copy(w, reader)
+		return err
+	}
+	if _, err := stdcopy.StdCopy(w, w, reader); err != nil && ctx.Err() == nil {
+		return err
+	}
+	return nil
+}
+
+// containerLogTail returns recent demultiplexed log output for error reports.
+func (r *dockerRuntime) containerLogTail(ctx context.Context, id string) string {
 	docker, err := r.client()
 	if err != nil {
 		return ""
 	}
-	reader, err := docker.ContainerLogs(ctx, id, container.LogsOptions{ShowStdout: true, ShowStderr: true, Tail: "50"})
+	reader, err := docker.ContainerLogs(ctx, id, mobyclient.ContainerLogsOptions{
+		ShowStdout: true, ShowStderr: true, Tail: "50",
+	})
 	if err != nil {
 		return ""
 	}
 	defer func() { _ = reader.Close() }()
-	data, _ := io.ReadAll(reader)
-	return string(data)
+	var buf strings.Builder
+	_, _ = stdcopy.StdCopy(&buf, &buf, reader)
+	return buf.String()
 }
 
 // Restart restarts the container in place via the docker API.
@@ -280,13 +337,12 @@ func (r *dockerRuntime) Restart(ctx context.Context, stateDir string, st *state.
 		return fmt.Errorf("no container recorded for %s", st.Name)
 	}
 	timeout := 30
-	if err := docker.ContainerRestart(ctx, st.ContainerID, container.StopOptions{Timeout: &timeout}); err != nil {
+	if _, err := docker.ContainerRestart(ctx, st.ContainerID, mobyclient.ContainerRestartOptions{Timeout: &timeout}); err != nil {
 		return fmt.Errorf("failed to restart container: %w", err)
 	}
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
-		info, err := docker.ContainerInspect(ctx, st.ContainerID)
-		if err == nil && info.State != nil && info.State.Running {
+		if r.isRunning(ctx, st.ContainerID) {
 			st.StartedAt = time.Now()
 			if fresh, err := state.Load(stateDir, st.Name); err == nil {
 				fresh.StartedAt = st.StartedAt
@@ -312,13 +368,14 @@ func (r *dockerRuntime) Metrics(ctx context.Context, st *state.State) (*state.Re
 	if st.ContainerID == "" {
 		return nil, fmt.Errorf("no container recorded")
 	}
-	resp, err := docker.ContainerStats(ctx, st.ContainerID, false)
+	// IncludePreviousSample populates PreCPUStats so the CPU delta works
+	res, err := docker.ContainerStats(ctx, st.ContainerID, mobyclient.ContainerStatsOptions{IncludePreviousSample: true})
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	var stats container.StatsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+	defer func() { _ = res.Body.Close() }()
+	var stats mobycontainer.StatsResponse
+	if err := json.NewDecoder(res.Body).Decode(&stats); err != nil {
 		return nil, err
 	}
 
@@ -362,7 +419,8 @@ func (r *dockerRuntime) Stop(ctx context.Context, st *state.State) error {
 		return fmt.Errorf("no container recorded for %s", st.Name)
 	}
 	timeout := 30
-	return docker.ContainerStop(ctx, st.ContainerID, container.StopOptions{Timeout: &timeout})
+	_, err = docker.ContainerStop(ctx, st.ContainerID, mobyclient.ContainerStopOptions{Timeout: &timeout})
+	return err
 }
 
 func (r *dockerRuntime) Status(ctx context.Context, st *state.State) (state.Status, error) {
@@ -370,14 +428,14 @@ func (r *dockerRuntime) Status(ctx context.Context, st *state.State) (state.Stat
 	if err != nil {
 		return state.StatusUnknown, err
 	}
-	info, err := docker.ContainerInspect(ctx, st.ContainerID)
+	res, err := docker.ContainerInspect(ctx, st.ContainerID, mobyclient.ContainerInspectOptions{})
 	if err != nil {
 		if cerrdefs.IsNotFound(err) {
 			return state.StatusStopped, nil
 		}
 		return state.StatusUnknown, err
 	}
-	if info.State != nil && info.State.Running {
+	if res.Container.State != nil && res.Container.State.Running {
 		return state.StatusRunning, nil
 	}
 	return state.StatusStopped, nil

@@ -3,6 +3,10 @@ package start
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"os"
+	"time"
 
 	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/deps/start/state"
@@ -75,4 +79,47 @@ func (i *Instance) Metrics(ctx context.Context) *state.Resources {
 		}
 	}
 	return i.State.Resources
+}
+
+// logsProvider is implemented by runtimes that stream logs themselves
+// (docker); others log to the service's log file.
+type logsProvider interface {
+	Logs(ctx context.Context, st *state.State, follow bool, w io.Writer) error
+}
+
+// Logs writes the service's logs to w: container logs for the docker
+// runtime, the service log file otherwise. With follow it blocks until ctx
+// is cancelled.
+func (i *Instance) Logs(ctx context.Context, follow bool, w io.Writer) error {
+	if lp, ok := i.runtime.(logsProvider); ok {
+		return lp.Logs(ctx, i.State, follow, w)
+	}
+	if i.State.LogFile == "" {
+		return fmt.Errorf("service %s (%s runtime) has no logs", i.Name, i.Runtime)
+	}
+	return tailLogFile(ctx, i.State.LogFile, follow, w)
+}
+
+// tailLogFile copies a log file to w, polling for appended output in follow
+// mode until ctx is cancelled.
+func tailLogFile(ctx context.Context, path string, follow bool, w io.Writer) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := io.Copy(w, f); err != nil {
+		return err
+	}
+	for follow {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(500 * time.Millisecond):
+		}
+		if _, err := io.Copy(w, f); err != nil {
+			return err
+		}
+	}
+	return nil
 }

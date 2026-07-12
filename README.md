@@ -610,6 +610,11 @@ becomes the connection host.
 # foreground: supervises postgres, prints the connection once ready, Ctrl-C stops it
 deps-start postgres --port 15432
 
+# pin versions with the same name@version syntax and constraint
+# semantics as deps install (resolved through the package's registry)
+deps-start postgres@17
+deps-start nats@2.11
+
 # background + lifecycle
 deps-start valkey -d          # docker runtime (valkey has no binary artifact)
 deps-start list

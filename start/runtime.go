@@ -109,21 +109,25 @@ func runtimePlatforms(spec types.ServiceSpec, kind RuntimeKind) []string {
 	}
 }
 
-// resolveServiceVersion resolves an unset version to the latest published
-// release via the package's manager (so image tags like
-// elasticsearch:<version>, which have no "latest", still work). Service-only
-// entries without an installable artifact fall back to the "latest" tag.
-func resolveServiceVersion(ctx context.Context, svc *ServiceContext) (string, error) {
+// resolveServiceVersion resolves a version constraint ("latest", "17",
+// ">=1.2") to a published release via the package's manager — the same
+// semantics as deps install — so image templates like {{.version}} and
+// {{.major}} always see a concrete version. Service-only entries without an
+// installable artifact use the constraint verbatim as the image tag.
+func resolveServiceVersion(ctx context.Context, svc *ServiceContext, constraint string) (string, error) {
+	if constraint == "" {
+		constraint = "latest"
+	}
 	if svc.Package.Manager == "" {
-		return "latest", nil
+		return constraint, nil
 	}
 	mgr, ok := manager.GetGlobalRegistry().Get(svc.Package.Manager)
 	if !ok {
-		return "latest", nil
+		return constraint, nil
 	}
-	resolved, err := version.NewResolver(mgr).ResolveConstraint(ctx, svc.Package, "latest", platform.Current())
+	resolved, err := version.NewResolver(mgr).ResolveConstraint(ctx, svc.Package, constraint, platform.Current())
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve latest version of %s: %w", svc.Name, err)
+		return "", fmt.Errorf("failed to resolve version %q of %s: %w", constraint, svc.Name, err)
 	}
 	return resolved, nil
 }
