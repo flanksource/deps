@@ -6,6 +6,6 @@ import "fmt"
 
 const supervisorEnv = "DEPS_START_SUPERVISOR"
 
-func runDetached(name string, flags *rootFlags) error {
+func runDetached(name string, flags *startFlags) error {
 	return fmt.Errorf("--detach is not supported on windows")
 }
