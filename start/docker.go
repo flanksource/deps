@@ -22,6 +22,7 @@ import (
 )
 
 const serviceLabel = "flanksource.deps/service"
+const managedConfigLabel = "flanksource.deps/config"
 
 // dockerRuntime runs the service as a container via the docker go-sdk, using
 // an idempotent named container deps-start-<service>. The sdk client resolves
@@ -61,6 +62,21 @@ func (r *dockerRuntime) daemonHost(ctx context.Context) string {
 
 func containerName(service string) string { return "deps-start-" + service }
 
+func (r *dockerRuntime) Reconcile(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.State, error) {
+	docker, err := r.client()
+	if err != nil {
+		return nil, err
+	}
+	container := prior.ContainerID
+	if container == "" {
+		container = containerName(svc.Name)
+	}
+	if _, err := docker.ContainerRemove(ctx, container, mobyclient.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to remove container %s for reconciliation: %w", container, err)
+	}
+	return r.Start(ctx, svc)
+}
+
 func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.State, error) {
 	spec := svc.Spec.Docker
 	if err := checkPlatform(spec.Platforms, svc.OS, svc.Arch); err != nil {
@@ -69,10 +85,7 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	if _, err := r.client(); err != nil {
 		return nil, err
 	}
-	var err error
-	if svc.Version == "" && spec.DefaultVersion != "" {
-		svc.Version = spec.DefaultVersion
-	} else if svc.Version, err = resolveServiceVersion(ctx, svc, svc.Version); err != nil {
+	if _, err := r.DesiredConfig(ctx, svc); err != nil {
 		return nil, err
 	}
 	svc.Host = r.daemonHost(ctx)
@@ -128,6 +141,22 @@ func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext
 		return "", false, err
 	}
 	existing, err := docker.FindContainerByName(ctx, name)
+	if err == nil && existing != nil {
+		desired, configErr := r.DesiredConfig(ctx, svc)
+		if configErr != nil {
+			return "", false, configErr
+		}
+		encoded, configErr := encodeManagedConfig(desired)
+		if configErr != nil {
+			return "", false, configErr
+		}
+		if existing.Labels[managedConfigLabel] != encoded {
+			if _, removeErr := docker.ContainerRemove(ctx, existing.ID, mobyclient.ContainerRemoveOptions{Force: true}); removeErr != nil {
+				return "", false, fmt.Errorf("failed to replace unmanaged container %s: %w", name, removeErr)
+			}
+			existing = nil
+		}
+	}
 	switch {
 	case err == nil && existing != nil:
 		if existing.State == mobycontainer.StateRunning {
@@ -155,30 +184,24 @@ func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext
 // runOptions renders the docker spec into sdk run options.
 func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, name string) ([]sdkcontainer.ContainerCustomizer, error) {
 	spec := svc.Spec.Docker
-	imageRef, err := render("docker.image", spec.Image, data)
+	desired, err := r.DesiredConfig(context.Background(), svc)
+	if err != nil {
+		return nil, err
+	}
+	imageRef := desired.Image
+	managedConfig, err := encodeManagedConfig(desired)
 	if err != nil {
 		return nil, err
 	}
 
-	env := map[string]string{}
-	for k, v := range spec.Env {
-		rendered, err := render("docker.env."+k, v, data)
-		if err != nil {
-			return nil, err
-		}
-		env[k] = rendered
-	}
-	for k, v := range svc.Opts.Env {
-		env[k] = v
+	env, err := renderDockerEnvironment(svc, data)
+	if err != nil {
+		return nil, err
 	}
 
-	var cmd []string
-	for i, c := range append(append([]string{}, spec.Command...), spec.Args...) {
-		rendered, err := render(fmt.Sprintf("docker.cmd[%d]", i), c, data)
-		if err != nil {
-			return nil, err
-		}
-		cmd = append(cmd, rendered)
+	cmd, err := renderArguments("docker.cmd", append(append([]string{}, spec.Command...), spec.Args...), data)
+	if err != nil {
+		return nil, err
 	}
 
 	// bind loopback-only for a local daemon unless an explicit bind address
@@ -214,10 +237,15 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 		bindings[port] = []mobynetwork.PortBinding{{HostIP: bindIP, HostPort: fmt.Sprint(hostPort)}}
 	}
 
-	// a named volume (not a host bind) so data survives on remote daemons too
 	var binds []string
-	if spec.DataPath != "" {
-		binds = append(binds, name+"-data:"+spec.DataPath)
+	tmpfs := map[string]string{}
+	if desired.Volume != nil {
+		switch VolumeMode(desired.Volume.Mode) {
+		case VolumeHost, VolumePersistent:
+			binds = append(binds, desired.Volume.Source+":"+desired.Volume.Target)
+		case VolumeEphemeral:
+			tmpfs[desired.Volume.Target] = "rw"
+		}
 	}
 	for i, v := range spec.Volumes {
 		rendered, err := render(fmt.Sprintf("docker.volumes[%d]", i), v, data)
@@ -231,11 +259,12 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 		sdkcontainer.WithImage(imageRef),
 		sdkcontainer.WithName(name),
 		sdkcontainer.WithEnv(env),
-		sdkcontainer.WithLabels(map[string]string{serviceLabel: svc.Name}),
+		sdkcontainer.WithLabels(map[string]string{serviceLabel: svc.Name, managedConfigLabel: managedConfig}),
 		sdkcontainer.WithExposedPorts(exposed...),
 		sdkcontainer.WithHostConfigModifier(func(hc *mobycontainer.HostConfig) {
 			hc.PortBindings = bindings
 			hc.Binds = binds
+			hc.Tmpfs = tmpfs
 			hc.Privileged = spec.Privileged
 			hc.RestartPolicy = mobycontainer.RestartPolicy{Name: mobycontainer.RestartPolicyUnlessStopped}
 		}),
@@ -244,6 +273,28 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 		opts = append(opts, sdkcontainer.WithCmd(cmd...))
 	}
 	return opts, nil
+}
+
+func protocol(value string) string {
+	if value == "" {
+		return "tcp"
+	}
+	return value
+}
+
+func renderDockerEnvironment(svc *ServiceContext, data map[string]any) (map[string]string, error) {
+	env := map[string]string{}
+	for name, value := range svc.Spec.Docker.Env {
+		rendered, err := render("docker.env."+name, value, data)
+		if err != nil {
+			return nil, err
+		}
+		env[name] = rendered
+	}
+	for name, value := range svc.Opts.Env {
+		env[name] = value
+	}
+	return env, nil
 }
 
 // execProbe runs a health command inside the container, rendering each
