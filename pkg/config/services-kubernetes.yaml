@@ -1,0 +1,126 @@
+services:
+    k3s:
+        type: kubernetes
+        insecure_tls: true
+        ports: [{name: api, port: 6443}]
+        url: "https://{{.host}}"
+        health: {port: api, timeout: 180s}
+        binary:
+            platforms: ["linux-*"]
+            command: "{{.binDir}}/k3s"
+            args: ["server", "--data-dir", "{{.dataDir}}", "--bind-address", "{{.bind}}", "--https-listen-port", "{{.port}}", "--write-kubeconfig", "{{.runDir}}/kubeconfig", "--write-kubeconfig-mode", "644"]
+        docker:
+            image: 'rancher/k3s:{{if eq .version "latest"}}latest{{else}}{{.tag | replace "+" "-"}}{{end}}'
+            command: ["server", "--tls-san", "{{.hostname}}"]
+            env: {K3S_KUBECONFIG_OUTPUT: /var/lib/rancher/k3s/kubeconfig, K3S_KUBECONFIG_MODE: "644"}
+            data_path: /var/lib/rancher/k3s
+            privileged: true
+
+    kind:
+        type: kubernetes
+        insecure_tls: true
+        ports: [{name: api, port: 6443}]
+        url: "https://{{.host}}"
+        properties: {kubeconfig: "{{.runDir}}/kubeconfig"}
+        health: {port: api, timeout: 60s}
+        command:
+            files:
+                kind.yaml: |
+                    kind: Cluster
+                    apiVersion: kind.x-k8s.io/v1alpha4
+                    networking:
+                      apiServerAddress: "{{.bind}}"
+                      apiServerPort: {{.port}}
+            start: "{{.binDir}}/kind create cluster --name {{.name}} --config {{.runDir}}/kind.yaml --kubeconfig {{.runDir}}/kubeconfig --wait 120s"
+            stop: "{{.binDir}}/kind delete cluster --name {{.name}}"
+            status: "{{.binDir}}/kind get clusters | grep -q '^{{.name}}$'"
+
+    kube-apiserver:
+        type: kubernetes
+        insecure_tls: true
+        ports: [{name: api, port: 6443}, {name: etcd, port: 2379}]
+        credentials: {username: admin}
+        url: "https://{{.host}}"
+        health: {port: api, timeout: 60s}
+        binary:
+            requires: [etcd]
+            files:
+                tokens.csv: |
+                    {{.password}},{{.username}},{{.username}},system:masters
+            init:
+                - command: openssl genrsa -out {{.runDir}}/sa.key 2048
+                  creates: "{{.runDir}}/sa.key"
+                - command: openssl rsa -in {{.runDir}}/sa.key -pubout -out {{.runDir}}/sa.pub
+                  creates: "{{.runDir}}/sa.pub"
+            command: >-
+                {{.binDir}}/etcd --data-dir {{.dataDir}}/etcd
+                --listen-client-urls http://127.0.0.1:{{.ports.etcd}}
+                --advertise-client-urls http://127.0.0.1:{{.ports.etcd}} &
+                exec {{.binDir}}/kube-apiserver
+                --etcd-servers=http://127.0.0.1:{{.ports.etcd}}
+                --secure-port={{.port}} --bind-address={{.bind}}
+                --cert-dir={{.dataDir}}/certs
+                --token-auth-file={{.runDir}}/tokens.csv
+                --service-account-issuer=https://kubernetes.default.svc
+                --service-account-key-file={{.runDir}}/sa.pub
+                --service-account-signing-key-file={{.runDir}}/sa.key
+                --authorization-mode=AlwaysAllow
+
+    trivy:
+        type: http
+        ports: [{name: http, port: 4954}]
+        url: "http://{{.host}}"
+        health: {http: /healthz, port: http, timeout: 300s}
+        binary:
+            command: "{{.binDir}}/trivy"
+            args: ["server", "--listen", "{{.bind}}:{{.port}}", "--cache-dir", "{{.dataDir}}"]
+        docker:
+            image: "aquasec/trivy:{{.version}}"
+            args: ["server", "--listen", "0.0.0.0:4954"]
+            data_path: /root/.cache/trivy
+        helm:
+            repo: https://aquasecurity.github.io/helm-charts/
+            chart: trivy
+            volume:
+                mount_path: /root/.cache/trivy
+                modes:
+                    persistent: {set: {persistence.enabled: "true"}}
+                    ephemeral: {set: {persistence.enabled: "false"}}
+            resource_prefix: resources
+            port_set: {service.port: "{{.port}}"}
+            service: {name: "{{.release}}", port: 4954}
+
+    activemq:
+        type: activemq
+        ports: [{name: openwire, port: 61616}, {name: web, port: 8161}]
+        credentials: {username: admin, password: admin}
+        url: "tcp://{{.host}}"
+        health: {port: openwire, timeout: 120s}
+        docker:
+            image: "apache/activemq-classic:{{.version}}"
+            default_version: latest
+            data_path: /opt/apache-activemq/data
+
+    activemq-artemis:
+        type: activemq
+        ports: [{name: core, port: 61616}, {name: web, port: 8161}]
+        credentials: {username: artemis}
+        url: "tcp://{{.host}}"
+        health: {port: core, timeout: 120s}
+        docker:
+            image: "apache/activemq-artemis:{{.version}}"
+            default_version: latest
+            env: {ARTEMIS_USER: "{{.username}}", ARTEMIS_PASSWORD: "{{.password}}"}
+            data_path: /var/lib/artemis-instance
+
+    ministack:
+        type: aws
+        ports: [{name: edge, port: 4566}]
+        credentials: {username: test, password: test}
+        parameters:
+            region: {type: string, description: AWS region, default: us-east-1}
+        url: "http://{{.host}}"
+        properties: {endpoint: "http://{{.host}}", region: '{{index .parameters "region"}}'}
+        health: {http: /, port: edge, timeout: 60s}
+        docker:
+            image: "ministackorg/ministack:{{.version}}"

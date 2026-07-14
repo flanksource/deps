@@ -618,16 +618,43 @@ deps-start nats@2.11
 # background + lifecycle
 deps-start valkey -d          # docker runtime (valkey has no binary artifact)
 deps-start list
+deps-start info valkey
 deps-start logs valkey -f
 deps-start restart valkey       # in place: SupervisedProcess restart / docker restart
 deps-start stop --all
 
 # helm: connection password resolves from the chart secret at hydration time
-deps-start postgres --runtime helm -n dev
-# url: svc://deps-postgres.dev:5432
+deps-start postgres --runtime helm -n dev --port 15432
+# url: svc://deps-postgres.dev:15432 (the chart Service port is overridden too)
 # password: secret://deps-postgres/POSTGRES_PASSWORD
 
-# output formats: yaml (default), json, env
+# typed service-specific and Kubernetes resource flags are shown in service help
+deps-start opensearch --jvm-memory 1g
+deps-start opensearch --runtime helm --cpu-request 500m --memory-limit 2Gi
+deps-start nats --jetstream=false
+
+# repeating the same command reuses the running service and credentials;
+# changing an option reconciles the runtime while keeping its password
+deps-start nats --runtime docker --jetstream=false
+deps-start nats --runtime docker --jetstream=true
+
+# Docker uses a host bind by default. The source defaults to
+# ~/.deps/services/<service>/data and the container target comes from the registry.
+deps-start postgres --runtime docker --data-dir ./postgres-data
+deps-start postgres --runtime docker --volume-mode persistent
+deps-start postgres --runtime docker --volume-mode ephemeral
+
+# Helm defaults to a chart-backed persistent volume. Available modes are
+# chart-specific and shown in service metadata; unsupported modes fail before upgrade.
+deps-start opensearch --runtime helm --volume-mode ephemeral
+
+# JSON is the default structured service envelope on stdout. It includes the
+# connection plus runtime, image/chart, parameters, ports, volume and state paths.
+# Clicky lifecycle messages and configuration diffs are written to stderr.
+deps-start postgres
+
+# explicit output formats: json (default), yaml, env (connection fields only)
+deps-start postgres -o yaml
 deps-start postgres -o env
 ```
 
@@ -636,15 +663,20 @@ As a library:
 ```go
 import "github.com/flanksource/deps/start"
 
-instance, err := start.Start(ctx, "postgres", start.WithPort(15432))
+instance, err := start.Start(ctx, "opensearch",
+    start.WithPort(19200),
+    start.WithParameters(map[string]string{"jvm-memory": "1g"}),
+)
 // instance.Connection is a commons-db models.Connection
 defer instance.Stop(ctx)
 ```
 
-Service metadata (ports, credentials, health checks, images, charts, connection
-templates) lives in the registry — see `pkg/config/services.yaml`. Runtime support
-per service is implied by which of `binary`/`docker`/`helm` blocks its `service:`
-spec defines.
+Service metadata (ports, typed parameters, credentials, health checks, images,
+charts, and connection templates) lives in the embedded registry under
+`pkg/config/services*.yaml`. Runtime support per service is implied by which of
+the `binary`/`docker`/`helm` blocks its `service:` spec defines. Parameters can be
+limited to specific runtimes; using a Helm-only resource flag with another
+runtime fails before the service starts.
 
 ---
 

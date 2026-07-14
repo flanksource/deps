@@ -7,7 +7,8 @@ package types
 // String fields support templating with: {{.name}} {{.version}} {{.tag}}
 // {{.major}} {{.minor}} {{.os}} {{.arch}} {{.port}} {{.ports.<name>}} {{.host}}
 // {{.appDir}} {{.binDir}} {{.dataDir}} {{.runDir}} {{.passwordFile}}
-// {{.username}} {{.password}} {{.database}} {{.release}} {{.namespace}}.
+// {{.username}} {{.password}} {{.database}} {{.release}} {{.namespace}}, and
+// service-specific values through {{index .parameters "flag-name"}}.
 type ServiceSpec struct {
 	// Type is the connection type string (commons-db ConnectionType: postgres,
 	// mysql, sql_server, clickhouse, redis, opensearch, elasticsearch, loki,
@@ -29,11 +30,34 @@ type ServiceSpec struct {
 	// InsecureTLS marks the emitted connection as skipping TLS verification
 	// (self-signed local API servers).
 	InsecureTLS bool `json:"insecure_tls,omitempty" yaml:"insecure_tls,omitempty"`
+	// Parameters become typed, service-specific deps-start flags. Map keys are
+	// kebab-case Cobra flag names and are available to templates through
+	// {{index .parameters "flag-name"}}.
+	Parameters map[string]ServiceParameter `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 
 	Binary  *BinaryRuntime  `json:"binary,omitempty" yaml:"binary,omitempty"`
 	Docker  *DockerRuntime  `json:"docker,omitempty" yaml:"docker,omitempty"`
 	Helm    *HelmRuntime    `json:"helm,omitempty" yaml:"helm,omitempty"`
 	Command *CommandRuntime `json:"command,omitempty" yaml:"command,omitempty"`
+}
+
+type ServiceParameterType string
+
+const (
+	ServiceParameterString   ServiceParameterType = "string"
+	ServiceParameterBool     ServiceParameterType = "bool"
+	ServiceParameterInt      ServiceParameterType = "int"
+	ServiceParameterDuration ServiceParameterType = "duration"
+	ServiceParameterQuantity ServiceParameterType = "quantity"
+)
+
+// ServiceParameter describes one generated deps-start flag.
+type ServiceParameter struct {
+	Type        ServiceParameterType `json:"type" yaml:"type"`
+	Description string               `json:"description" yaml:"description"`
+	Default     string               `json:"default,omitempty" yaml:"default,omitempty"`
+	Runtimes    []string             `json:"runtimes,omitempty" yaml:"runtimes,omitempty"`
+	Pattern     string               `json:"pattern,omitempty" yaml:"pattern,omitempty"`
 }
 
 // ServicePort is a named service port.
@@ -159,12 +183,29 @@ type HelmRuntime struct {
 	Values string `json:"values,omitempty" yaml:"values,omitempty"`
 	// Set are templated --set pairs.
 	Set map[string]string `json:"set,omitempty" yaml:"set,omitempty"`
+	// PortSet contains chart values applied only when --port is supplied.
+	// Values are templates and override matching Set entries.
+	PortSet map[string]string `json:"port_set,omitempty" yaml:"port_set,omitempty"`
+	// ResourcePrefix is the chart values path for the primary workload's
+	// Kubernetes resource requirements, for example "server.resources".
+	ResourcePrefix string `json:"resource_prefix,omitempty" yaml:"resource_prefix,omitempty"`
+	// Volume maps the service's primary data mount to chart-specific values.
+	Volume *HelmVolume `json:"volume,omitempty" yaml:"volume,omitempty"`
 	// Secret identifies the chart-created credential secret so the emitted
 	// connection password can use "secret://<name>/<key>".
 	Secret *SecretRef `json:"secret,omitempty" yaml:"secret,omitempty"`
 	// Service is the in-cluster endpoint used to build "svc://<name>.<namespace>:<port>".
 	Service *ServiceRef  `json:"service,omitempty" yaml:"service,omitempty"`
 	Health  *HealthCheck `json:"health,omitempty" yaml:"health,omitempty"`
+}
+
+type HelmVolume struct {
+	MountPath string                    `json:"mount_path" yaml:"mount_path"`
+	Modes     map[string]HelmVolumeMode `json:"modes" yaml:"modes"`
+}
+
+type HelmVolumeMode struct {
+	Set map[string]string `json:"set,omitempty" yaml:"set,omitempty"`
 }
 
 // SecretRef points at a key in a chart-created Kubernetes secret.
