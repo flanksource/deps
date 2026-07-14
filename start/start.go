@@ -32,8 +32,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	if !ok {
 		return nil, fmt.Errorf("unknown service %q, available: %s", name, strings.Join(ServiceNames(), ", "))
 	}
-	kind, err := selectRuntime(*spec, options.Runtime, runtime.GOOS, runtime.GOARCH)
-	if err != nil {
+	if err := validateSuppliedServiceParameters(*spec, options.Parameters); err != nil {
 		return nil, fmt.Errorf("service %s: %w", name, err)
 	}
 
@@ -42,17 +41,82 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 		return nil, err
 	}
 	defer unlock()
+	prior, err := state.Load(options.StateDir, name)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err := mergePriorOptions(&options, prior); err != nil {
+		return nil, fmt.Errorf("service %s: %w", name, err)
+	}
+	kind, err := selectRuntime(*spec, options.Runtime, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return nil, fmt.Errorf("service %s: %w", name, err)
+	}
+	parameters, persistedParameters, err := resolveServiceParameters(*spec, kind, options.Parameters)
+	if err != nil {
+		return nil, fmt.Errorf("service %s: %w", name, err)
+	}
+	rt, err := newRuntime(kind)
+	if err != nil {
+		return nil, err
+	}
+	if prior != nil && prior.Runtime != string(kind) {
+		if err := stopPreviousRuntime(ctx, prior); err != nil {
+			return nil, err
+		}
+		prior = nil
+	}
 
 	svc, err := newServiceContext(name, pkg, *spec, options)
 	if err != nil {
 		return nil, err
 	}
+	svc.Parameters = parameters
+	svc.Opts.Parameters = persistedParameters
 
-	rt, err := newRuntime(kind)
-	if err != nil {
-		return nil, err
+	var liveConfig, desiredConfig *state.EffectiveConfig
+	if provider, ok := rt.(runtimeConfigProvider); ok {
+		if prior != nil {
+			liveConfig, err = provider.InspectConfig(ctx, svc, prior)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if svc.Opts.VolumeMode == "" {
+			svc.Opts.VolumeMode = defaultVolumeMode(kind, svc, liveConfig)
+		}
+		desiredConfig, err = provider.DesiredConfig(ctx, svc)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if options.VolumeMode != "" {
+			return nil, fmt.Errorf("volume mode is only supported by docker and helm runtimes")
+		}
+		desiredConfig = baseEffectiveConfig(svc, kind)
 	}
-	st, err := rt.Start(ctx, svc)
+
+	desiredOptions := state.StartOptions{
+		Runtime: string(kind), Version: options.Version, Port: options.Port,
+		Bind: options.BindAddress, Namespace: options.Namespace, DataDir: options.DataDir,
+		VolumeMode: string(svc.Opts.VolumeMode), Parameters: persistedParameters,
+	}
+	var change *ConfigChange
+	if prior != nil {
+		change, err = NewConfigChange(liveConfig, desiredConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+	runtimePrior := prior
+	if change != nil {
+		copy := *prior
+		copy.StartOptions = nil
+		runtimePrior = &copy
+	}
+	action := runtimeAction(ctx, rt, prior, change)
+
+	st, err := startRuntime(ctx, rt, svc, runtimePrior, desiredOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start %s (%s): %w", name, kind, err)
 	}
@@ -76,19 +140,131 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 		st.Connection = conn
 	}
 	st.Ready = true
-	st.StartOptions = &state.StartOptions{
-		Runtime:   string(options.Runtime),
-		Version:   options.Version,
-		Port:      options.Port,
-		Bind:      options.BindAddress,
-		Namespace: options.Namespace,
-		DataDir:   options.DataDir,
-	}
+	st.StartOptions = &desiredOptions
+	st.EffectiveConfig = desiredConfig
 	if err := st.Save(options.StateDir); err != nil {
 		return nil, err
 	}
 
-	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, State: st, runtime: rt, stateDir: options.StateDir}, nil
+	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, Action: action, Change: change, State: st, runtime: rt, stateDir: options.StateDir}, nil
+}
+
+func mergePriorOptions(options *Options, prior *state.State) error {
+	if prior == nil || prior.StartOptions == nil {
+		return nil
+	}
+	if options.supplied.runtime && options.Runtime != RuntimeKind(prior.Runtime) {
+		return nil
+	}
+	saved := prior.StartOptions
+	if !options.supplied.runtime {
+		options.Runtime = RuntimeKind(prior.Runtime)
+	}
+	if !options.supplied.version {
+		options.Version = saved.Version
+	}
+	if !options.supplied.port {
+		options.Port = saved.Port
+	}
+	if !options.supplied.bind {
+		options.BindAddress = saved.Bind
+	}
+	if !options.supplied.namespace && saved.Namespace != "" {
+		options.Namespace = saved.Namespace
+	}
+	if !options.supplied.dataDir && !(options.supplied.volumeMode && options.VolumeMode != VolumeHost) {
+		options.DataDir = saved.DataDir
+	}
+	if !options.supplied.volumeMode && !options.supplied.dataDir {
+		options.VolumeMode = VolumeMode(saved.VolumeMode)
+	}
+	parameters := cloneStrings(saved.Parameters)
+	for name, value := range options.Parameters {
+		parameters[name] = value
+	}
+	options.Parameters = parameters
+	return validateOptions(options)
+}
+
+func defaultVolumeMode(kind RuntimeKind, svc *ServiceContext, live *state.EffectiveConfig) VolumeMode {
+	if svc.Opts.DataDir != "" {
+		return VolumeHost
+	}
+	if live != nil && live.Volume != nil {
+		return VolumeMode(live.Volume.Mode)
+	}
+	if kind == RuntimeDocker && svc.Spec.Docker != nil && svc.Spec.Docker.DataPath != "" {
+		return VolumeHost
+	}
+	if kind == RuntimeHelm && svc.Spec.Helm != nil && svc.Spec.Helm.Volume != nil {
+		return VolumePersistent
+	}
+	return ""
+}
+
+func baseEffectiveConfig(svc *ServiceContext, kind RuntimeKind) *state.EffectiveConfig {
+	return &state.EffectiveConfig{
+		Runtime: string(kind), Version: svc.Version, Parameters: cloneStrings(svc.Opts.Parameters),
+		Ports: configuredPorts(svc), Bind: bindAddress(svc), Namespace: svc.Opts.Namespace,
+	}
+}
+
+func runtimeAction(ctx context.Context, runtime Runtime, prior *state.State, change *ConfigChange) string {
+	if prior == nil {
+		return "created"
+	}
+	if change != nil {
+		return "updated"
+	}
+	status, err := runtime.Status(ctx, prior)
+	if err == nil && status == state.StatusRunning && prior.Ready {
+		return "reused"
+	}
+	return "started"
+}
+
+func startRuntime(ctx context.Context, runtime Runtime, svc *ServiceContext, prior *state.State, desired state.StartOptions) (*state.State, error) {
+	if prior == nil {
+		return runtime.Start(ctx, svc)
+	}
+	if prior.Runtime != string(runtime.Kind()) {
+		return nil, fmt.Errorf("cannot reconcile %s state with %s runtime", prior.Runtime, runtime.Kind())
+	}
+	priorOptions := prior.StartOptions
+	if priorOptions != nil && priorOptions.Runtime == "" {
+		normalized := *priorOptions
+		normalized.Runtime = prior.Runtime
+		priorOptions = &normalized
+	}
+	if prior.Ready && priorOptions.Equal(&desired) {
+		status, err := runtime.Status(ctx, prior)
+		if err != nil {
+			return nil, fmt.Errorf("failed to inspect existing %s service: %w", runtime.Kind(), err)
+		}
+		if status == state.StatusRunning {
+			return prior, nil
+		}
+		return runtime.Start(ctx, svc)
+	}
+	return runtime.Reconcile(ctx, svc, prior)
+}
+
+func stopPreviousRuntime(ctx context.Context, prior *state.State) error {
+	runtime, err := newRuntime(RuntimeKind(prior.Runtime))
+	if err != nil {
+		return fmt.Errorf("failed to load previous runtime for %s: %w", prior.Name, err)
+	}
+	status, err := runtime.Status(ctx, prior)
+	if err != nil {
+		return fmt.Errorf("failed to inspect previous %s runtime for %s: %w", prior.Runtime, prior.Name, err)
+	}
+	if status == state.StatusStopped {
+		return nil
+	}
+	if err := runtime.Stop(ctx, prior); err != nil {
+		return fmt.Errorf("failed to stop previous %s runtime for %s: %w", prior.Runtime, prior.Name, err)
+	}
+	return nil
 }
 
 // Get returns a previously started service, or os.IsNotExist error.
@@ -261,6 +437,10 @@ func newServiceContext(name string, pkg types.Package, spec types.ServiceSpec, o
 		svc.Database = creds.Database
 		if svc.Password == "" {
 			svc.Password = resolvePassword(name, svc.RunDir, options.StateDir)
+			passwordFile := filepath.Join(svc.RunDir, ".password")
+			if err := os.WriteFile(passwordFile, []byte(svc.Password), 0o600); err != nil {
+				return nil, fmt.Errorf("failed to persist password for %s: %w", name, err)
+			}
 		}
 	}
 	return svc, nil

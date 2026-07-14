@@ -2,6 +2,7 @@ package state
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -43,16 +44,55 @@ type State struct {
 	// StartOptions are the user-supplied options the service was started
 	// with, replayed by restart.
 	StartOptions *StartOptions `yaml:"start_options,omitempty"`
+	// EffectiveConfig is the secret-free managed runtime configuration used
+	// for output and for runtimes that cannot inspect their launch arguments.
+	EffectiveConfig *EffectiveConfig `yaml:"effective_config,omitempty"`
 }
 
 // StartOptions is the persisted snapshot of user-supplied start options.
 type StartOptions struct {
-	Runtime   string `yaml:"runtime,omitempty"`
-	Version   string `yaml:"version,omitempty"`
-	Port      int    `yaml:"port,omitempty"`
-	Bind      string `yaml:"bind,omitempty"`
-	Namespace string `yaml:"namespace,omitempty"`
-	DataDir   string `yaml:"data_dir,omitempty"`
+	Runtime    string            `yaml:"runtime,omitempty"`
+	Version    string            `yaml:"version,omitempty"`
+	Port       int               `yaml:"port,omitempty"`
+	Bind       string            `yaml:"bind,omitempty"`
+	Namespace  string            `yaml:"namespace,omitempty"`
+	DataDir    string            `yaml:"data_dir,omitempty"`
+	VolumeMode string            `yaml:"volume_mode,omitempty"`
+	Parameters map[string]string `yaml:"parameters,omitempty"`
+}
+
+func (o *StartOptions) Equal(other *StartOptions) bool {
+	if o == nil || other == nil {
+		return o == other
+	}
+	return o.Runtime == other.Runtime &&
+		o.Version == other.Version &&
+		o.Port == other.Port &&
+		o.Bind == other.Bind &&
+		o.Namespace == other.Namespace &&
+		o.DataDir == other.DataDir &&
+		o.VolumeMode == other.VolumeMode &&
+		maps.Equal(o.Parameters, other.Parameters)
+}
+
+// EffectiveConfig is the canonical, credential-free projection managed by
+// deps-start. Runtime metadata stores the same projection for live inspection.
+type EffectiveConfig struct {
+	Runtime    string            `json:"runtime" yaml:"runtime"`
+	Version    string            `json:"version,omitempty" yaml:"version,omitempty"`
+	Image      string            `json:"image,omitempty" yaml:"image,omitempty"`
+	Chart      string            `json:"chart,omitempty" yaml:"chart,omitempty"`
+	Parameters map[string]string `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Ports      map[string]int    `json:"ports,omitempty" yaml:"ports,omitempty"`
+	Bind       string            `json:"bind,omitempty" yaml:"bind,omitempty"`
+	Namespace  string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Volume     *Volume           `json:"volume,omitempty" yaml:"volume,omitempty"`
+}
+
+type Volume struct {
+	Mode   string `json:"mode" yaml:"mode"`
+	Source string `json:"source,omitempty" yaml:"source,omitempty"`
+	Target string `json:"target" yaml:"target"`
 }
 
 // Resources is a point-in-time usage sample of a running service.

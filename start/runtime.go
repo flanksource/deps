@@ -14,6 +14,8 @@ import (
 
 type RuntimeKind string
 
+type VolumeMode string
+
 const (
 	RuntimeBinary  RuntimeKind = "binary"
 	RuntimeDocker  RuntimeKind = "docker"
@@ -21,14 +23,31 @@ const (
 	RuntimeCommand RuntimeKind = "command"
 )
 
+const (
+	VolumePersistent VolumeMode = "persistent"
+	VolumeHost       VolumeMode = "host"
+	VolumeEphemeral  VolumeMode = "ephemeral"
+)
+
+func (m VolumeMode) Valid() bool {
+	return m == VolumePersistent || m == VolumeHost || m == VolumeEphemeral
+}
+
 // Runtime starts and stops a service using one execution backend.
 type Runtime interface {
 	Kind() RuntimeKind
 	// Start launches the service, waits for readiness, and returns the
 	// populated state (pid/container/release + host ports).
 	Start(ctx context.Context, svc *ServiceContext) (*state.State, error)
+	// Reconcile applies changed effective start options to an existing service.
+	Reconcile(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.State, error)
 	Stop(ctx context.Context, st *state.State) error
 	Status(ctx context.Context, st *state.State) (state.Status, error)
+}
+
+type runtimeConfigProvider interface {
+	DesiredConfig(ctx context.Context, svc *ServiceContext) (*state.EffectiveConfig, error)
+	InspectConfig(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.EffectiveConfig, error)
 }
 
 // ServiceContext bundles everything a runtime needs to start one service.
@@ -57,6 +76,8 @@ type ServiceContext struct {
 	// Host is where the service is reachable, default "localhost". The
 	// docker runtime sets it to the daemon's host when remote.
 	Host string
+	// Parameters contains typed resolved service parameter values.
+	Parameters map[string]any
 }
 
 // serviceHost returns the hostname services are reachable at. A specific

@@ -69,6 +69,13 @@ var _ = Describe("BuildConnection", func() {
 		Expect(conn.Namespace).To(Equal("dev"))
 	})
 
+	It("uses the primary port override in the helm connection", func() {
+		svc := testContext(postgresSpec(), Options{Namespace: "dev", Port: 15432})
+		conn, err := BuildConnection(svc, &state.State{HelmRelease: "deps-postgres"}, RuntimeHelm)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(conn.URL).To(Equal("svc://deps-postgres.dev:15432"))
+	})
+
 	It("references the username key when the secret declares one", func() {
 		spec := postgresSpec()
 		spec.Helm.Secret.UsernameKey = "POSTGRES_USER"

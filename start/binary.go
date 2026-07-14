@@ -24,6 +24,15 @@ type binaryRuntime struct {
 
 func (r *binaryRuntime) Kind() RuntimeKind { return RuntimeBinary }
 
+func (r *binaryRuntime) Reconcile(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.State, error) {
+	if processAlive(prior.PID) {
+		if err := r.Stop(ctx, prior); err != nil {
+			return nil, fmt.Errorf("failed to stop binary for reconciliation: %w", err)
+		}
+	}
+	return r.Start(ctx, svc)
+}
+
 func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.State, error) {
 	spec := svc.Spec.Binary
 	if err := checkPlatform(spec.Platforms, svc.OS, svc.Arch); err != nil {
@@ -196,13 +205,9 @@ func renderCommand(svc *ServiceContext, data map[string]any) (string, []string, 
 		command = filepath.Join(svc.AppDir, command)
 	}
 
-	var args []string
-	for i, arg := range spec.Args {
-		rendered, err := render(fmt.Sprintf("binary.args[%d]", i), arg, data)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		args = append(args, rendered)
+	args, err := renderArguments("binary.args", spec.Args, data)
+	if err != nil {
+		return "", nil, nil, err
 	}
 
 	env := map[string]string{}

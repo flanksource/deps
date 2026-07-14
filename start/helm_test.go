@@ -34,13 +34,13 @@ var _ = Describe("helm args", func() {
 		Expect(err).ToNot(HaveOccurred())
 		args, err := buildHelmArgs(svc, data, release)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(args).To(Equal([]string{
+		Expect(args[:12]).To(Equal([]string{
 			"upgrade", "--install", "deps-postgres", "postgres",
 			"--namespace", "dev", "--create-namespace",
 			"--wait", "--timeout", "2m0s",
 			"--repo", "https://groundhog2k.github.io/helm-charts/",
-			"--set", "settings.superuserPassword=sekret",
 		}))
+		Expect(args).To(ContainElements("--description", "--set", "settings.superuserPassword=sekret"))
 	})
 
 	It("writes rendered values to the run dir", func() {
@@ -55,5 +55,21 @@ var _ = Describe("helm args", func() {
 		content, err := readFile(svc.RunDir + "/values.yaml")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(content).To(Equal("auth:\n  database: postgres\n"))
+	})
+
+	It("omits empty optional settings and applies the primary port last", func() {
+		svc := newSvc()
+		svc.Opts.Port = 15432
+		svc.Parameters = map[string]any{"cpu-request": ""}
+		svc.Spec.Helm.Set = map[string]string{
+			"resources.requests.cpu": `{{index .parameters "cpu-request"}}`,
+		}
+		svc.Spec.Helm.PortSet = map[string]string{"service.port": "{{.port}}"}
+		release, data, err := helmRelease(svc)
+		Expect(err).ToNot(HaveOccurred())
+		args, err := buildHelmArgs(svc, data, release)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(args[len(args)-2:]).To(Equal([]string{"--set", "service.port=15432"}))
+		Expect(args).ToNot(ContainElement("resources.requests.cpu="))
 	})
 })
