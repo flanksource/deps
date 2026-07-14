@@ -76,9 +76,18 @@ var _ = Describe("Service registry", func() {
 			if spec.Helm != nil {
 				Expect(spec.Helm.Chart).ToNot(BeEmpty(), name)
 				Expect(spec.Helm.Chart).ToNot(ContainSubstring("bitnami"), name)
+				Expect(spec.Helm.ResourcePrefix).ToNot(BeEmpty(), name)
+				Expect(spec.Helm.PortSet).ToNot(BeEmpty(), name)
+				for _, parameter := range []string{"cpu-request", "cpu-limit", "memory-request", "memory-limit"} {
+					Expect(spec.Parameters).To(HaveKey(parameter), "%s must expose --%s", name, parameter)
+				}
 				if spec.Helm.Secret != nil {
 					Expect(spec.Helm.Secret.Name).ToNot(BeEmpty(), name)
 					Expect(spec.Helm.Secret.Key).ToNot(BeEmpty(), name)
+				}
+				if spec.Docker != nil && spec.Docker.DataPath != "" {
+					Expect(spec.Helm.Volume).ToNot(BeNil(), "%s must map its primary helm data volume", name)
+					Expect(spec.Helm.Volume.Modes).To(HaveKey("persistent"), "%s must support persistent helm storage", name)
 				}
 			}
 			if spec.Docker != nil {
@@ -87,6 +96,21 @@ var _ = Describe("Service registry", func() {
 			}
 		}
 	})
+
+	DescribeTable("defines service-specific parameters",
+		func(service string, parameters ...string) {
+			_, spec, ok := GetService(service)
+			Expect(ok).To(BeTrue())
+			for _, parameter := range parameters {
+				Expect(spec.Parameters).To(HaveKey(parameter))
+			}
+		},
+		Entry("OpenSearch JVM heap", "opensearch", "jvm-memory"),
+		Entry("Elasticsearch JVM heap", "elasticsearch", "jvm-memory"),
+		Entry("NATS JetStream", "nats", "jetstream"),
+		Entry("Rclone region", "rclone", "region"),
+		Entry("Ministack region", "ministack", "region"),
+	)
 
 	It("resolves services through GetService", func() {
 		pkg, spec, ok := GetService("postgres")

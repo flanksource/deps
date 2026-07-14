@@ -25,6 +25,9 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: postgres
+            volume: {mount_path: /var/lib/postgresql/data, modes: {persistent: {set: {}}}}
+            resource_prefix: resources
+            port_set: {service.port: "{{.port}}"}
             set: {settings.superuserPassword.value: "{{.password}}"}
             secret: {name: "{{.release}}", key: POSTGRES_PASSWORD}
             service: {name: "{{.release}}", port: 5432}
@@ -42,6 +45,9 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: mysql
+            volume: {mount_path: /var/lib/mysql, modes: {persistent: {set: {}}}}
+            resource_prefix: resources
+            port_set: {service.port: "{{.port}}"}
             # VERIFY: userDatabase may need user/password subkeys as well
             set: {settings.rootPassword.value: "{{.password}}", userDatabase.name.value: "{{.database}}"}
             secret: {name: "{{.release}}", key: MYSQL_ROOT_PASSWORD}
@@ -60,6 +66,13 @@ services:
         helm:
             repo: https://simcubeltd.github.io/simcube-helm-charts/
             chart: mssqlserver-2022
+            volume:
+                mount_path: /var/opt/mssql
+                modes:
+                    persistent: {set: {persistence.enabled: "true"}}
+                    ephemeral: {set: {persistence.enabled: "false"}}
+            resource_prefix: resources
+            port_set: {service.port: "{{.port}}"}
             set: {acceptEula.value: "Y", sapassword: "{{.password}}"}
             # VERIFY: SimCube chart secret name/key convention
             secret: {name: "{{.release}}-mssqlserver-2022-secret", key: sapassword}
@@ -78,6 +91,9 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: valkey
+            volume: {mount_path: /data, modes: {persistent: {set: {}}}}
+            resource_prefix: resources
+            port_set: {service.serverPort: "{{.port}}"}
             # the chart has no auth values; requirepass goes via valkeyConfig
             # and the connection carries the literal password
             values: |
@@ -89,43 +105,61 @@ services:
         type: opensearch
         ports: [{name: http, port: 9200}]
         credentials: {username: admin}
+        parameters:
+            jvm-memory: {type: string, description: JVM minimum and maximum heap, default: 512m, pattern: '^[1-9][0-9]*[kKmMgG]$'}
         url: "http://{{.host}}"
         health: {http: /_cluster/health, port: http, timeout: 180s}
         binary:
             command: bin/opensearch
             args: ["-Ediscovery.type=single-node", "-Eplugins.security.disabled=true", "-Ehttp.port={{.port}}", "-Epath.data={{.dataDir}}"]
-            env: {OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            env: {OPENSEARCH_JAVA_OPTS: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}'}
             platforms: ["linux-*"] # no darwin bundles are published
         docker:
             image: "opensearchproject/opensearch:{{.version}}"
-            env: {discovery.type: single-node, DISABLE_SECURITY_PLUGIN: "true", OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            env: {discovery.type: single-node, DISABLE_SECURITY_PLUGIN: "true", OPENSEARCH_JAVA_OPTS: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}'}
             data_path: /usr/share/opensearch/data
         helm:
             repo: https://opensearch-project.github.io/helm-charts/
             chart: opensearch
+            volume:
+                mount_path: /usr/share/opensearch/data
+                modes:
+                    persistent: {set: {persistence.enabled: "true"}}
+                    ephemeral: {set: {persistence.enabled: "false"}}
+            resource_prefix: resources
+            port_set: {httpPort: "{{.port}}"}
             # chart creates no credential secret; password is passed via env and
             # emitted literally in the connection
-            set: {singleNode: "true", "extraEnvs[0].name": OPENSEARCH_INITIAL_ADMIN_PASSWORD, "extraEnvs[0].value": "{{.password}}"}
+            set: {singleNode: "true", opensearchJavaOpts: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}', "extraEnvs[0].name": OPENSEARCH_INITIAL_ADMIN_PASSWORD, "extraEnvs[0].value": "{{.password}}"}
             service: {name: opensearch-cluster-master, port: 9200}
 
     elasticsearch:
         type: elasticsearch
         ports: [{name: http, port: 9200}, {name: transport, port: 9300}]
         credentials: {username: elastic}
+        parameters:
+            jvm-memory: {type: string, description: JVM minimum and maximum heap, default: 512m, pattern: '^[1-9][0-9]*[kKmMgG]$'}
         url: "http://{{.host}}"
         health: {http: /_cluster/health, port: http, timeout: 180s}
         binary:
             command: bin/elasticsearch
             args: ["-Ediscovery.type=single-node", "-Expack.security.enabled=false", "-Ehttp.port={{.port}}", "-Epath.data={{.dataDir}}"]
-            env: {ES_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            env: {ES_JAVA_OPTS: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}'}
         docker:
             image: "docker.elastic.co/elasticsearch/elasticsearch:{{.version}}"
-            env: {discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m"}
+            env: {discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}'}
             data_path: /usr/share/elasticsearch/data
         helm:
             repo: https://helm.elastic.co
             chart: elasticsearch
-            set: {replicas: "1", minimumMasterNodes: "1"}
+            volume:
+                mount_path: /usr/share/elasticsearch/data
+                modes:
+                    persistent: {set: {persistence.enabled: "true"}}
+                    ephemeral: {set: {persistence.enabled: "false"}}
+            resource_prefix: resources
+            port_set: {httpPort: "{{.port}}"}
+            set: {replicas: "1", minimumMasterNodes: "1", esJavaOpts: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}'}
             # elastic chart resource names are clusterName-based, not release-prefixed
             secret: {name: elasticsearch-master-credentials, key: password, username_key: username}
             service: {name: elasticsearch-master, port: 9200}
@@ -169,6 +203,13 @@ services:
         helm:
             repo: https://grafana.github.io/helm-charts
             chart: loki
+            volume:
+                mount_path: /var/loki
+                modes:
+                    persistent: {set: {singleBinary.persistence.enabled: "true"}}
+                    ephemeral: {set: {singleBinary.persistence.enabled: "false"}}
+            resource_prefix: singleBinary.resources
+            port_set: {loki.server.http_listen_port: "{{.port}}"}
             values: |
                 deploymentMode: SingleBinary
                 loki:
@@ -219,6 +260,13 @@ services:
         helm:
             repo: https://prometheus-community.github.io/helm-charts
             chart: prometheus
+            volume:
+                mount_path: /data
+                modes:
+                    persistent: {set: {server.persistentVolume.enabled: "true"}}
+                    ephemeral: {set: {server.persistentVolume.enabled: "false"}}
+            resource_prefix: server.resources
+            port_set: {server.service.servicePort: "{{.port}}"}
             set: {alertmanager.enabled: "false", prometheus-pushgateway.enabled: "false", prometheus-node-exporter.enabled: "false"}
             service: {name: "{{.release}}-server", port: 80}
 
@@ -244,6 +292,13 @@ services:
         helm:
             repo: https://grafana.github.io/helm-charts
             chart: grafana
+            volume:
+                mount_path: /var/lib/grafana
+                modes:
+                    persistent: {set: {persistence.enabled: "true"}}
+                    ephemeral: {set: {persistence.enabled: "false"}}
+            resource_prefix: resources
+            port_set: {service.port: "{{.port}}"}
             secret: {name: "{{.release}}", key: admin-password, username_key: admin-user}
             service: {name: "{{.release}}", port: 80}
 
@@ -259,6 +314,8 @@ services:
         helm:
             repo: https://jaegertracing.github.io/helm-charts
             chart: jaeger
+            resource_prefix: jaeger.resources
+            port_set: {"jaeger.service.extraPorts[0].name": deps-http, "jaeger.service.extraPorts[0].port": "{{.port}}", "jaeger.service.extraPorts[0].targetPort": "16686", "jaeger.service.extraPorts[0].protocol": TCP}
             values: |
                 provisionDataStore:
                   cassandra: false
@@ -273,7 +330,7 @@ services:
                 query:
                   enabled: false
             # VERIFY: allInOne service name for the jaeger chart
-            service: {name: "{{.release}}-query", port: 16686}
+            service: {name: "{{.release}}", port: 16686}
 
     otel-collector:
         type: http
@@ -314,6 +371,8 @@ services:
         helm:
             repo: https://open-telemetry.github.io/opentelemetry-helm-charts
             chart: opentelemetry-collector
+            resource_prefix: resources
+            port_set: {ports.otlp-http.servicePort: "{{.port}}"}
             set: {mode: deployment, image.repository: otel/opentelemetry-collector-contrib}
             # VERIFY: fullname convention (release does not contain chart name)
             service: {name: "{{.release}}-opentelemetry-collector", port: 4318}
@@ -356,20 +415,29 @@ services:
     nats:
         type: nats
         ports: [{name: client, port: 4222}, {name: monitor, port: 8222}]
+        parameters:
+            jetstream: {type: bool, description: Enable JetStream persistence, default: "true"}
         url: "nats://{{.host}}"
         health: {http: /healthz, port: monitor, timeout: 30s}
         binary:
             command: "{{.binDir}}/nats"
-            args: ["-a", "{{.bind}}", "-p", "{{.port}}", "-m", "{{.ports.monitor}}", "-js", "-sd", "{{.dataDir}}"]
+            args: ["-a", "{{.bind}}", "-p", "{{.port}}", "-m", "{{.ports.monitor}}", '{{if index .parameters "jetstream"}}-js{{end}}', '{{if index .parameters "jetstream"}}-sd{{end}}', '{{if index .parameters "jetstream"}}{{.dataDir}}{{end}}']
             health: {stdout_match: "Server is ready"}
         docker:
             image: "nats:{{.version}}"
-            args: ["-js", "-m", "8222", "-sd", "/data"]
+            args: ['{{if index .parameters "jetstream"}}-js{{end}}', "-m", "8222", '{{if index .parameters "jetstream"}}-sd{{end}}', '{{if index .parameters "jetstream"}}/data{{end}}']
             data_path: /data
         helm:
             repo: https://nats-io.github.io/k8s/helm/charts/
             chart: nats
-            set: {config.jetstream.enabled: "true"}
+            volume:
+                mount_path: /data
+                modes:
+                    persistent: {set: {config.jetstream.fileStore.pvc.enabled: "true"}}
+                    ephemeral: {set: {config.jetstream.fileStore.pvc.enabled: "false"}}
+            resource_prefix: container.resources
+            port_set: {config.nats.port: "{{.port}}"}
+            set: {config.jetstream.enabled: '{{index .parameters "jetstream"}}'}
             service: {name: "{{.release}}", port: 4222}
 
     rabbitmq:
@@ -385,6 +453,9 @@ services:
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: rabbitmq
+            volume: {mount_path: /var/lib/rabbitmq, modes: {persistent: {set: {}}}}
+            resource_prefix: resources
+            port_set: {service.amqp.port: "{{.port}}"}
             # the chart creates no credential secret; literal credentials emitted
             set: {authentication.user.value: "{{.username}}", authentication.password.value: "{{.password}}"}
             service: {name: "{{.release}}", port: 5672}
@@ -395,8 +466,10 @@ services:
         type: aws
         ports: [{name: s3, port: 8333}]
         credentials: {username: rclone}
+        parameters:
+            region: {type: string, description: AWS region, default: us-east-1}
         url: "http://{{.host}}"
-        properties: {endpoint: "http://{{.host}}", region: us-east-1}
+        properties: {endpoint: "http://{{.host}}", region: '{{index .parameters "region"}}'}
         health: {port: s3, timeout: 30s}
         binary:
             command: "{{.binDir}}/rclone"
@@ -405,130 +478,3 @@ services:
             image: "rclone/rclone:{{.version}}"
             args: ["serve", "s3", "/data", "--addr", ":8333", "--auth-key", "{{.username}},{{.password}}"]
             data_path: /data
-
-    k3s:
-        type: kubernetes
-        insecure_tls: true
-        ports: [{name: api, port: 6443}]
-        url: "https://{{.host}}"
-        # binary runtime writes the kubeconfig to {{.runDir}}/kubeconfig; the
-        # docker runtime keeps it in the data volume:
-        #   docker exec deps-start-k3s cat /var/lib/rancher/k3s/kubeconfig
-        health: {port: api, timeout: 180s}
-        binary:
-            platforms: ["linux-*"] # k3s server only runs on linux
-            command: "{{.binDir}}/k3s"
-            args: ["server", "--data-dir", "{{.dataDir}}", "--bind-address", "{{.bind}}", "--https-listen-port", "{{.port}}", "--write-kubeconfig", "{{.runDir}}/kubeconfig", "--write-kubeconfig-mode", "644"]
-        docker:
-            image: 'rancher/k3s:{{if eq .version "latest"}}latest{{else}}{{.tag | replace "+" "-"}}{{end}}'
-            command: ["server", "--tls-san", "{{.hostname}}"]
-            env: {K3S_KUBECONFIG_OUTPUT: /var/lib/rancher/k3s/kubeconfig, K3S_KUBECONFIG_MODE: "644"}
-            data_path: /var/lib/rancher/k3s
-            privileged: true
-            # kubeconfig lives in the data volume: docker exec deps-start-k3s cat /var/lib/rancher/k3s/kubeconfig
-
-    kind:
-        type: kubernetes
-        insecure_tls: true
-        ports: [{name: api, port: 6443}]
-        url: "https://{{.host}}"
-        properties: {kubeconfig: "{{.runDir}}/kubeconfig"}
-        health: {port: api, timeout: 60s}
-        command:
-            files:
-                kind.yaml: |
-                    kind: Cluster
-                    apiVersion: kind.x-k8s.io/v1alpha4
-                    networking:
-                      apiServerAddress: "{{.bind}}"
-                      apiServerPort: {{.port}}
-            start: "{{.binDir}}/kind create cluster --name {{.name}} --config {{.runDir}}/kind.yaml --kubeconfig {{.runDir}}/kubeconfig --wait 120s"
-            stop: "{{.binDir}}/kind delete cluster --name {{.name}}"
-            status: "{{.binDir}}/kind get clusters | grep -q '^{{.name}}$'"
-
-    kube-apiserver:
-        # standalone control plane (etcd + kube-apiserver) for envtest-style
-        # integration testing; authenticate with the emitted password as a
-        # bearer token (kubectl --token)
-        type: kubernetes
-        insecure_tls: true
-        ports: [{name: api, port: 6443}, {name: etcd, port: 2379}]
-        credentials: {username: admin}
-        url: "https://{{.host}}"
-        health: {port: api, timeout: 60s}
-        binary:
-            requires: [etcd]
-            files:
-                tokens.csv: |
-                    {{.password}},{{.username}},{{.username}},system:masters
-            init:
-                - command: openssl genrsa -out {{.runDir}}/sa.key 2048
-                  creates: "{{.runDir}}/sa.key"
-                - command: openssl rsa -in {{.runDir}}/sa.key -pubout -out {{.runDir}}/sa.pub
-                  creates: "{{.runDir}}/sa.pub"
-            command: >-
-                {{.binDir}}/etcd --data-dir {{.dataDir}}/etcd
-                --listen-client-urls http://127.0.0.1:{{.ports.etcd}}
-                --advertise-client-urls http://127.0.0.1:{{.ports.etcd}} &
-                exec {{.binDir}}/kube-apiserver
-                --etcd-servers=http://127.0.0.1:{{.ports.etcd}}
-                --secure-port={{.port}} --bind-address={{.bind}}
-                --cert-dir={{.dataDir}}/certs
-                --token-auth-file={{.runDir}}/tokens.csv
-                --service-account-issuer=https://kubernetes.default.svc
-                --service-account-key-file={{.runDir}}/sa.pub
-                --service-account-signing-key-file={{.runDir}}/sa.key
-                --authorization-mode=AlwaysAllow
-
-    trivy:
-        type: http
-        ports: [{name: http, port: 4954}]
-        url: "http://{{.host}}"
-        health: {http: /healthz, port: http, timeout: 300s} # first start downloads the vulnerability DB
-        binary:
-            command: "{{.binDir}}/trivy"
-            args: ["server", "--listen", "{{.bind}}:{{.port}}", "--cache-dir", "{{.dataDir}}"]
-        docker:
-            image: "aquasec/trivy:{{.version}}"
-            args: ["server", "--listen", "0.0.0.0:4954"]
-            data_path: /root/.cache/trivy
-        helm:
-            repo: https://aquasecurity.github.io/helm-charts/
-            chart: trivy
-            # VERIFY: trivy chart service name convention
-            service: {name: "{{.release}}", port: 4954}
-
-    activemq:
-        type: activemq
-        ports: [{name: openwire, port: 61616}, {name: web, port: 8161}]
-        # image defaults; web console at :8161/admin
-        credentials: {username: admin, password: admin}
-        url: "tcp://{{.host}}"
-        health: {port: openwire, timeout: 120s}
-        docker:
-            image: "apache/activemq-classic:{{.version}}"
-            default_version: latest # docker tags lag the apache archive
-            data_path: /opt/apache-activemq/data
-
-    activemq-artemis:
-        type: activemq
-        ports: [{name: core, port: 61616}, {name: web, port: 8161}]
-        credentials: {username: artemis}
-        url: "tcp://{{.host}}"
-        health: {port: core, timeout: 120s}
-        docker:
-            image: "apache/activemq-artemis:{{.version}}"
-            default_version: latest # docker tags lag the apache archive
-            env: {ARTEMIS_USER: "{{.username}}", ARTEMIS_PASSWORD: "{{.password}}"}
-            data_path: /var/lib/artemis-instance
-
-    ministack:
-        # https://ministack.org/ - AWS emulator (LocalStack alternative)
-        type: aws
-        ports: [{name: edge, port: 4566}]
-        credentials: {username: test, password: test}
-        url: "http://{{.host}}"
-        properties: {endpoint: "http://{{.host}}", region: us-east-1}
-        health: {http: /, port: edge, timeout: 60s}
-        docker:
-            image: "ministackorg/ministack:{{.version}}"
