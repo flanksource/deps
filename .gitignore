@@ -36,3 +36,5 @@ apps/
 .env
 .cache/
 .venv/
+go.work
+go.work.sum
