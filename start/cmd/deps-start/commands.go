@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"text/tabwriter"
-	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/flanksource/clicky/api/icons"
 
 	"github.com/flanksource/deps/start"
 	"github.com/flanksource/deps/start/state"
@@ -48,7 +48,7 @@ func newStopCmd(flags *rootFlags) *cobra.Command {
 				if err := start.Stop(cmd.Context(), name, flags.options()...); err != nil {
 					return err
 				}
-				fmt.Fprintf(os.Stderr, "stopped %s\n", name)
+				printAction(icons.Stop, "muted", "stopped %s", name)
 			}
 			return nil
 		},
@@ -95,8 +95,12 @@ func newRestartCmd(flags *rootFlags) *cobra.Command {
 func restartService(cmd *cobra.Command, name string, flags *rootFlags) error {
 	instance, err := start.Restart(cmd.Context(), name, flags.options()...)
 	if err == nil {
-		fmt.Fprintf(os.Stderr, "restarted %s in place\n", name)
-		return printConnection(instance, "yaml")
+		printAction(icons.Reload, "text-green-600", "restarted %s in place", name)
+		info, infoErr := instance.Info(cmd.Context())
+		if infoErr != nil {
+			return infoErr
+		}
+		return writeServiceOutput(os.Stdout, info, "json")
 	}
 	if !errors.Is(err, start.ErrRestartUnsupported) && !errors.Is(err, start.ErrNotRunning) {
 		return err
@@ -115,7 +119,7 @@ func restartService(cmd *cobra.Command, name string, flags *rootFlags) error {
 		if err := start.Stop(cmd.Context(), name, flags.options()...); err != nil {
 			return fmt.Errorf("failed to stop %s for restart: %w", name, err)
 		}
-		fmt.Fprintf(os.Stderr, "stopped %s\n", name)
+		printAction(icons.Stop, "muted", "stopped %s", name)
 	}
 
 	exe, err := os.Executable()
@@ -154,7 +158,44 @@ func restartArgs(name string, so *state.StartOptions, stateDir string) []string 
 	if so.DataDir != "" {
 		args = append(args, "--data-dir", so.DataDir)
 	}
+	if so.VolumeMode != "" {
+		args = append(args, "--volume-mode", so.VolumeMode)
+	}
+	parameterNames := make([]string, 0, len(so.Parameters))
+	for name := range so.Parameters {
+		parameterNames = append(parameterNames, name)
+	}
+	sort.Strings(parameterNames)
+	for _, name := range parameterNames {
+		args = append(args, "--"+name+"="+so.Parameters[name])
+	}
 	return args
+}
+
+func newInfoCmd(flags *rootFlags) *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:               "info <service>",
+		Short:             "Show live service configuration and connection details",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeServiceNames,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			instance, err := start.Get(cmd.Context(), args[0], flags.options()...)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return fmt.Errorf("service %s has not been started", args[0])
+				}
+				return err
+			}
+			info, infoErr := instance.Info(cmd.Context())
+			if infoErr != nil {
+				return infoErr
+			}
+			return writeServiceOutput(os.Stdout, info, output)
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "json", "service output format: json, yaml or env")
+	return cmd
 }
 
 func newStatusCmd(flags *rootFlags) *cobra.Command {
@@ -198,73 +239,6 @@ func newListCmd(flags *rootFlags) *cobra.Command {
 			return printStatusTable(cmd, flags, instances)
 		},
 	}
-}
-
-func printStatusTable(cmd *cobra.Command, flags *rootFlags, instances []*start.Instance) error {
-	w := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tRUNTIME\tSTATUS\tVERSION\tPORTS\tCPU\tMEM\tUPTIME\tURL")
-	for _, i := range instances {
-		status, err := start.Status(cmd.Context(), i.Name, flags.options()...)
-		if err != nil {
-			status = state.StatusUnknown
-		}
-		display := string(status)
-		ports, cpu, mem := "", "", ""
-		if status == state.StatusRunning {
-			if res := i.Metrics(cmd.Context()); res != nil {
-				ports = joinPorts(res.Ports)
-				cpu = fmt.Sprintf("%.1f%%", res.CPUPercent)
-				mem = humanBytes(res.RSSBytes)
-				if res.Restarts > 0 {
-					display += fmt.Sprintf(" (%d restarts)", res.Restarts)
-				}
-			}
-		}
-		if ports == "" {
-			ports = joinPorts(portValues(i.State.Ports))
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			i.Name, i.Runtime, display, i.State.Version,
-			ports, cpu, mem, uptime(i.State.StartedAt, status), i.Connection.String())
-	}
-	return w.Flush()
-}
-
-func joinPorts(ports []int) string {
-	strs := make([]string, len(ports))
-	for i, p := range ports {
-		strs[i] = strconv.Itoa(p)
-	}
-	return strings.Join(strs, ",")
-}
-
-func portValues(named map[string]int) []int {
-	var ports []int
-	for _, p := range named {
-		ports = append(ports, p)
-	}
-	sort.Ints(ports)
-	return ports
-}
-
-func humanBytes(b uint64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1fGiB", float64(b)/(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.0fMiB", float64(b)/(1<<20))
-	case b > 0:
-		return fmt.Sprintf("%.0fKiB", float64(b)/(1<<10))
-	default:
-		return ""
-	}
-}
-
-func uptime(started time.Time, status state.Status) string {
-	if started.IsZero() || status != state.StatusRunning {
-		return ""
-	}
-	return time.Since(started).Round(time.Second).String()
 }
 
 func newLogsCmd(flags *rootFlags) *cobra.Command {

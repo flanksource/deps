@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/flanksource/clicky/api/icons"
+
 	"github.com/flanksource/deps/start"
 	"github.com/flanksource/deps/start/state"
 )
@@ -20,7 +22,7 @@ const supervisorEnv = "DEPS_START_SUPERVISOR"
 // waits until the child publishes a ready state, prints the connection and
 // returns. The child runs the normal foreground path and stays alive as the
 // service supervisor.
-func runDetached(name string, flags *rootFlags) error {
+func runDetached(name string, flags *startFlags) error {
 	options, err := start.ResolveOptions(flags.options())
 	if err != nil {
 		return err
@@ -57,7 +59,7 @@ func runDetached(name string, flags *rootFlags) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "starting %s in the background (supervisor pid %d, log %s)\n", name, pid, logPath)
+	printAction(icons.Play, "muted", "starting %s in the background (supervisor pid %d, log %s)", name, pid, logPath)
 	return awaitDetachedReady(name, options.StateDir, logPath, pid, spawned, options.WaitTimeout)
 }
 
