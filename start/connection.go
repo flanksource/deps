@@ -65,6 +65,7 @@ func templateData(svc *ServiceContext, host, release string) map[string]any {
 		"database":     svc.Database,
 		"release":      release,
 		"namespace":    svc.Opts.Namespace,
+		"parameters":   svc.Parameters,
 	}
 	if len(parts) > 1 {
 		data["minor"] = parts[1]
@@ -88,6 +89,20 @@ func render(name, tmpl string, data map[string]any) (string, error) {
 		return "", fmt.Errorf("failed to render %s (%q): %w", name, tmpl, err)
 	}
 	return buf.String(), nil
+}
+
+func renderArguments(source string, templates []string, data map[string]any) ([]string, error) {
+	var arguments []string
+	for i, value := range templates {
+		rendered, err := render(fmt.Sprintf("%s[%d]", source, i), value, data)
+		if err != nil {
+			return nil, err
+		}
+		if rendered != "" {
+			arguments = append(arguments, rendered)
+		}
+	}
+	return arguments, nil
 }
 
 // BuildConnection renders the service spec into a commons-db connection.
@@ -136,7 +151,9 @@ func buildHelmConnection(svc *ServiceContext, st *state.State) (models.Connectio
 		return models.Connection{}, err
 	}
 	port := svcRef.Port
-	if port == 0 {
+	if svc.Opts.Port != 0 {
+		port = svc.Opts.Port
+	} else if port == 0 {
 		primary, _ := svc.Spec.PrimaryPort()
 		port = primary.Port
 	}

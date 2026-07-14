@@ -19,6 +19,19 @@ type commandRuntime struct{}
 
 func (r *commandRuntime) Kind() RuntimeKind { return RuntimeCommand }
 
+func (r *commandRuntime) Reconcile(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.State, error) {
+	status, err := r.Status(ctx, prior)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect command service for reconciliation: %w", err)
+	}
+	if status != state.StatusStopped {
+		if err := r.Stop(ctx, prior); err != nil {
+			return nil, fmt.Errorf("failed to stop command service for reconciliation: %w", err)
+		}
+	}
+	return r.Start(ctx, svc)
+}
+
 func (r *commandRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.State, error) {
 	spec := svc.Spec.Command
 	if err := checkPlatform(spec.Platforms, svc.OS, svc.Arch); err != nil {

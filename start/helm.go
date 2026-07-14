@@ -23,6 +23,72 @@ type helmRuntime struct {
 
 func (r *helmRuntime) Kind() RuntimeKind { return RuntimeHelm }
 
+func (r *helmRuntime) DesiredConfig(_ context.Context, svc *ServiceContext) (*state.EffectiveConfig, error) {
+	spec := svc.Spec.Helm
+	if spec == nil {
+		return nil, fmt.Errorf("service %s has no helm runtime", svc.Name)
+	}
+	release, _, err := helmRelease(svc)
+	if err != nil {
+		return nil, err
+	}
+	config := &state.EffectiveConfig{
+		Runtime: string(RuntimeHelm), Version: svc.Opts.Version, Chart: spec.Chart,
+		Parameters: cloneStrings(svc.Opts.Parameters), Ports: configuredPorts(svc),
+		Namespace: svc.Opts.Namespace,
+	}
+	if spec.ChartVersion != "" {
+		config.Chart += "@" + spec.ChartVersion
+	}
+	if spec.Volume == nil {
+		if svc.Opts.VolumeMode != "" {
+			return nil, fmt.Errorf("service %s does not define a helm data volume", svc.Name)
+		}
+		return config, nil
+	}
+	mode, ok := spec.Volume.Modes[string(svc.Opts.VolumeMode)]
+	if !ok {
+		return nil, fmt.Errorf("service %s helm runtime does not support %s volume mode", svc.Name, svc.Opts.VolumeMode)
+	}
+	_ = mode
+	config.Volume = &state.Volume{Mode: string(svc.Opts.VolumeMode), Target: spec.Volume.MountPath}
+	switch svc.Opts.VolumeMode {
+	case VolumeHost:
+		config.Volume.Source = svc.DataDir
+	case VolumePersistent:
+		config.Volume.Source = release + "-data"
+	case VolumeEphemeral:
+	default:
+		return nil, fmt.Errorf("unsupported helm volume mode %q", svc.Opts.VolumeMode)
+	}
+	return config, nil
+}
+
+func (r *helmRuntime) InspectConfig(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.EffectiveConfig, error) {
+	if prior.HelmRelease == "" {
+		return nil, nil
+	}
+	helm, err := r.ensureHelm(ctx)
+	if err != nil {
+		return nil, err
+	}
+	proc := exec.NewExec(helm, "status", prior.HelmRelease, "--namespace", prior.Namespace, "-o", "json").
+		WithTimeout(30 * time.Second).Run()
+	result := proc.Result()
+	if !result.IsOk() {
+		return nil, nil
+	}
+	var status struct {
+		Info struct {
+			Description string `json:"description"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal([]byte(result.Stdout), &status); err != nil {
+		return nil, fmt.Errorf("failed to parse helm live config for %s: %w", svc.Name, err)
+	}
+	return decodeManagedConfig(status.Info.Description)
+}
+
 func (r *helmRuntime) ensureHelm(ctx context.Context) (string, error) {
 	if r.helmPath != "" {
 		return r.helmPath, nil
@@ -69,7 +135,16 @@ func (r *helmRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.St
 		return nil, fmt.Errorf("helm upgrade --install %s failed (exit %d):\n%s", release, result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 25))
 	}
 
-	return &state.State{HelmRelease: release, Namespace: svc.Opts.Namespace}, nil
+	primary, _ := svc.Spec.PrimaryPort()
+	return &state.State{
+		HelmRelease: release,
+		Namespace:   svc.Opts.Namespace,
+		Ports:       map[string]int{primary.Name: hostPort(svc)},
+	}, nil
+}
+
+func (r *helmRuntime) Reconcile(ctx context.Context, svc *ServiceContext, _ *state.State) (*state.State, error) {
+	return r.Start(ctx, svc)
 }
 
 // helmRelease renders the release name and returns the template data with
@@ -90,6 +165,9 @@ func helmRelease(svc *ServiceContext) (string, map[string]any, error) {
 // --install argument list. Rendered values are written to the run dir.
 func buildHelmArgs(svc *ServiceContext, data map[string]any, release string) ([]string, error) {
 	spec := svc.Spec.Helm
+	if spec.Volume != nil && svc.Opts.VolumeMode == "" {
+		svc.Opts.VolumeMode = VolumePersistent
+	}
 	args := []string{"upgrade", "--install", release, spec.Chart,
 		"--namespace", svc.Opts.Namespace, "--create-namespace",
 		"--wait", "--timeout", svc.Opts.WaitTimeout.String()}
@@ -110,18 +188,57 @@ func buildHelmArgs(svc *ServiceContext, data map[string]any, release string) ([]
 		}
 		args = append(args, "-f", valuesFile)
 	}
-
-	keys := make([]string, 0, len(spec.Set))
-	for k := range spec.Set {
-		keys = append(keys, k)
+	desired, err := (&helmRuntime{}).DesiredConfig(context.Background(), svc)
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		rendered, err := render("helm.set."+k, spec.Set[k], data)
+	description, err := encodeManagedConfig(desired)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, "--description", description)
+
+	args, err = appendHelmSet(args, "helm.set", spec.Set, data)
+	if err != nil {
+		return nil, err
+	}
+	if svc.Opts.Port != 0 {
+		if len(spec.PortSet) == 0 {
+			return nil, fmt.Errorf("helm chart %s does not define a primary port override", spec.Chart)
+		}
+		args, err = appendHelmSet(args, "helm.port_set", spec.PortSet, data)
 		if err != nil {
 			return nil, err
 		}
-		args = append(args, "--set", k+"="+rendered)
+	}
+	if spec.Volume != nil {
+		mode, ok := spec.Volume.Modes[string(svc.Opts.VolumeMode)]
+		if !ok {
+			return nil, fmt.Errorf("helm chart %s does not support %s volume mode", spec.Chart, svc.Opts.VolumeMode)
+		}
+		args, err = appendHelmSet(args, "helm.volume."+string(svc.Opts.VolumeMode), mode.Set, data)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return args, nil
+}
+
+func appendHelmSet(args []string, source string, values map[string]string, data map[string]any) ([]string, error) {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		rendered, err := render(source+"."+key, values[key], data)
+		if err != nil {
+			return nil, err
+		}
+		if rendered == "" {
+			continue
+		}
+		args = append(args, "--set", key+"="+rendered)
 	}
 	return args, nil
 }

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/start/state"
 )
 
@@ -17,10 +19,84 @@ type Instance struct {
 	Name       string            `json:"name" yaml:"name"`
 	Runtime    RuntimeKind       `json:"runtime" yaml:"runtime"`
 	Connection models.Connection `json:"connection" yaml:"connection"`
+	Action     string            `json:"action,omitempty" yaml:"action,omitempty"`
+	Change     *ConfigChange     `json:"-" yaml:"-"`
 
 	State    *state.State `json:"-" yaml:"-"`
 	runtime  Runtime
 	stateDir string
+}
+
+type ServiceInfo struct {
+	Name        string            `json:"name" yaml:"name"`
+	Runtime     RuntimeKind       `json:"runtime" yaml:"runtime"`
+	Action      string            `json:"action,omitempty" yaml:"action,omitempty"`
+	Status      state.Status      `json:"status" yaml:"status"`
+	Version     string            `json:"version,omitempty" yaml:"version,omitempty"`
+	Image       string            `json:"image,omitempty" yaml:"image,omitempty"`
+	Chart       string            `json:"chart,omitempty" yaml:"chart,omitempty"`
+	Parameters  map[string]string `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	Ports       map[string]int    `json:"ports,omitempty" yaml:"ports,omitempty"`
+	Volume      *state.Volume     `json:"volume,omitempty" yaml:"volume,omitempty"`
+	PID         int               `json:"pid,omitempty" yaml:"pid,omitempty"`
+	ContainerID string            `json:"container_id,omitempty" yaml:"container_id,omitempty"`
+	HelmRelease string            `json:"helm_release,omitempty" yaml:"helm_release,omitempty"`
+	Namespace   string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Paths       ServicePaths      `json:"paths" yaml:"paths"`
+	Connection  models.Connection `json:"connection" yaml:"connection"`
+}
+
+type ServicePaths struct {
+	State string `json:"state" yaml:"state"`
+	Run   string `json:"run" yaml:"run"`
+	Data  string `json:"data" yaml:"data"`
+	Log   string `json:"log,omitempty" yaml:"log,omitempty"`
+}
+
+func (i *Instance) Info(ctx context.Context) (ServiceInfo, error) {
+	status, err := i.runtime.Status(ctx, i.State)
+	if err != nil {
+		status = state.StatusUnknown
+	}
+	info := ServiceInfo{
+		Name: i.Name, Runtime: i.Runtime, Action: i.Action, Status: status,
+		Version: i.State.Version, Ports: i.State.Ports, PID: i.State.PID,
+		ContainerID: i.State.ContainerID, HelmRelease: i.State.HelmRelease,
+		Namespace: i.State.Namespace, Connection: i.Connection,
+		Paths: ServicePaths{
+			State: filepath.Join(i.stateDir, i.Name, "state.yaml"),
+			Run:   filepath.Join(i.stateDir, i.Name, "run"),
+			Data:  filepath.Join(i.stateDir, i.Name, "data"),
+			Log:   i.State.LogFile,
+		},
+	}
+	effective := i.State.EffectiveConfig
+	if provider, ok := i.runtime.(runtimeConfigProvider); ok {
+		_, spec, found := config.GetService(i.Name)
+		if found {
+			opts := Options{StateDir: i.stateDir, Namespace: i.State.Namespace}
+			if saved := i.State.StartOptions; saved != nil {
+				opts.Version, opts.Port, opts.BindAddress, opts.DataDir = saved.Version, saved.Port, saved.Bind, saved.DataDir
+				opts.VolumeMode, opts.Parameters = VolumeMode(saved.VolumeMode), cloneStrings(saved.Parameters)
+			}
+			svc := &ServiceContext{Name: i.Name, Spec: *spec, Opts: opts, DataDir: info.Paths.Data}
+			live, err := provider.InspectConfig(ctx, svc, i.State)
+			if err != nil {
+				return ServiceInfo{}, err
+			}
+			if live != nil {
+				effective = live
+			}
+		}
+	}
+	if effective != nil {
+		info.Image, info.Chart = effective.Image, effective.Chart
+		info.Parameters, info.Volume = effective.Parameters, effective.Volume
+		if effective.Volume != nil && effective.Volume.Mode == string(VolumeHost) && effective.Volume.Source != "" {
+			info.Paths.Data = effective.Volume.Source
+		}
+	}
+	return info, nil
 }
 
 // ErrRestartUnsupported is returned when a runtime has no in-place restart
