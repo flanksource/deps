@@ -1,6 +1,7 @@
 package start
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -21,14 +22,25 @@ type Options struct {
 	Namespace string
 	// DataDir overrides the service data directory.
 	DataDir string
+	// VolumeMode controls the primary service data volume for docker and helm.
+	VolumeMode VolumeMode
 	// Env adds/overrides service environment variables.
 	Env map[string]string
+	// Parameters are explicit service-specific flag values keyed by registry
+	// parameter name. Start validates and resolves them for the chosen runtime.
+	Parameters map[string]string
 	// Detach runs the supervisor in the background (CLI only).
 	Detach bool
 	// StateDir is where service state is kept, default ~/.deps/services.
 	StateDir string
 	// WaitTimeout bounds the readiness wait, default 120s.
 	WaitTimeout time.Duration
+
+	supplied optionPresence
+}
+
+type optionPresence struct {
+	runtime, version, port, bind, namespace, dataDir, volumeMode, parameters bool
 }
 
 type Option func(*Options)
@@ -41,17 +53,33 @@ func ResolveOptions(opts []Option) (Options, error) {
 	for _, o := range opts {
 		o(&options)
 	}
+	if err := validateOptions(&options); err != nil {
+		return options, err
+	}
+	return options, nil
+}
+
+func validateOptions(options *Options) error {
+	if options.Port < 0 || options.Port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535, got %d", options.Port)
+	}
+	if options.VolumeMode != "" && !options.VolumeMode.Valid() {
+		return fmt.Errorf("volume mode must be persistent, host or ephemeral, got %q", options.VolumeMode)
+	}
+	if options.DataDir != "" && options.VolumeMode != "" && options.VolumeMode != VolumeHost {
+		return fmt.Errorf("data-dir can only be used with host volume mode")
+	}
 	for _, p := range []*string{&options.StateDir, &options.DataDir} {
 		if *p == "" {
 			continue
 		}
 		abs, err := filepath.Abs(*p)
 		if err != nil {
-			return options, err
+			return err
 		}
 		*p = abs
 	}
-	return options, nil
+	return nil
 }
 
 func DefaultOptions() Options {
@@ -66,13 +94,37 @@ func DefaultOptions() Options {
 	}
 }
 
-func WithRuntime(kind RuntimeKind) Option    { return func(o *Options) { o.Runtime = kind } }
-func WithVersion(version string) Option      { return func(o *Options) { o.Version = version } }
-func WithPort(port int) Option               { return func(o *Options) { o.Port = port } }
-func WithBindAddress(addr string) Option     { return func(o *Options) { o.BindAddress = addr } }
-func WithNamespace(ns string) Option         { return func(o *Options) { o.Namespace = ns } }
-func WithDataDir(dir string) Option          { return func(o *Options) { o.DataDir = dir } }
-func WithEnv(env map[string]string) Option   { return func(o *Options) { o.Env = env } }
+func WithRuntime(kind RuntimeKind) Option {
+	return func(o *Options) { o.Runtime, o.supplied.runtime = kind, true }
+}
+func WithVersion(version string) Option {
+	return func(o *Options) { o.Version, o.supplied.version = version, true }
+}
+func WithPort(port int) Option {
+	return func(o *Options) { o.Port, o.supplied.port = port, true }
+}
+func WithBindAddress(addr string) Option {
+	return func(o *Options) { o.BindAddress, o.supplied.bind = addr, true }
+}
+func WithNamespace(ns string) Option {
+	return func(o *Options) { o.Namespace, o.supplied.namespace = ns, true }
+}
+func WithDataDir(dir string) Option {
+	return func(o *Options) { o.DataDir, o.supplied.dataDir = dir, true }
+}
+func WithVolumeMode(mode VolumeMode) Option {
+	return func(o *Options) { o.VolumeMode, o.supplied.volumeMode = mode, true }
+}
+func WithEnv(env map[string]string) Option { return func(o *Options) { o.Env = env } }
+func WithParameters(parameters map[string]string) Option {
+	return func(o *Options) {
+		o.supplied.parameters = true
+		o.Parameters = make(map[string]string, len(parameters))
+		for name, value := range parameters {
+			o.Parameters[name] = value
+		}
+	}
+}
 func WithDetach(detach bool) Option          { return func(o *Options) { o.Detach = detach } }
 func WithStateDir(dir string) Option         { return func(o *Options) { o.StateDir = dir } }
 func WithWaitTimeout(d time.Duration) Option { return func(o *Options) { o.WaitTimeout = d } }
