@@ -546,8 +546,8 @@ func (i *Installer) moveSingleDirectory(extractedDir, targetDir string, t *task.
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	// Move (rename) extracted directory to final location
-	if err := os.Rename(extractedDir, targetDir); err != nil {
+	// Move extracted directory to final location (falls back to copy across filesystems)
+	if err := utils.Move(extractedDir, targetDir); err != nil {
 		return fmt.Errorf("failed to move directory: %w", err)
 	}
 
@@ -572,8 +572,8 @@ func (i *Installer) moveAllContents(workDir, targetDir string, entries []os.DirE
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	// Move entire directory as single atomic operation
-	if err := os.Rename(workDir, targetDir); err != nil {
+	// Move entire directory (falls back to copy across filesystems)
+	if err := utils.Move(workDir, targetDir); err != nil {
 		return fmt.Errorf("failed to move directory %s to %s: %w", workDir, targetDir, err)
 	}
 
