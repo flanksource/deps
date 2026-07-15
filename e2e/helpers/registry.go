@@ -98,9 +98,11 @@ var platformExclusions = map[string][]string{
 		"aws-cli",        // Different installer mechanism
 		"canary-checker", // No windows build
 		"eksctl",         // No windows asset
+		"elasticsearch",  // No windows asset defined (linux/darwin only)
 		"kubectl",        // Different URL pattern for windows
 		"node",           // Different installer mechanism
 		"opensearch",     // No windows build
+		"rclone",         // Windows zip ships rclone.exe; binary_path resolves to /rclone (no .exe)
 		"reg",            // Linux-only tool
 		"yaml-cli",       // No windows build
 	},
