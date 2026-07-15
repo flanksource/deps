@@ -1052,3 +1052,19 @@ registry:
         symlinks:
             - "darwin-*: Contents/Home/bin/*"
             - "linux-*: bin/*"
+
+    # Timoni — GitHub release tarball, auto-extracted.
+    timoni:
+        manager: github_tags
+        repo: stefanprodan/timoni
+        url_template: "https://github.com/stefanprodan/timoni/releases/download/{{.tag}}/timoni_{{.version}}_{{.os}}_{{.arch}}.tar.gz"
+        checksum_file: "https://github.com/stefanprodan/timoni/releases/download/{{.tag}}/timoni_{{.version}}_checksums.txt"
+        version_command: version
+        version_regex: 'client:\s*v?([0-9]+\.[0-9]+\.[0-9]+)'
+
+    # 1Password CLI — vendor-hosted zip (not GitHub); direct URL, explicit version.
+    op:
+        manager: direct
+        url_template: "https://cache.agilebits.com/dist/1P/op2/pkg/v{{.version}}/op_{{.os}}_{{.arch}}_v{{.version}}.zip"
+        version_command: --version
+        version_regex: '([0-9]+\.[0-9]+\.[0-9]+)'
