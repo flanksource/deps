@@ -38,3 +38,4 @@ apps/
 .venv/
 go.work
 go.work.sum
+.jscpd.json
