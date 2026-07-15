@@ -9,6 +9,7 @@ import (
 	"github.com/flanksource/deps/pkg/platform"
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
+	versionpkg "github.com/flanksource/deps/pkg/version"
 )
 
 // DirectURLManager implements the PackageManager interface for direct URL downloads
@@ -27,6 +28,16 @@ func (m *DirectURLManager) Name() string {
 // DiscoverVersions is not supported for direct URLs - they must specify exact versions
 func (m *DirectURLManager) DiscoverVersions(ctx context.Context, pkg types.Package, plat platform.Platform, limit int) ([]types.Version, error) {
 	return nil, fmt.Errorf("version discovery not supported for direct URLs - specify exact version")
+}
+
+// ResolveVersionConstraint bypasses version discovery for direct URLs: the download URL is
+// built from an explicit version, so the constraint must be an exact version, not an alias
+// ("latest"/"stable") or a semver range that would require discovery.
+func (m *DirectURLManager) ResolveVersionConstraint(ctx context.Context, pkg types.Package, constraint string, plat platform.Platform) (string, error) {
+	if !versionpkg.LooksLikeExactVersion(constraint) {
+		return "", fmt.Errorf("direct URL package %q requires an explicit version (e.g. %s@1.2.3); got %q", pkg.Name, pkg.Name, constraint)
+	}
+	return strings.TrimPrefix(constraint, "v"), nil
 }
 
 // Resolve gets the download URL for a specific version and platform
