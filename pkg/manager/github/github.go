@@ -462,7 +462,7 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 	}
 
 	if resolution.IsArchive {
-		resolution.BinaryPath = m.guessBinaryPath(pkg, matched.Name, plat)
+		resolution.BinaryPath = m.guessBinaryPath(pkg, matched.Name, version, plat)
 	}
 
 	logger.Debugf("Resolved %s", resolution.Pretty().ANSI())
@@ -653,7 +653,7 @@ assetFound:
 		if githubAsset != nil {
 			assetName = githubAsset.AssetName
 		}
-		resolution.BinaryPath = m.guessBinaryPath(pkg, assetName, plat)
+		resolution.BinaryPath = m.guessBinaryPath(pkg, assetName, version, plat)
 	}
 
 	if assetSHA256 != "" {
@@ -1210,7 +1210,7 @@ func (m *GitHubReleaseManager) buildDeterministicResolution(pkg types.Package, v
 	}
 
 	if resolution.IsArchive {
-		resolution.BinaryPath = m.guessBinaryPath(pkg, templatedPattern, plat)
+		resolution.BinaryPath = m.guessBinaryPath(pkg, templatedPattern, normalizedVersion, plat)
 	}
 
 	logger.Debugf("Resolved %s", resolution.Pretty().ANSI())
@@ -1244,12 +1244,13 @@ func (m *GitHubReleaseManager) enhanceErrorWithVersions(ctx context.Context, pkg
 	return manager.EnhanceErrorWithVersions(pkg.Name, requestedVersion, versions, originalErr)
 }
 
-func (m *GitHubReleaseManager) guessBinaryPath(pkg types.Package, assetName string, plat platform.Platform) string {
+func (m *GitHubReleaseManager) guessBinaryPath(pkg types.Package, assetName, version string, plat platform.Platform) string {
 	if pkg.BinaryPath != "" {
 		data := map[string]any{
-			"os":   plat.OS,
-			"arch": plat.Arch,
-			"name": pkg.Name,
+			"os":      plat.OS,
+			"arch":    plat.Arch,
+			"name":    pkg.Name,
+			"version": version,
 		}
 
 		result, err := depstemplate.EvaluateCELOrTemplate(pkg.BinaryPath, data)
