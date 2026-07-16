@@ -172,7 +172,7 @@ func mergePriorOptions(options *Options, prior *state.State) error {
 	if !options.supplied.namespace && saved.Namespace != "" {
 		options.Namespace = saved.Namespace
 	}
-	if !options.supplied.dataDir && !(options.supplied.volumeMode && options.VolumeMode != VolumeHost) {
+	if !options.supplied.dataDir && (!options.supplied.volumeMode || options.VolumeMode == VolumeHost) {
 		options.DataDir = saved.DataDir
 	}
 	if !options.supplied.volumeMode && !options.supplied.dataDir {

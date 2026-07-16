@@ -881,7 +881,7 @@ registry:
             linux-arm64: rclone-{{.tag}}-linux-arm64.zip
             windows-amd64: rclone-{{.tag}}-windows-amd64.zip
         binary_path: |
-            "rclone-v" + version + "-" + (os == "darwin" ? "osx" : os) + "-" + arch + "/rclone"
+            "rclone-v" + version + "-" + (os == "darwin" ? "osx" : os) + "-" + arch + "/rclone" + (os == "windows" ? ".exe" : "")
         version_command: --version
         version_regex: 'rclone v(\d+\.\d+\.\d+)'
 

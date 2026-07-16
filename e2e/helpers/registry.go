@@ -197,7 +197,7 @@ func ExtractSupportedPlatforms(pkg types.Package) []string {
 	}
 
 	// Handle URL template based packages (kubectl, terraform, etc.)
-	if pkg.URLTemplate != "" {
+	if pkg.URLTemplate != "" && len(pkg.AssetPatterns) == 0 {
 		// These typically support many platforms via template variables
 		// Add common combinations for testing
 		commonPlatforms := []string{
