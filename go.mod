@@ -8,7 +8,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.9.1
 	github.com/flanksource/clicky v1.21.36
 	github.com/flanksource/commons v1.51.3
-	github.com/flanksource/gomplate/v3 v3.24.82
+	github.com/flanksource/gomplate/v3 v3.24.84
 	github.com/google/cel-go v0.27.0
 	github.com/google/go-github/v57 v57.0.0
 	github.com/onsi/ginkgo/v2 v2.28.0
