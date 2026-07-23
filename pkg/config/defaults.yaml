@@ -35,6 +35,20 @@ registry:
         version_command: --version
         version_regex: jq-(\d+\.\d+\.\d+)
 
+    dcg:
+        name: dcg
+        repo: Dicklesworthstone/destructive_command_guard
+        asset_patterns:
+            darwin-amd64: dcg-x86_64-apple-darwin.tar.xz
+            darwin-arm64: dcg-aarch64-apple-darwin.tar.xz
+            linux-amd64: dcg-x86_64-unknown-linux-musl.tar.xz
+            linux-arm64: dcg-aarch64-unknown-linux-gnu.tar.xz
+            windows-amd64: dcg-x86_64-pc-windows-msvc.zip
+            windows-arm64: dcg-aarch64-pc-windows-msvc.zip
+        checksum_file: SHA256SUMS
+        version_command: --version
+        version_regex: 'dcg\s+v?(\d+\.\d+\.\d+)'
+
     kubectl:
         name: kubectl
         repo: kubernetes/kubernetes
