@@ -104,8 +104,8 @@ else
 	@echo "Skipping upx compression on $(TASK_PLATFORM)"
 endif
 
-.PHONY: start-binaries
-start-binaries:
+.PHONY: binaries-start
+binaries-start:
 	mkdir -p .bin
 	cd start && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../.bin/deps-start-linux-amd64 -ldflags "-X main.version=$(VERSION_TAG)" ./cmd/deps-start
 	cd start && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../.bin/deps-start-linux-arm64 -ldflags "-X main.version=$(VERSION_TAG)" ./cmd/deps-start
@@ -113,7 +113,7 @@ start-binaries:
 	cd start && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o ../.bin/deps-start-darwin-arm64 -ldflags "-X main.version=$(VERSION_TAG)" ./cmd/deps-start
 
 .PHONY: binaries
-binaries: linux darwin windows start-binaries compress
+binaries: linux darwin windows compress
 
 $(UPX): .bin
 	wget -nv -O upx.tar.xz https://github.com/upx/upx/releases/download/v$(UPX_VERSION)/upx-$(UPX_VERSION)-$(TASK_ARCH)_$(TASK_PLATFORM).tar.xz
@@ -124,27 +124,39 @@ $(UPX): .bin
 .bin:
 	mkdir -p .bin
 
+# archive_binaries packages built binaries from .bin/ into .release/:
+# .exe -> zip, everything else -> tar.gz, each alongside a .sha256.
+# $(1) = binary name inside the archive; $(2) = space-separated binary globs.
+define archive_binaries
+@for binary in $(2); do \
+	[ -e "$$binary" ] || continue; \
+	artifact=$$(basename "$$binary"); \
+	archive_base="$${artifact%.exe}"; \
+	(cd .bin && $(SHA256) "$$artifact") > ".release/$$artifact.sha256"; \
+	if [[ "$$artifact" == *.exe ]]; then \
+		cp "$$binary" ".release/$$artifact"; \
+		cp "$$binary" ".release/$(1).exe"; \
+		(cd .release && zip -q "$$archive_base.zip" "$(1).exe" && $(SHA256) "$$archive_base.zip" > "$$archive_base.sha256"); \
+		rm -f ".release/$(1).exe"; \
+	else \
+		cp "$$binary" ".release/$(1)"; \
+		(cd .release && tar czf "$$archive_base.tar.gz" "$(1)" && $(SHA256) "$$archive_base.tar.gz" > "$$archive_base.tar.gz.sha256"); \
+		rm -f ".release/$(1)"; \
+	fi; \
+done
+endef
+
 .PHONY: release
 release: binaries
 	mkdir -p .release
-	rm -f .release/deps-* .release/deps .release/deps.exe
-	@for binary in .bin/$(NAME)-*; do \
-		artifact=$$(basename "$$binary"); \
-		archive_base="$${artifact%.exe}"; \
-		inner=$(NAME); \
-		if [[ "$$artifact" == deps-start-* ]]; then inner=deps-start; fi; \
-		(cd .bin && $(SHA256) "$$artifact") > ".release/$$artifact.sha256"; \
-		if [[ "$$artifact" == *.exe ]]; then \
-			cp "$$binary" ".release/$$artifact"; \
-			cp "$$binary" ".release/$$inner.exe"; \
-			(cd .release && zip -q "$$archive_base.zip" "$$inner.exe" && $(SHA256) "$$archive_base.zip" > "$$archive_base.sha256"); \
-			rm -f ".release/$$inner.exe"; \
-		else \
-			cp "$$binary" ".release/$$inner"; \
-			(cd .release && tar czf "$$archive_base.tar.gz" "$$inner" && $(SHA256) "$$archive_base.tar.gz" > "$$archive_base.tar.gz.sha256"); \
-			rm -f ".release/$$inner"; \
-		fi; \
-	done
+	rm -f .release/$(NAME)-linux-* .release/$(NAME)-darwin-* .release/$(NAME)-windows-* .release/$(NAME) .release/$(NAME).exe
+	$(call archive_binaries,$(NAME),.bin/$(NAME)-linux-* .bin/$(NAME)-darwin-* .bin/$(NAME)-windows-*)
+
+.PHONY: release-start
+release-start: binaries-start
+	mkdir -p .release
+	rm -f .release/deps-start-*
+	$(call archive_binaries,deps-start,.bin/deps-start-*)
 
 # Test targets
 .PHONY: test
