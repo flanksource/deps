@@ -6,7 +6,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/docker/go-sdk/client v0.1.0-alpha013
 	github.com/docker/go-sdk/container v0.1.0-alpha016
-	github.com/flanksource/clicky v1.21.43
+	github.com/flanksource/clicky v1.21.44
 	github.com/flanksource/commons-db v0.1.21
 	github.com/flanksource/deps v1.0.36
 	github.com/moby/moby/api v1.52.0
