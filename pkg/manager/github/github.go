@@ -99,10 +99,15 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 		SkipSemverFilter: pkg.VersionExpr != "",
 	}
 
-	// Use git HTTP protocol with fallback to REST API
-	versions, err := DiscoverVersionsViaGitWithFallback(ctx, owner, repo, limit, func() ([]types.Version, error) {
-		return m.discoverVersionsViaREST(ctx, owner, repo, limit)
-	}, opts)
+	var versions []types.Version
+	var err error
+	if len(manager.GetReleaseFilters(ctx)) > 0 {
+		versions, err = m.discoverVersionsViaREST(ctx, owner, repo, limit)
+	} else {
+		versions, err = DiscoverVersionsViaGitWithFallback(ctx, owner, repo, limit, func() ([]types.Version, error) {
+			return m.discoverVersionsViaREST(ctx, owner, repo, limit)
+		}, opts)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +137,10 @@ func (m *GitHubReleaseManager) DiscoverVersions(ctx context.Context, pkg types.P
 // discoverVersionsViaREST fetches versions using GitHub REST API (fallback method)
 func (m *GitHubReleaseManager) discoverVersionsViaREST(ctx context.Context, owner, repo string, limit int) ([]types.Version, error) {
 	perPage := limit
+	releaseFilters := manager.GetReleaseFilters(ctx)
+	if len(releaseFilters) > 0 {
+		perPage = 100
+	}
 	if perPage <= 0 || perPage > 100 {
 		perPage = 100
 	}
@@ -144,7 +153,7 @@ func (m *GitHubReleaseManager) discoverVersionsViaREST(ctx context.Context, owne
 
 	var versions []types.Version
 	for _, release := range releases {
-		if release.Draft {
+		if release.Draft || !releaseMatchesFilters(release, releaseFilters) {
 			continue // Skip draft releases
 		}
 		v := types.ParseVersion(versionpkg.Normalize(release.TagName), release.TagName)
@@ -169,10 +178,13 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		return nil, fmt.Errorf("invalid repo format: %s", pkg.Repo)
 	}
 	owner, repo := parts[0], parts[1]
+	assetFilters := manager.GetAssetFilters(ctx)
+	releaseFilters := manager.GetReleaseFilters(ctx)
+	hasFilters := len(assetFilters) > 0 || len(releaseFilters) > 0
 
 	// No-API fast path: deterministic asset pattern + checksum_file => no REST API call,
 	// for both latest (tag via redirect) and pinned versions.
-	if m.canResolveWithoutAPI(pkg, plat) {
+	if !hasFilters && m.canResolveWithoutAPI(pkg, plat) {
 		if resolution, err := m.resolveWithoutAPI(ctx, pkg, owner, repo, version, plat); err == nil {
 			logger.V(3).Infof("Resolved %s@%s without REST API", pkg.Name, version)
 			return resolution, nil
@@ -185,16 +197,22 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	// only for the asset list + digest, never the tag.
 	var tagName string
 	if version == "latest" && pkg.URLTemplate == "" {
-		endpoint := "latest"
-		if tag, rerr := ResolveLatestTagViaRedirect(ctx, owner, repo); rerr == nil {
-			endpoint = "tags/" + tag
-			logger.V(3).Infof("Resolved %s/%s latest -> %s via redirect (tag without API)", owner, repo, tag)
+		var release *restRelease
+		var err error
+		if len(releaseFilters) > 0 {
+			release, err = m.fetchLatestMatchingRelease(ctx, owner, repo, false)
 		} else {
-			logger.V(3).Infof("latest redirect failed for %s/%s: %v, using REST 'latest'", owner, repo, rerr)
+			endpoint := "latest"
+			if tag, redirectErr := ResolveLatestTagViaRedirect(ctx, owner, repo); redirectErr == nil {
+				endpoint = "tags/" + tag
+				logger.V(3).Infof("Resolved %s/%s latest -> %s via redirect (tag without API)", owner, repo, tag)
+			} else {
+				logger.V(3).Infof("latest redirect failed for %s/%s: %v, using REST 'latest'", owner, repo, redirectErr)
+			}
+			release, err = m.fetchReleaseViaREST(ctx, owner, repo, endpoint)
 		}
-		release, err := m.fetchReleaseViaREST(ctx, owner, repo, endpoint)
 		if err == nil {
-			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
+			resolution, buildErr := m.buildResolutionFromRelease(ctx, pkg, release, plat)
 			if buildErr == nil {
 				return resolution, nil
 			}
@@ -215,6 +233,9 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		} else {
 			// Check for rate limit error - try fallback
 			if isRateLimitError(err) {
+				if hasFilters {
+					return nil, fmt.Errorf("GitHub install filters require release metadata: %w", err)
+				}
 				return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
 			}
 			logger.V(3).Infof("REST fast path failed: %v, falling back to normal path", err)
@@ -224,9 +245,9 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 	// Fast path: use REST API for "stable" (first non-prerelease release)
 	if version == "stable" && pkg.URLTemplate == "" {
 		logger.V(3).Infof("Using REST API fast path for stable release of %s/%s", owner, repo)
-		release, err := m.fetchLatestStableRelease(ctx, owner, repo)
+		release, err := m.fetchLatestMatchingRelease(ctx, owner, repo, true)
 		if err == nil {
-			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
+			resolution, buildErr := m.buildResolutionFromRelease(ctx, pkg, release, plat)
 			if buildErr == nil {
 				resolution.Version = "stable"
 				return resolution, nil
@@ -245,6 +266,9 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			tagName = release.TagName
 		} else {
 			if isRateLimitError(err) {
+				if hasFilters {
+					return nil, fmt.Errorf("GitHub install filters require release metadata: %w", err)
+				}
 				return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
 			}
 			logger.V(3).Infof("REST fast path failed: %v, falling back to normal path", err)
@@ -256,7 +280,10 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		logger.V(3).Infof("Trying direct tag lookup: %s", version)
 		release, err := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+version)
 		if err == nil {
-			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
+			if !releaseMatchesFilters(*release, releaseFilters) {
+				return nil, &manager.ErrVersionNotFound{Package: repo, Version: version}
+			}
+			resolution, buildErr := m.buildResolutionFromRelease(ctx, pkg, release, plat)
 			if buildErr == nil {
 				return resolution, nil
 			}
@@ -277,6 +304,9 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		if err != nil {
 			// Check for rate limit error - try fallback
 			if isRateLimitError(err) {
+				if hasFilters {
+					return nil, fmt.Errorf("GitHub install filters require release metadata: %w", err)
+				}
 				return m.handleRateLimitFallback(ctx, pkg, version, plat, err)
 			}
 			// If it's a version not found error, enhance it with available versions
@@ -293,7 +323,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		logger.V(3).Infof("Using REST API for release %s/%s tag %s", owner, repo, tagName)
 		release, restErr := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+tagName)
 		if restErr == nil {
-			resolution, buildErr := m.buildResolutionFromRelease(pkg, release, plat)
+			resolution, buildErr := m.buildResolutionFromRelease(ctx, pkg, release, plat)
 			if buildErr == nil {
 				// Preserve the original requested version (not the tag)
 				resolution.Version = version
@@ -320,23 +350,32 @@ func (m *GitHubReleaseManager) fetchReleaseViaREST(ctx context.Context, owner, r
 	return &release, nil
 }
 
-// fetchLatestStableRelease fetches the most recent non-prerelease release
-func (m *GitHubReleaseManager) fetchLatestStableRelease(ctx context.Context, owner, repo string) (*restRelease, error) {
-	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=20", owner, repo)
+func (m *GitHubReleaseManager) fetchLatestMatchingRelease(ctx context.Context, owner, repo string, stableOnly bool) (*restRelease, error) {
+	perPage := 20
+	if len(manager.GetReleaseFilters(ctx)) > 0 {
+		perPage = 100
+	}
+	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=%d", owner, repo, perPage)
 	var releases []restRelease
 	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &releases); err != nil {
 		return nil, err
 	}
-	for i := range releases {
-		if !releases[i].Draft && !releases[i].Prerelease {
-			return &releases[i], nil
+	candidates := filterReleaseCandidates(releases, stableOnly, manager.GetReleaseFilters(ctx), 0)
+	if !stableOnly {
+		for i := range candidates {
+			if !candidates[i].Prerelease {
+				return &candidates[i], nil
+			}
 		}
 	}
-	return nil, fmt.Errorf("no stable releases found")
+	if len(candidates) > 0 {
+		return &candidates[0], nil
+	}
+	return nil, fmt.Errorf("no matching releases found for %s/%s", owner, repo)
 }
 
 // buildResolutionFromRelease builds a Resolution from REST API release response
-func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, release *restRelease, plat platform.Platform) (*types.Resolution, error) {
+func (m *GitHubReleaseManager) buildResolutionFromRelease(ctx context.Context, pkg types.Package, release *restRelease, plat platform.Platform) (*types.Resolution, error) {
 	tagName := release.TagName
 	version := versionpkg.Normalize(tagName)
 
@@ -361,77 +400,67 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(pkg types.Package, rel
 		}
 	}
 
-	// Get the asset pattern for this platform
-	assetPattern, patternErr := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
-	if patternErr != nil {
-		// If asset-patterns are defined but don't include this platform, return the error
-		var platformErr *manager.ErrPlatformNotSupported
-		if errors.As(patternErr, &platformErr) && len(pkg.AssetPatterns) > 0 {
-			return nil, patternErr
-		}
-	}
-	if assetPattern == "" {
-		assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
-	}
-
-	// Template the asset pattern
-	templatedPattern, err := m.templateString(assetPattern, map[string]string{
-		"name": pkg.Name, "version": version, "tag": tagName,
-		"os": plat.OS, "arch": plat.Arch,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Find matching asset - support both exact match and glob patterns
+	assetFilters := manager.GetAssetFilters(ctx)
+	templatedPattern := strings.Join(assetFilters, ",")
 	var matched *restAsset
-	for i, asset := range release.Assets {
-		if asset.Name == templatedPattern {
-			matched = &release.Assets[i]
-			break
+	if len(assetFilters) > 0 {
+		matched = selectReleaseAsset(release.Assets, assetFilters)
+	} else {
+		assetPattern, patternErr := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
+		if patternErr != nil {
+			var platformErr *manager.ErrPlatformNotSupported
+			if errors.As(patternErr, &platformErr) && len(pkg.AssetPatterns) > 0 {
+				return nil, patternErr
+			}
 		}
-		// Try glob matching if pattern contains wildcards
-		if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
-			if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
+		if assetPattern == "" {
+			assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
+		}
+		var err error
+		templatedPattern, err = m.templateString(assetPattern, map[string]string{
+			"name": pkg.Name, "version": version, "tag": tagName,
+			"os": plat.OS, "arch": plat.Arch,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		for i, asset := range release.Assets {
+			if asset.Name == templatedPattern {
 				matched = &release.Assets[i]
 				break
 			}
-		}
-	}
-
-	if matched == nil {
-		// Fallback: filter by platform
-		assets := make([]manager.AssetInfo, len(release.Assets))
-		for i, a := range release.Assets {
-			assets[i] = manager.AssetInfo{
-				Name:        a.Name,
-				DownloadURL: a.BrowserDownloadURL,
-				SHA256:      stripChecksumPrefix(a.Digest),
-			}
-		}
-		filtered, filterErr := manager.FilterAssetsByPlatform(assets, plat.OS, plat.Arch)
-		if filterErr == nil && len(filtered) == 1 {
-			for i, a := range release.Assets {
-				if a.Name == filtered[0].Name {
+			if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
+				if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
 					matched = &release.Assets[i]
 					break
+				}
+			}
+		}
+
+		if matched == nil {
+			assets := make([]manager.AssetInfo, len(release.Assets))
+			for i, asset := range release.Assets {
+				assets[i] = manager.AssetInfo{
+					Name:        asset.Name,
+					DownloadURL: asset.BrowserDownloadURL,
+					SHA256:      stripChecksumPrefix(asset.Digest),
+				}
+			}
+			filtered, filterErr := manager.FilterAssetsByPlatform(assets, plat.OS, plat.Arch)
+			if filterErr == nil && len(filtered) == 1 {
+				for i, asset := range release.Assets {
+					if asset.Name == filtered[0].Name {
+						matched = &release.Assets[i]
+						break
+					}
 				}
 			}
 		}
 	}
 
 	if matched == nil {
-		availableAssetNames := make([]string, len(release.Assets))
-		for i, a := range release.Assets {
-			availableAssetNames[i] = a.Name
-		}
-		return nil, manager.EnhanceAssetNotFoundError(pkg.Name, templatedPattern, plat.String(), availableAssetNames,
-			&manager.ErrAssetNotFound{
-				Package:         fmt.Sprintf("%s@%s", pkg.Name, tagName),
-				AssetPattern:    templatedPattern,
-				Platform:        plat.String(),
-				AvailableAssets: availableAssetNames,
-			})
+		return nil, newAssetNotFoundError(pkg, tagName, templatedPattern, plat, release.Assets)
 	}
 
 	resolution := &types.Resolution{
@@ -538,10 +567,33 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
 
+	var filteredAsset *restAsset
+	if assetFilters := manager.GetAssetFilters(ctx); len(assetFilters) > 0 {
+		release, fetchErr := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+tagName)
+		if fetchErr != nil {
+			return nil, fmt.Errorf("failed to fetch release assets for filtering: %w", fetchErr)
+		}
+		filteredAsset = selectReleaseAsset(release.Assets, assetFilters)
+		if filteredAsset == nil {
+			return nil, newAssetNotFoundError(pkg, tagName, strings.Join(assetFilters, ","), plat, release.Assets)
+		}
+		templatedPattern = filteredAsset.Name
+	}
+
 	var downloadURL string
 	var isArchive bool
 	var githubAsset *types.GitHubAsset
 	var assetSHA256 string
+	if filteredAsset != nil {
+		assetSHA256 = stripChecksumPrefix(filteredAsset.Digest)
+		githubAsset = &types.GitHubAsset{
+			Repo:        pkg.Repo,
+			Tag:         tagName,
+			AssetName:   filteredAsset.Name,
+			AssetID:     filteredAsset.ID,
+			DownloadURL: filteredAsset.BrowserDownloadURL,
+		}
+	}
 
 	// Check if the templated pattern itself is a URL (URL override)
 	if hasURLSchema(templatedPattern) {
@@ -564,24 +616,25 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 		}
 		isArchive = isArchiveFile(downloadURL)
 	} else {
-		// Try to fetch release assets via REST API
-		release, err := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+tagName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch release: %w", err)
-		}
-
-		// Find matching asset - support both exact match and glob patterns
-		var matchedAsset *restAsset
-		for i, asset := range release.Assets {
-			if asset.Name == templatedPattern {
-				matchedAsset = &release.Assets[i]
-				break
+		matchedAsset := filteredAsset
+		var release *restRelease
+		if matchedAsset == nil {
+			var fetchErr error
+			release, fetchErr = m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+tagName)
+			if fetchErr != nil {
+				return nil, fmt.Errorf("failed to fetch release: %w", fetchErr)
 			}
-			// Try glob matching if pattern contains wildcards
-			if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
-				if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
+
+			for i, asset := range release.Assets {
+				if asset.Name == templatedPattern {
 					matchedAsset = &release.Assets[i]
 					break
+				}
+				if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
+					if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
+						matchedAsset = &release.Assets[i]
+						break
+					}
 				}
 			}
 		}
@@ -677,18 +730,19 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	}
 
 	logger.V(4).Infof("GitHub found %d releases, checking for version %s", len(releases), targetVersion)
+	releaseFilters := manager.GetReleaseFilters(ctx)
 
 	// Handle "latest" - return the first non-prerelease, or first release if all are prereleases
 	if targetVersion == "latest" {
 		for _, rel := range releases {
-			if !rel.Prerelease && !rel.Draft {
+			if !rel.Prerelease && !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
 				logger.V(3).Infof("Found latest stable release: %s", rel.TagName)
 				return rel.TagName, nil
 			}
 		}
 		// No stable releases found, return first non-draft release
 		for _, rel := range releases {
-			if !rel.Draft {
+			if !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
 				logger.V(3).Infof("No stable releases, using first release: %s", rel.TagName)
 				return rel.TagName, nil
 			}
@@ -699,7 +753,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	// Handle "stable" - return the first non-prerelease release only (never fall back to prereleases)
 	if targetVersion == "stable" {
 		for _, rel := range releases {
-			if !rel.Prerelease && !rel.Draft {
+			if !rel.Prerelease && !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
 				logger.V(3).Infof("Found stable release: %s", rel.TagName)
 				return rel.TagName, nil
 			}
@@ -713,7 +767,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	// Try exact tag match first
 	logger.V(4).Infof("Trying exact tag match for: %s or v%s", targetVersion, targetVersion)
 	for _, rel := range releases {
-		if rel.TagName == targetVersion || rel.TagName == "v"+targetVersion {
+		if releaseMatchesFilters(rel, releaseFilters) && (rel.TagName == targetVersion || rel.TagName == "v"+targetVersion) {
 			logger.V(3).Infof("Found exact tag match: %s", rel.TagName)
 			return rel.TagName, nil
 		}
@@ -722,7 +776,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	// Try version normalization match
 	normalizedTarget := versionpkg.Normalize(targetVersion)
 	for _, rel := range releases {
-		if versionpkg.Normalize(rel.TagName) == normalizedTarget {
+		if releaseMatchesFilters(rel, releaseFilters) && versionpkg.Normalize(rel.TagName) == normalizedTarget {
 			return rel.TagName, nil
 		}
 	}
@@ -731,6 +785,9 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	if versionExpr != "" {
 		logger.V(4).Infof("Trying version_expr match with expr: %s", versionExpr)
 		for _, rel := range releases {
+			if !releaseMatchesFilters(rel, releaseFilters) {
+				continue
+			}
 			testVersion := types.Version{
 				Tag:     rel.TagName,
 				Version: versionpkg.Normalize(rel.TagName),
@@ -827,9 +884,10 @@ type githubReleaseIterator struct {
 
 // FetchReleases fetches recent releases from GitHub REST API
 func (i *githubReleaseIterator) FetchReleases(ctx context.Context, limit int) ([]manager.ReleaseInfo, error) {
-	// Fetch more releases if filtering for stable only (to account for filtering)
 	fetchLimit := limit
-	if i.stableOnly {
+	if len(manager.GetReleaseFilters(ctx)) > 0 {
+		fetchLimit = 100
+	} else if i.stableOnly {
 		fetchLimit = limit * 2
 	}
 
@@ -839,23 +897,15 @@ func (i *githubReleaseIterator) FetchReleases(ctx context.Context, limit int) ([
 		return nil, fmt.Errorf("failed to list releases: %w", err)
 	}
 
-	result := make([]manager.ReleaseInfo, 0, len(releases))
-	for _, rel := range releases {
-		if rel.Draft {
-			continue
-		}
-		if i.stableOnly && rel.Prerelease {
-			continue
-		}
+	candidates := filterReleaseCandidates(releases, i.stableOnly, manager.GetReleaseFilters(ctx), limit)
+	result := make([]manager.ReleaseInfo, 0, len(candidates))
+	for _, rel := range candidates {
 		result = append(result, manager.ReleaseInfo{
 			Tag:          rel.TagName,
 			Version:      versionpkg.Normalize(rel.TagName),
 			PublishedAt:  rel.PublishedAt,
 			IsPrerelease: rel.Prerelease,
 		})
-		if len(result) >= limit {
-			break
-		}
 	}
 	return result, nil
 }
@@ -868,7 +918,7 @@ func (i *githubReleaseIterator) TryResolve(ctx context.Context, release manager.
 		return nil, err
 	}
 
-	resolution, buildErr := i.mgr.buildResolutionFromRelease(i.pkg, rel, i.plat)
+	resolution, buildErr := i.mgr.buildResolutionFromRelease(ctx, i.pkg, rel, i.plat)
 	if buildErr != nil {
 		return nil, buildErr
 	}

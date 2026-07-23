@@ -21,5 +21,7 @@ func newCLIInstaller() *installer.Installer {
 		installer.WithOS(osOverride, archOverride),
 		installer.WithTimeout(timeout),
 		installer.WithIterateVersions(iterateVersions),
+		installer.WithAssetFilters(installAssetFilters...),
+		installer.WithReleaseFilters(installReleaseFilters...),
 	)
 }

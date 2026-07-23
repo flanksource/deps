@@ -4,7 +4,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
 )
@@ -23,11 +22,11 @@ var _ = Describe("githubReleaseIterator", func() {
 					{TagName: "v0.8.0-draft", Draft: true, Prerelease: false},
 				}
 
-				result := filterReleases(releases, iterator.stableOnly, 10)
+				result := filterReleaseCandidates(releases, iterator.stableOnly, nil, 10)
 				Expect(result).To(HaveLen(3))
-				Expect(result[0].Tag).To(Equal("v1.0.0"))
-				Expect(result[1].Tag).To(Equal("v1.1.0-rc1"))
-				Expect(result[2].Tag).To(Equal("v0.9.0"))
+				Expect(result[0].TagName).To(Equal("v1.0.0"))
+				Expect(result[1].TagName).To(Equal("v1.1.0-rc1"))
+				Expect(result[2].TagName).To(Equal("v0.9.0"))
 			})
 		})
 
@@ -43,10 +42,10 @@ var _ = Describe("githubReleaseIterator", func() {
 					{TagName: "v0.9.0", Draft: false, Prerelease: false},
 				}
 
-				result := filterReleases(releases, iterator.stableOnly, 10)
+				result := filterReleaseCandidates(releases, iterator.stableOnly, nil, 10)
 				Expect(result).To(HaveLen(2))
-				Expect(result[0].Tag).To(Equal("v1.0.0"))
-				Expect(result[1].Tag).To(Equal("v0.9.0"))
+				Expect(result[0].TagName).To(Equal("v1.0.0"))
+				Expect(result[1].TagName).To(Equal("v0.9.0"))
 			})
 
 			It("should respect limit after filtering", func() {
@@ -60,10 +59,10 @@ var _ = Describe("githubReleaseIterator", func() {
 					{TagName: "v1.0.0", Draft: false, Prerelease: false},
 				}
 
-				result := filterReleases(releases, iterator.stableOnly, 2)
+				result := filterReleaseCandidates(releases, iterator.stableOnly, nil, 2)
 				Expect(result).To(HaveLen(2))
-				Expect(result[0].Tag).To(Equal("v3.0.0"))
-				Expect(result[1].Tag).To(Equal("v2.0.0"))
+				Expect(result[0].TagName).To(Equal("v3.0.0"))
+				Expect(result[1].TagName).To(Equal("v2.0.0"))
 			})
 		})
 	})
@@ -99,24 +98,3 @@ var _ = Describe("githubReleaseIterator", func() {
 		})
 	})
 })
-
-// filterReleases extracts the filtering logic from FetchReleases for testing
-func filterReleases(releases []restRelease, stableOnly bool, limit int) []manager.ReleaseInfo {
-	result := make([]manager.ReleaseInfo, 0, len(releases))
-	for _, rel := range releases {
-		if rel.Draft {
-			continue
-		}
-		if stableOnly && rel.Prerelease {
-			continue
-		}
-		result = append(result, manager.ReleaseInfo{
-			Tag:          rel.TagName,
-			IsPrerelease: rel.Prerelease,
-		})
-		if len(result) >= limit {
-			break
-		}
-	}
-	return result
-}

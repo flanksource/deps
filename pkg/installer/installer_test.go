@@ -1,12 +1,16 @@
 package installer
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/flanksource/deps/pkg/manager"
+	"github.com/flanksource/deps/pkg/types"
 )
 
 var _ = Describe("Installer", func() {
@@ -36,6 +40,32 @@ var _ = Describe("Installer", func() {
 		It("should default to os.TempDir() when not specified", func() {
 			inst := New()
 			Expect(inst.options.TmpDir).To(Equal(os.TempDir()))
+		})
+	})
+
+	Describe("GitHub filter options", func() {
+		It("stores independent copies of asset and release filters", func() {
+			assetFilters := []string{"cli", "!*debug*"}
+			releaseFilters := []string{"v2*", "!v2.0.0-beta*"}
+			inst := New(WithAssetFilters(assetFilters...), WithReleaseFilters(releaseFilters...))
+			assetFilters[0] = "changed"
+			releaseFilters[0] = "changed"
+
+			Expect(inst.options.AssetFilters).To(Equal([]string{"cli", "!*debug*"}))
+			Expect(inst.options.ReleaseFilters).To(Equal([]string{"v2*", "!v2.0.0-beta*"}))
+		})
+
+		It("passes both filters to package manager resolution", func() {
+			inst := New(WithAssetFilters("cli*"), WithReleaseFilters("v2*"))
+			ctx := inst.managerContext(context.Background())
+
+			Expect(manager.GetAssetFilters(ctx)).To(Equal([]string{"cli*"}))
+			Expect(manager.GetReleaseFilters(ctx)).To(Equal([]string{"v2*"}))
+		})
+
+		It("rejects filters for managers that cannot apply them", func() {
+			inst := New(WithAssetFilters("cli*"))
+			Expect(inst.validateGitHubFilters("tool", types.Package{Name: "tool", Manager: "url"})).To(MatchError("--asset and --release-filter require the github_release manager, got url for tool"))
 		})
 	})
 
