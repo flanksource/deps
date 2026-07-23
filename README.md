@@ -220,6 +220,13 @@ deps install yq@v4.40.5
 
 # Install with options
 deps install kubectl --bin-dir=./tools --force
+
+# Select a GitHub release asset by exact name, wildcard, or !exclusion.
+# A bare name is retried as a prefix when no exact asset exists. The selected filename is shown in progress, and its version/platform suffix is removed when deriving the installed binary name.
+deps install owner/repo --asset cli-linux --asset '!*-debug*'
+
+# Select the newest GitHub release whose tag or title matches.
+deps install owner/repo --release-filter 'v2*'
 ```
 
 ### Lock File Management

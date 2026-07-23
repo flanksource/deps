@@ -258,5 +258,17 @@ var _ = Describe("Release Iteration", func() {
 			ctx = WithIterateVersions(ctx, 10)
 			Expect(GetIterateVersions(ctx)).To(Equal(10))
 		})
+
+		It("stores independent copies of GitHub filters", func() {
+			assetFilters := []string{"cli*"}
+			releaseFilters := []string{"v2*"}
+			ctx := WithAssetFilters(context.Background(), assetFilters)
+			ctx = WithReleaseFilters(ctx, releaseFilters)
+			assetFilters[0] = "changed"
+			releaseFilters[0] = "changed"
+
+			Expect(GetAssetFilters(ctx)).To(Equal([]string{"cli*"}))
+			Expect(GetReleaseFilters(ctx)).To(Equal([]string{"v2*"}))
+		})
 	})
 })

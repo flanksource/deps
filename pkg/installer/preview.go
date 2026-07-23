@@ -88,6 +88,9 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 		RequestedInput:   version,
 		RequestedVersion: version,
 	}
+	if err := i.validateGitHubFilters(name, pkg); err != nil {
+		return nil, err
+	}
 
 	if preview.RequestedVersion == "" {
 		preview.RequestedVersion = "latest"
@@ -122,13 +125,14 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	preview.RequestedVersion = requestedVersion
 
 	t.SetDescription(fmt.Sprintf("Resolving version %s", requestedVersion))
-	resolvedVersion, err := i.resolveVersionConstraint(ctx, mgr, pkg, requestedVersion, t)
+	resolveCtx := i.managerContext(ctx)
+	resolvedVersion, err := i.resolveVersionConstraint(resolveCtx, mgr, pkg, requestedVersion, t)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve version constraint for %s: %w", name, err)
 	}
 	preview.ResolvedVersion = resolvedVersion
 
-	if !i.options.Force {
+	if !i.options.Force && len(i.options.AssetFilters) == 0 {
 		if i.options.ArchOverride != "" {
 			binaryName := name
 			if pkg.BinaryName != "" {
@@ -155,9 +159,6 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 		}
 	}
 
-	resolveCtx := manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
-	resolveCtx = manager.WithIterateVersions(resolveCtx, i.options.IterateVersions)
-
 	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, preview.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve package %s: %w", name, err)
@@ -179,6 +180,13 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	}
 
 	return preview, nil
+}
+
+func (i *Installer) managerContext(ctx context.Context) context.Context {
+	ctx = manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
+	ctx = manager.WithIterateVersions(ctx, i.options.IterateVersions)
+	ctx = manager.WithAssetFilters(ctx, i.options.AssetFilters)
+	return manager.WithReleaseFilters(ctx, i.options.ReleaseFilters)
 }
 
 func (i *Installer) findExistingAnyInstallation(name string, pkg types.Package) (string, string, bool) {

@@ -16,6 +16,10 @@ const (
 	StrictChecksumKey contextKey = "strictChecksum"
 	// IterateVersionsKey is used to pass the max number of releases to try when assets not found
 	IterateVersionsKey contextKey = "iterateVersions"
+	// AssetFiltersKey is used to pass GitHub release asset filters.
+	AssetFiltersKey contextKey = "assetFilters"
+	// ReleaseFiltersKey is used to pass GitHub release tag or title filters.
+	ReleaseFiltersKey contextKey = "releaseFilters"
 )
 
 // WithStrictChecksum returns a context with strict checksum mode set
@@ -47,6 +51,32 @@ func GetIterateVersions(ctx context.Context) int {
 		}
 	}
 	return 0
+}
+
+// WithAssetFilters returns a context containing GitHub release asset filters.
+func WithAssetFilters(ctx context.Context, filters []string) context.Context {
+	return context.WithValue(ctx, AssetFiltersKey, append([]string(nil), filters...))
+}
+
+// GetAssetFilters returns a copy of the GitHub release asset filters in ctx.
+func GetAssetFilters(ctx context.Context) []string {
+	if filters, ok := ctx.Value(AssetFiltersKey).([]string); ok {
+		return append([]string(nil), filters...)
+	}
+	return nil
+}
+
+// WithReleaseFilters returns a context containing GitHub release tag or title filters.
+func WithReleaseFilters(ctx context.Context, filters []string) context.Context {
+	return context.WithValue(ctx, ReleaseFiltersKey, append([]string(nil), filters...))
+}
+
+// GetReleaseFilters returns a copy of the GitHub release tag or title filters in ctx.
+func GetReleaseFilters(ctx context.Context) []string {
+	if filters, ok := ctx.Value(ReleaseFiltersKey).([]string); ok {
+		return append([]string(nil), filters...)
+	}
+	return nil
 }
 
 // PackageManager defines the interface for different package managers

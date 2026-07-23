@@ -19,7 +19,9 @@ type InstallOptions struct {
 	Debug           bool
 	OSOverride      string
 	ArchOverride    string
-	IterateVersions int // Number of releases to try when 'latest' has no matching assets (0 = disabled)
+	IterateVersions int      // Number of releases to try when 'latest' has no matching assets (0 = disabled)
+	AssetFilters    []string // MatchItems patterns for GitHub release asset names
+	ReleaseFilters  []string // MatchItems patterns for GitHub release tags or titles
 	// Legacy compatibility
 	VersionCheck types.VersionCheckMode
 	Timeout      time.Duration
@@ -93,6 +95,20 @@ func WithDebug(debug bool) InstallOption {
 func WithIterateVersions(n int) InstallOption {
 	return func(opts *InstallOptions) {
 		opts.IterateVersions = n
+	}
+}
+
+// WithAssetFilters sets MatchItems patterns for selecting GitHub release assets.
+func WithAssetFilters(filters ...string) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.AssetFilters = append([]string(nil), filters...)
+	}
+}
+
+// WithReleaseFilters sets MatchItems patterns for selecting GitHub release tags or titles.
+func WithReleaseFilters(filters ...string) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.ReleaseFilters = append([]string(nil), filters...)
 	}
 }
 

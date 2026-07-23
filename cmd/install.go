@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	installCheck    bool
-	iterateVersions int
+	installCheck          bool
+	iterateVersions       int
+	installAssetFilters   []string
+	installReleaseFilters []string
 )
 
 var installCmd = &cobra.Command{
@@ -32,6 +34,8 @@ Examples:
   deps install jq                    # Install jq with default version
   deps install kubectl@v1.28.0       # Install kubectl version v1.28.0
   deps install jq yq@v4.16.2 kind    # Install multiple tools
+  deps install --asset 'cli-linux*' owner/repo
+  deps install --release-filter 'v2*' owner/repo
   deps install --check jq            # Install jq and verify the installation`,
 	RunE: runInstall,
 }
@@ -40,6 +44,8 @@ func init() {
 	rootCmd.AddCommand(installCmd)
 	installCmd.Flags().BoolVar(&installCheck, "check", false, "Verify installation by checking version after install")
 	installCmd.Flags().IntVar(&iterateVersions, "iterate-versions", 0, "Number of releases to try when 'latest' has no matching assets (0=disabled)")
+	installCmd.Flags().StringSliceVar(&installAssetFilters, "asset", nil, "GitHub release asset filters; selected assets derive the installed binary name (MatchItems patterns, repeatable or comma-separated)")
+	installCmd.Flags().StringSliceVar(&installReleaseFilters, "release-filter", nil, "GitHub release tag or title filters (MatchItems patterns, repeatable or comma-separated)")
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
