@@ -5,6 +5,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/flanksource/deps/pkg/types"
+	"github.com/flanksource/deps/pkg/version"
 )
 
 var _ = Describe("Config", func() {
@@ -15,6 +16,31 @@ var _ = Describe("Config", func() {
 			Expect(len(config.Registry)).To(BeNumerically(">", 50))
 			Expect(config.Registry).To(HaveKey("powershell"))
 			Expect(config.Registry).To(HaveKey("step"))
+		})
+
+		It("should include dcg release assets", func() {
+			config, err := LoadDefaultConfig()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(config.Registry).To(HaveKeyWithValue("dcg", types.Package{
+				Name:    "dcg",
+				Manager: "github_release",
+				Repo:    "Dicklesworthstone/destructive_command_guard",
+				AssetPatterns: map[string]string{
+					"darwin-amd64":  "dcg-x86_64-apple-darwin.tar.xz",
+					"darwin-arm64":  "dcg-aarch64-apple-darwin.tar.xz",
+					"linux-amd64":   "dcg-x86_64-unknown-linux-musl.tar.xz",
+					"linux-arm64":   "dcg-aarch64-unknown-linux-gnu.tar.xz",
+					"windows-amd64": "dcg-x86_64-pc-windows-msvc.zip",
+					"windows-arm64": "dcg-aarch64-pc-windows-msvc.zip",
+				},
+				ChecksumFile:   "SHA256SUMS",
+				VersionCommand: "--version",
+				VersionRegex:   `dcg\s+v?(\d+\.\d+\.\d+)`,
+			}))
+
+			installed, err := version.ExtractFromOutput("dcg v0.6.7", config.Registry["dcg"].VersionRegex)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(installed).To(Equal("0.6.7"))
 		})
 	})
 
