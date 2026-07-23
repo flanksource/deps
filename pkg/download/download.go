@@ -66,6 +66,7 @@ type downloadConfig struct {
 	cacheDir         string   // Directory for download cache
 	os               string   // Operating system for CEL expressions
 	arch             string   // Architecture for CEL expressions
+	displayName      string   // Human-readable asset name for task progress
 	timeout          time.Duration
 }
 
@@ -150,15 +151,22 @@ func WithTimeout(timeout time.Duration) DownloadOption {
 	}
 }
 
+// WithDisplayName sets the asset name shown in task progress.
+func WithDisplayName(name string) DownloadOption {
+	return func(c *downloadConfig) {
+		c.displayName = strings.TrimSpace(name)
+	}
+}
+
 // ProgressReader wraps an io.Reader and reports progress
 type ProgressReader struct {
 	io.Reader
-	total      int64
-	current    int64
-	task       *task.Task
-	depName    string
-	lastUpdate time.Time
-	startTime  time.Time
+	total       int64
+	current     int64
+	task        *task.Task
+	displayName string
+	lastUpdate  time.Time
+	startTime   time.Time
 }
 
 func (pr *ProgressReader) Read(p []byte) (int, error) {
@@ -178,14 +186,22 @@ func (pr *ProgressReader) Read(p []byte) (int, error) {
 				remaining := pr.total - pr.current
 				eta := time.Duration(float64(remaining) / speed * float64(time.Second))
 
-				pr.task.SetDescription(fmt.Sprintf("%s/%s (%.1f MB/s, ETA: %s)",
+				description := fmt.Sprintf("%s/%s (%.1f MB/s, ETA: %s)",
 					utils.FormatBytes(pr.current),
 					utils.FormatBytes(pr.total),
 					speed/1024/1024,
-					formatDuration(eta)))
+					formatDuration(eta))
+				if pr.displayName != "" {
+					description = fmt.Sprintf("Downloading %s: %s", pr.displayName, description)
+				}
+				pr.task.SetDescription(description)
 			}
 		} else {
-			pr.task.SetDescription(fmt.Sprintf("Downloaded %s", utils.FormatBytes(pr.current)))
+			description := fmt.Sprintf("Downloaded %s", utils.FormatBytes(pr.current))
+			if pr.displayName != "" {
+				description = fmt.Sprintf("Downloading %s: %s", pr.displayName, utils.FormatBytes(pr.current))
+			}
+			pr.task.SetDescription(description)
 		}
 		pr.lastUpdate = now
 	}
@@ -546,7 +562,11 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 
 	if t != nil && resp.ContentLength > 0 {
-		t.SetDescription(fmt.Sprintf("Downloading (%s)", utils.FormatBytes(resp.ContentLength)))
+		if config.displayName != "" {
+			t.SetDescription(fmt.Sprintf("Downloading %s (%s)", config.displayName, utils.FormatBytes(resp.ContentLength)))
+		} else {
+			t.SetDescription(fmt.Sprintf("Downloading (%s)", utils.FormatBytes(resp.ContentLength)))
+		}
 	}
 
 	// Check server response
@@ -593,12 +613,12 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	var pr *ProgressReader
 	if t != nil && !config.skipProgress {
 		pr = &ProgressReader{
-			Reader:     resp.Body,
-			total:      resp.ContentLength,
-			task:       t,
-			depName:    t.Name(),
-			startTime:  time.Now(),
-			lastUpdate: time.Now(),
+			Reader:      resp.Body,
+			total:       resp.ContentLength,
+			task:        t,
+			displayName: config.displayName,
+			startTime:   time.Now(),
+			lastUpdate:  time.Now(),
 		}
 		reader = pr
 	}
@@ -732,8 +752,11 @@ func Download(url, dest string, t *task.Task, opts ...DownloadOption) error {
 	}
 
 	if t != nil {
-		t.SetDescription(fmt.Sprintf("Downloaded %s (%s)",
-			filepath.Base(dest), utils.FormatBytes(written)))
+		displayName := filepath.Base(dest)
+		if config.displayName != "" {
+			displayName = config.displayName
+		}
+		t.SetDescription(fmt.Sprintf("Downloaded %s (%s)", displayName, utils.FormatBytes(written)))
 		// Don't call t.Success() here - let the caller control when to mark success
 		// This allows post-processing operations to complete before marking task successful
 	}

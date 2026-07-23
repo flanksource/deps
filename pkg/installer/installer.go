@@ -201,6 +201,9 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 		task.StartTask(taskName, func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
 			if useNewPackageManager {
 				pkg := depsConfig.Registry[depName]
+				if err := i.validateGitHubFilters(depName, pkg); err != nil {
+					return nil, err
+				}
 
 				// Resolve version constraint if not already resolved from lock file
 				resolvedVersion := version
@@ -211,7 +214,7 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 						return nil, fmt.Errorf("failed to get package manager for %s: %w", depName, err)
 					}
 
-					resolvedVersion, err = i.resolveVersionConstraint(ctx.Context, mgr, pkg, depConstraint, task)
+					resolvedVersion, err = i.resolveVersionConstraint(i.managerContext(ctx.Context), mgr, pkg, depConstraint, task)
 					if err != nil {
 						return nil, fmt.Errorf("failed to resolve version constraint for %s: %w", depName, err)
 					}
@@ -304,6 +307,9 @@ func createGitHubPackage(repo string) types.Package {
 
 // installWithNewPackageManager installs using the new package manager system
 func (i *Installer) installWithNewPackageManager(ctx context.Context, name, version string, pkg types.Package, t *task.Task) error {
+	if err := i.validateGitHubFilters(name, pkg); err != nil {
+		return err
+	}
 	// First check if there's a plugin that can handle this package
 	if handler := i.plugins.FindHandler(name, pkg); handler != nil {
 		pluginOpts := plugin.InstallOptions{
@@ -335,6 +341,10 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 // installWithNewPackageManagerWithResult installs using the new package manager system and populates result
 func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, name, version string, pkg types.Package, t *task.Task, result *types.InstallResult) error {
 	result.Package = pkg
+	if err := i.validateGitHubFilters(name, pkg); err != nil {
+		result.Status = types.InstallStatusFailed
+		return err
+	}
 
 	// First check if there's a plugin that can handle this package
 	if handler := i.plugins.FindHandler(name, pkg); handler != nil {
@@ -369,6 +379,19 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 	}
 
 	return i.executePackageInstallation(ctx, name, pkg, preview, mgr, t, result)
+}
+
+func (i *Installer) validateGitHubFilters(name string, pkg types.Package) error {
+	if len(i.options.AssetFilters) == 0 && len(i.options.ReleaseFilters) == 0 {
+		return nil
+	}
+	if pkg.Manager != "github_release" {
+		return fmt.Errorf("--asset and --release-filter require the github_release manager, got %s for %s", pkg.Manager, name)
+	}
+	if handler := i.plugins.FindHandler(name, pkg); handler != nil {
+		return fmt.Errorf("--asset and --release-filter cannot be used with the %s plugin for %s", handler.Name(), name)
+	}
+	return nil
 }
 
 func (i *Installer) preparePackageInstallation(ctx context.Context, name, version string, pkg types.Package, t *task.Task) (*InstallPreview, manager.PackageManager, error) {
@@ -409,6 +432,22 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 			result.Status = types.InstallStatusFailed
 		}
 		return fmt.Errorf("failed to resolve package %s: empty resolution", name)
+	}
+	identity, err := i.resolveInstallIdentity(name, actualVersion, resolution)
+	if err != nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return err
+	}
+	name = identity.Name
+	taskName := name
+	if actualVersion != "" {
+		taskName = fmt.Sprintf("%s@%s", name, actualVersion)
+	}
+	t.SetName(taskName)
+	if len(i.options.AssetFilters) > 0 && resolution.IsArchive {
+		resolution.BinaryPath = name
 	}
 
 	if result != nil {
@@ -581,13 +620,20 @@ func (i *Installer) moveAllContents(workDir, targetDir string, entries []os.DirE
 	return nil
 }
 
-
 // downloadPackage handles package download using an already-resolved resolution
 func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion string, resolution *types.Resolution, t *task.Task) (string, error) {
 	plat := resolution.Platform
 	pkg := resolution.Package
+	assetName := ""
+	if resolution.GitHubAsset != nil {
+		assetName = resolution.GitHubAsset.AssetName
+	}
 
-	t.Infof("Downloading %s@%s (%s/%s) from %s", name, resolvedVersion, plat.OS, plat.Arch, resolution.DownloadURL)
+	if assetName != "" {
+		t.Infof("Downloading %s for %s@%s (%s/%s) from %s", assetName, name, resolvedVersion, plat.OS, plat.Arch, resolution.DownloadURL)
+	} else {
+		t.Infof("Downloading %s@%s (%s/%s) from %s", name, resolvedVersion, plat.OS, plat.Arch, resolution.DownloadURL)
+	}
 
 	// Create bin directory if it doesn't exist
 	if err := os.MkdirAll(i.options.BinDir, 0755); err != nil {
@@ -616,9 +662,12 @@ func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion s
 		}
 
 		// Extract filename from URL and download to app-dir
-		filename := filepath.Base(resolution.DownloadURL)
+		filename := assetName
+		if filename == "" {
+			filename = filepath.Base(resolution.DownloadURL)
+		}
 		downloadPath = filepath.Join(appPath, filename)
-		t.SetDescription("Downloading")
+		t.SetDescription("Downloading " + filename)
 
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
 			return "", fmt.Errorf("failed to download %s: %w", name, err)
@@ -626,7 +675,11 @@ func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion s
 	} else {
 		// Direct binary download - download directly to bin directory
 		downloadPath = filepath.Join(i.options.BinDir, name)
-		t.SetDescription("Downloading")
+		if assetName != "" {
+			t.SetDescription("Downloading " + assetName)
+		} else {
+			t.SetDescription("Downloading " + name)
+		}
 
 		if err := i.downloadWithChecksum(resolution.DownloadURL, downloadPath, resolution.ChecksumURL, resolution, t); err != nil {
 			return "", fmt.Errorf("failed to download %s: %w", name, err)
@@ -1076,16 +1129,21 @@ func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.Pa
 // downloadWithChecksum attempts to download with checksum verification
 // using the provided checksum URL first, then falling back to URL pattern detection
 func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resolution *types.Resolution, t *task.Task) error {
+	displayName := ""
+	if resolution.GitHubAsset != nil {
+		displayName = resolution.GitHubAsset.AssetName
+	}
+	displayOption := download.WithDisplayName(displayName)
 	// Skip checksum verification if requested
 	if i.options.SkipChecksum {
 		t.Debugf("Skipping checksum verification (--skip-checksum)")
-		return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
+		return download.Download(url, dest, t, displayOption, download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 	}
 
 	// Priority 1: Use checksum from resolution if available (e.g., from GitHub GraphQL digest)
 	if resolution.Checksum != "" {
 		t.V(3).Infof("Using checksum from resolution: %s", resolution.Checksum)
-		return download.Download(url, dest, t, download.WithChecksum(resolution.Checksum), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
+		return download.Download(url, dest, t, displayOption, download.WithChecksum(resolution.Checksum), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 	}
 
 	// Priority 2: Try the provided checksum URL if configured
@@ -1111,10 +1169,10 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 			}
 
 			// Use multi-file checksum with CEL support
-			err = download.Download(url, dest, t, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithPlatform(resolution.Platform.OS, resolution.Platform.Arch), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
+			err = download.Download(url, dest, t, displayOption, download.WithChecksumURLsAndNames(checksumURLs, checksumNames, checksumExpr), download.WithPlatform(resolution.Platform.OS, resolution.Platform.Arch), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 		} else {
 			// Use single checksum file
-			err = download.Download(url, dest, t, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
+			err = download.Download(url, dest, t, displayOption, download.WithChecksumURL(checksumURL), download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 		}
 
 		if err == nil {
@@ -1132,7 +1190,7 @@ func (i *Installer) downloadWithChecksum(url, dest, checksumURL string, resoluti
 	}
 
 	// Download without checksum verification (only reached in non-strict mode or when no checksum is configured)
-	return download.Download(url, dest, t, download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
+	return download.Download(url, dest, t, displayOption, download.WithCacheDir(i.options.CacheDir), download.WithTimeout(i.options.Timeout))
 }
 
 // archMatches returns true if nativeArch (e.g. "x86_64", "arm64") corresponds
