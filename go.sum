@@ -117,6 +117,8 @@ github.com/flanksource/clicky v1.21.44 h1:EwDaWXOPF7Tu5UeL/TE168n89LZqjRMUptcg1k
 github.com/flanksource/clicky v1.21.44/go.mod h1:wxgvRVic4B8cWCxQ7EO57Q6zBnV49VUoGJ0i9SMdVt4=
 github.com/flanksource/clicky v1.21.47 h1:XiOB5uhLLdIbMyJqblaEmX4+iKFCy/oJNl5ilqF7pt4=
 github.com/flanksource/clicky v1.21.47/go.mod h1:2gAph3Uy90AYirGmkEP/D4okiFZlrH2XdcoXf69oZHY=
+github.com/flanksource/clicky v1.21.48 h1:yCbCk6rDEgtxdknuQV6uZLsvVqCPGYNO7dHuLgbtOp4=
+github.com/flanksource/clicky v1.21.48/go.mod h1:2gAph3Uy90AYirGmkEP/D4okiFZlrH2XdcoXf69oZHY=
 github.com/flanksource/commons v1.51.3 h1:sgQZ2s0XJTub4qmIlzRyH+eYXJP6UXmreCataP9mE7E=
 github.com/flanksource/commons v1.51.3/go.mod h1:BxXJzAsRxsw0la7Y/ShEABa8ZbtGIdRi7PCRjiHDCJE=
 github.com/flanksource/commons v1.53.1 h1:WiMvY9XGG//L4ndYKTcmp0NjWXg4B7Wbn4hYWkITUmY=
