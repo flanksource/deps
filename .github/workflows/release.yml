@@ -18,7 +18,7 @@ jobs:
       pull-requests: write
     uses: flanksource/action-workflows/.github/workflows/create-release.yml@c628197234fd2c4c3aebcb3c2b60dd399251adaf
     secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
+      token: ${{ secrets.FLANKBOT }}
 
   binary:
     name: Build binaries
