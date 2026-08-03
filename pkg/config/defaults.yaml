@@ -218,7 +218,7 @@ registry:
     sops:
         name: sops
         repo: getsops/sops
-        checksum_file: sops-{{.version}}.checksums.txt
+        checksum_file: sops-v{{.version}}.checksums.txt
         asset_patterns:
             "*": "sops-{{.tag}}.{{.os}}.{{.arch}}"
 

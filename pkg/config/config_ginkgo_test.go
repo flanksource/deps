@@ -15,6 +15,7 @@ var _ = Describe("Config", func() {
 			Expect(len(config.Registry)).To(BeNumerically(">", 50))
 			Expect(config.Registry).To(HaveKey("powershell"))
 			Expect(config.Registry).To(HaveKey("step"))
+			Expect(config.Registry["sops"].ChecksumFile).To(Equal("sops-v{{.version}}.checksums.txt"))
 		})
 	})
 
