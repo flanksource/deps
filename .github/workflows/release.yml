@@ -16,7 +16,9 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-    uses: flanksource/action-workflows/.github/workflows/create-release.yml@main
+    uses: flanksource/action-workflows/.github/workflows/create-release.yml@c628197234fd2c4c3aebcb3c2b60dd399251adaf
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
 
   binary:
     name: Build binaries
