@@ -183,6 +183,8 @@ github.com/flanksource/deps v1.0.36 h1:bC09I8T5jX4nvKAFmzLx6Wl0+UfQNneRcWxNQ6hmj
 github.com/flanksource/deps v1.0.36/go.mod h1:NvSfoROQeX2VsXsQgQ006934GiwFzT0poVjyJQy871M=
 github.com/flanksource/deps v1.0.37 h1:L+hMyeVChva6mF/LzrFj9MPlvYf0O1H7cB2kXDNIcUs=
 github.com/flanksource/deps v1.0.37/go.mod h1:w9Lt+FOK1yrRXEQPmzQbCMpLyEejWI43J4uzokW47iQ=
+github.com/flanksource/deps v1.0.38 h1:vNL657ArUWjFFqhnxPLDFg2I/ZmTZMMkaDFFOY/rM/w=
+github.com/flanksource/deps v1.0.38/go.mod h1:EvS1kCbri1Lj2qWUqS1+K0JxHjelwiXpL+lvDXn8h+U=
 github.com/flanksource/gomplate/v3 v3.24.82 h1:22HOZYeNRMX40G8OF3qRAqRoR5Lkf8Vm4x3WDqugZkE=
 github.com/flanksource/gomplate/v3 v3.24.82/go.mod h1:NMMZkFsjbLy/8iY8Fip5N86Y0PP6lZeq+kmPwpVVIL0=
 github.com/flanksource/gomplate/v3 v3.24.84 h1:UOE0yCJsczTIKRaHUvhD6tjCYrbNvOugAizuy0FVlhE=
