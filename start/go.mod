@@ -8,7 +8,7 @@ require (
 	github.com/docker/go-sdk/container v0.1.0-alpha016
 	github.com/flanksource/clicky v1.21.54
 	github.com/flanksource/commons-db v0.1.27
-	github.com/flanksource/deps v1.0.37
+	github.com/flanksource/deps v1.0.38
 	github.com/moby/moby/api v1.52.0
 	github.com/moby/moby/client v0.1.0
 	github.com/onsi/ginkgo/v2 v2.28.1
