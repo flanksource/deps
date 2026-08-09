@@ -130,7 +130,8 @@ func (r *helmRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.St
 	}
 	defer func() { _ = logf.Close() }()
 
-	proc := exec.NewExec(helm, args...).Stream(logf, logf).Run()
+	out := serviceLogWriter(svc, logf)
+	proc := exec.NewExec(helm, args...).Stream(out, out).Run()
 	if result := proc.Result(); !result.IsOk() {
 		return nil, fmt.Errorf("helm upgrade --install %s failed (exit %d):\n%s", release, result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 25))
 	}

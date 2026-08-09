@@ -55,6 +55,24 @@ var _ = Describe("docker runtime", Label("integration"), func() {
 		Expect(status).To(Equal(state.StatusStopped))
 	})
 
+	It("restarts valkey only once it accepts connections again", func() {
+		// a named volume, not a host bind: the docker daemon cannot mount the
+		// suite's temp state dir
+		instance, err := Start(ctx, "valkey", WithStateDir(stateDir), WithRuntime(RuntimeDocker), WithVolumeMode(VolumePersistent))
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() { _ = Stop(ctx, "valkey", WithStateDir(stateDir)) })
+
+		restarted, err := Restart(ctx, "valkey", WithStateDir(stateDir))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(restarted.State.Ready).To(BeTrue())
+		Expect(restarted.State.ContainerID).To(Equal(instance.State.ContainerID))
+
+		// the readiness probe ran and the port is live once Restart returns
+		port := restarted.State.Ports["valkey"]
+		Expect(port).ToNot(BeZero())
+		Expect(tcpProbe(fmt.Sprintf("localhost:%d", port))).To(BeTrue())
+	})
+
 	It("rejects unsupported runtimes with a helpful error", func() {
 		_, err := Start(ctx, "valkey", WithStateDir(stateDir), WithRuntime(RuntimeBinary))
 		Expect(err).To(HaveOccurred())

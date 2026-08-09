@@ -2,6 +2,7 @@ package start
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,12 +30,21 @@ type Options struct {
 	// Parameters are explicit service-specific flag values keyed by registry
 	// parameter name. Start validates and resolves them for the chosen runtime.
 	Parameters map[string]string
-	// Detach runs the supervisor in the background (CLI only).
-	Detach bool
+	// Update resolves the version constraint and installs the newest match.
+	// Without it an already-installed artifact is used as-is, so starting a
+	// service performs no version resolution or download.
+	Update bool
 	// StateDir is where service state is kept, default ~/.deps/services.
 	StateDir string
 	// WaitTimeout bounds the readiness wait, default 120s.
 	WaitTimeout time.Duration
+	// LogWriter receives a copy of the service's stdout/stderr while it is
+	// starting, so callers can show progress. The service log file is always
+	// written regardless.
+	LogWriter io.Writer
+	// OnWaiting is called on every probe interval with the unmet readiness
+	// condition, so callers can report what the wait is blocked on.
+	OnWaiting func(Readiness)
 
 	supplied optionPresence
 }
@@ -125,6 +135,13 @@ func WithParameters(parameters map[string]string) Option {
 		}
 	}
 }
-func WithDetach(detach bool) Option          { return func(o *Options) { o.Detach = detach } }
+func WithUpdate(update bool) Option          { return func(o *Options) { o.Update = update } }
 func WithStateDir(dir string) Option         { return func(o *Options) { o.StateDir = dir } }
 func WithWaitTimeout(d time.Duration) Option { return func(o *Options) { o.WaitTimeout = d } }
+
+// WithLogWriter tees the starting service's output to w in addition to its
+// log file.
+func WithLogWriter(w io.Writer) Option { return func(o *Options) { o.LogWriter = w } }
+
+// WithOnWaiting reports the unmet readiness condition on every probe interval.
+func WithOnWaiting(fn func(Readiness)) Option { return func(o *Options) { o.OnWaiting = fn } }

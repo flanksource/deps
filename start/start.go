@@ -146,7 +146,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 		return nil, err
 	}
 
-	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, Action: action, Change: change, State: st, runtime: rt, stateDir: options.StateDir}, nil
+	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, Action: action, Change: change, State: st, runtime: rt, opts: options}, nil
 }
 
 func mergePriorOptions(options *Options, prior *state.State) error {
@@ -281,7 +281,7 @@ func Get(ctx context.Context, name string, opts ...Option) (*Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Instance{Name: name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt, stateDir: options.StateDir}, nil
+	return &Instance{Name: name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt, opts: options}, nil
 }
 
 // Stop stops a previously started service and marks its state not-ready.
@@ -341,6 +341,29 @@ func Restart(ctx context.Context, name string, opts ...Option) (*Instance, error
 	return instance, nil
 }
 
+// runtimeHealth returns the runtime-specific health check override, if any.
+func runtimeHealth(spec types.ServiceSpec, kind RuntimeKind) *types.HealthCheck {
+	switch kind {
+	case RuntimeBinary:
+		if spec.Binary != nil {
+			return spec.Binary.Health
+		}
+	case RuntimeDocker:
+		if spec.Docker != nil {
+			return spec.Docker.Health
+		}
+	case RuntimeCommand:
+		if spec.Command != nil {
+			return spec.Command.Health
+		}
+	case RuntimeHelm:
+		if spec.Helm != nil {
+			return spec.Helm.Health
+		}
+	}
+	return nil
+}
+
 // Status returns the live status of a previously started service.
 func Status(ctx context.Context, name string, opts ...Option) (state.Status, error) {
 	instance, err := Get(ctx, name, opts...)
@@ -369,7 +392,7 @@ func List(ctx context.Context, opts ...Option) ([]*Instance, error) {
 		if err != nil {
 			return nil, err
 		}
-		instances = append(instances, &Instance{Name: st.Name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt, stateDir: options.StateDir})
+		instances = append(instances, &Instance{Name: st.Name, Runtime: RuntimeKind(st.Runtime), Connection: st.Connection, State: st, runtime: rt, opts: options})
 	}
 	return instances, nil
 }

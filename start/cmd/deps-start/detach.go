@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -17,6 +18,10 @@ import (
 )
 
 const supervisorEnv = "DEPS_START_SUPERVISOR"
+
+// daemonizeSupported reports whether a service can be left running in the
+// background on this platform; starting one does so by default.
+const daemonizeSupported = true
 
 // runDetached re-execs deps-start in the background as a session leader,
 // waits until the child publishes a ready state, prints the connection and
@@ -45,30 +50,55 @@ func runDetached(name string, flags *startFlags) error {
 	if err != nil {
 		return err
 	}
-	child := osexec.Command(exe, stripDetachFlag(os.Args[1:])...)
+	// supervisorEnv puts the child on the foreground path; its arguments are
+	// otherwise this invocation's, verbatim
+	child := osexec.Command(exe, os.Args[1:]...)
 	child.Env = append(os.Environ(), supervisorEnv+"=1")
 	child.Stdout, child.Stderr = logf, logf
 	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	// record where both logs end before spawning, so the tail below shows
+	// this start rather than replaying earlier runs
+	tails := []logTail{logTailFrom(filepath.Join(dir, "logs", "service.log")), logTailFrom(logPath)}
 
 	spawned := time.Now()
 	if err := child.Start(); err != nil {
 		return err
 	}
 	pid := child.Process.Pid
-	if err := child.Process.Release(); err != nil {
-		return err
-	}
+	// reap the supervisor so an early failure is noticed immediately: an
+	// unreaped child stays a zombie and still answers kill(pid, 0). It is a
+	// session leader, so it outlives this process either way.
+	exited := make(chan error, 1)
+	go func() { exited <- child.Wait() }()
 
 	printAction(icons.Play, "muted", "starting %s in the background (supervisor pid %d, log %s)", name, pid, logPath)
-	return awaitDetachedReady(name, options.StateDir, logPath, pid, spawned, options.WaitTimeout)
+
+	// the supervisor's stderr is the supervisor log, so follow both logs to
+	// show the service starting and what it is waiting for
+	stream := newPrefixWriter(os.Stderr, name, isTTY(os.Stderr))
+	streamCtx, stopStream := context.WithCancel(context.Background())
+	tailLogsUntil(streamCtx, stream, tails...)
+	defer func() {
+		stopStream()
+		stream.Flush()
+	}()
+
+	// the child enforces the readiness timeout itself; only an --update run
+	// can spend time downloading before that clock starts
+	timeout := options.WaitTimeout
+	if flags.update {
+		timeout += 90 * time.Second
+	}
+	return awaitDetachedReady(name, options.StateDir, logPath, pid, exited, spawned, timeout)
 }
 
-// awaitDetachedReady polls the state file until the child publishes a ready
-// state newer than the spawn time, or the child dies.
-func awaitDetachedReady(name, stateDir, logPath string, pid int, spawned time.Time, waitTimeout time.Duration) error {
-	// installs can dominate startup, so allow extra headroom over the
-	// readiness timeout the child itself enforces
-	deadline := time.Now().Add(waitTimeout + 90*time.Second)
+// awaitDetachedReady polls the state file until the supervisor publishes a
+// ready state newer than the spawn time, or the supervisor exits. On timeout
+// the supervisor is left running: a slow service can still come up, and its
+// progress stays visible through the logs.
+func awaitDetachedReady(name, stateDir, logPath string, pid int, exited <-chan error, spawned time.Time, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	stateFile := filepath.Join(stateDir, name, "state.yaml")
 	for time.Now().Before(deadline) {
 		if info, err := os.Stat(stateFile); err == nil && info.ModTime().After(spawned) {
@@ -76,21 +106,15 @@ func awaitDetachedReady(name, stateDir, logPath string, pid int, spawned time.Ti
 				return nil
 			}
 		}
-		if syscall.Kill(pid, 0) != nil {
-			return fmt.Errorf("background start of %s failed, see %s:\n%s", name, logPath, tailFile(logPath, 20))
+		select {
+		case err := <-exited:
+			return &startFailure{
+				code: supervisorExitCode(err),
+				err:  fmt.Errorf("%s failed to start, see %s:\n%s", name, logPath, tailFile(logPath, 20)),
+			}
+		case <-time.After(300 * time.Millisecond):
 		}
-		time.Sleep(300 * time.Millisecond)
 	}
-	return fmt.Errorf("timed out waiting for %s to become ready, see %s", name, logPath)
-}
-
-func stripDetachFlag(args []string) []string {
-	var out []string
-	for _, arg := range args {
-		if arg == "-d" || arg == "--detach" || arg == "--detach=true" {
-			continue
-		}
-		out = append(out, arg)
-	}
-	return out
+	return fmt.Errorf("timed out after %s waiting for %s to become ready; it is still starting (supervisor pid %d), follow it with `deps-start logs %s -f`",
+		timeout, name, pid, name)
 }

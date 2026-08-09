@@ -84,8 +84,9 @@ func (r *commandRuntime) Start(ctx context.Context, svc *ServiceContext) (*state
 	}
 	defer func() { _ = logf.Close() }()
 
+	out := serviceLogWriter(svc, logf)
 	proc := exec.NewExec(commands["start"]).WithEnv(env).WithCwd(svc.RunDir).
-		WithTimeout(svc.Opts.WaitTimeout).Stream(logf, logf).Run()
+		WithTimeout(svc.Opts.WaitTimeout).Stream(out, out).Run()
 	if result := proc.Result(); !result.IsOk() {
 		return nil, fmt.Errorf("%q failed (exit %d):\n%s", commands["start"], result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 25))
 	}

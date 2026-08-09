@@ -44,7 +44,59 @@ var _ = Describe("expandVersionArg", func() {
 	})
 })
 
+var _ = Describe("normalizeArgs", func() {
+	It("routes the start verb to the service's own command", func() {
+		Expect(normalizeArgs([]string{"deps-start", "start", "postgres", "--port", "15432"})).
+			To(Equal([]string{"deps-start", "postgres", "--port", "15432"}))
+	})
+
+	It("combines the start verb with name@version", func() {
+		Expect(normalizeArgs([]string{"deps-start", "start", "postgres@17", "-d"})).
+			To(Equal([]string{"deps-start", "postgres", "--version", "17", "-d"}))
+	})
+
+	It("leaves an unknown service for the start command to report", func() {
+		args := []string{"deps-start", "start", "not-a-service"}
+		Expect(normalizeArgs(args)).To(Equal(args))
+	})
+
+	It("leaves start --help and a bare start alone", func() {
+		Expect(normalizeArgs([]string{"deps-start", "start", "--help"})).
+			To(Equal([]string{"deps-start", "start", "--help"}))
+		Expect(normalizeArgs([]string{"deps-start", "start"})).
+			To(Equal([]string{"deps-start", "start"}))
+	})
+
+	It("does not treat a service named after another verb as a start target", func() {
+		args := []string{"deps-start", "stop", "postgres"}
+		Expect(normalizeArgs(args)).To(Equal(args))
+	})
+})
+
 var _ = Describe("service parameter flags", func() {
+	It("exposes start alongside the other management verbs", func() {
+		root := newRootCmd()
+		startCmd, _, err := root.Find([]string{"start"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(startCmd.Name()).To(Equal("start"))
+		Expect(startCmd.GroupID).To(Equal("management"))
+	})
+
+	It("offers --foreground instead of a detach flag, since starting backgrounds by default", func() {
+		root := newRootCmd()
+		postgres, _, err := root.Find([]string{"postgres"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(postgres.Flags().Lookup("foreground")).ToNot(BeNil())
+		Expect(postgres.Flags().ShorthandLookup("f")).ToNot(BeNil())
+		Expect(postgres.Flags().Lookup("detach")).To(BeNil())
+		Expect(postgres.Flags().Lookup("foreground").DefValue).To(Equal("false"))
+	})
+
+	It("relaunches a restarted service without a detach flag", func() {
+		Expect(restartArgs("nats", &state.StartOptions{Port: 14222}, "")).
+			To(Equal([]string{"nats", "--port", "14222"}))
+	})
+
 	It("discovers typed OpenSearch and Helm resource flags", func() {
 		root := newRootCmd()
 		service, _, err := root.Find([]string{"opensearch"})
