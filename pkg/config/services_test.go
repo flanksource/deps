@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/flanksource/deps/pkg/types"
+	"github.com/flanksource/deps/pkg/version"
 )
 
 var identifierSafe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]*$`)
@@ -41,6 +42,19 @@ var _ = Describe("Service registry", func() {
 
 	It("passes config validation with service-only entries present", func() {
 		Expect(ValidateConfig(config)).To(Succeed())
+	})
+
+	It("normalizes four-part ClickHouse releases as valid semantic versions", func() {
+		clickhouse := config.Registry["clickhouse"]
+		versions, err := version.ApplyVersionExpr([]types.Version{{
+			Tag:     "v26.2.4.23-stable",
+			Version: version.Normalize("v26.2.4.23-stable"),
+		}}, clickhouse.VersionExpr)
+		Expect(err).ToNot(HaveOccurred())
+
+		versions = version.FilterToValidSemver(versions)
+		Expect(versions).To(HaveLen(1))
+		Expect(versions[0].Version).To(Equal("26.2.4+23"))
 	})
 
 	It("defines consistent specs for every service", func() {
