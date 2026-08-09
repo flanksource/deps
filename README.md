@@ -613,17 +613,76 @@ Services listen on 127.0.0.1 by default; `--bind 0.0.0.0` exposes them on all
 interfaces, and a specific address (e.g. `--bind 192.168.1.10`) both binds and
 becomes the connection host.
 
+The same commands are available from the main binary as `deps svc <verb>`, which
+forwards to `deps-start`, installing it on demand into `~/.deps/bin`:
+
 ```bash
-# foreground: supervises postgres, prints the connection once ready, Ctrl-C stops it
+deps svc start postgres@17
+deps svc status
+deps svc logs postgres -f
+deps svc stop postgres
+```
+
+### Starting a service
+
+Starting **leaves a supervisor running in the background**. The command streams the
+service's logs and what it is waiting for to stderr until the service is ready or the
+start timeout is reached, then returns:
+
+| exit code | meaning |
+|---|---|
+| `0` | ready |
+| the supervisor's own code | it exited while starting (its log is quoted in the error) |
+| `1` | the start timeout was reached — the service is **left running**, follow it with `deps-start logs <service> -f` |
+
+`--foreground`/`-f` runs the service in this terminal instead and stops it on exit.
+Windows has no background mode, so services always run in the foreground there.
+
+Starting is not an upgrade: the installed artifact is used as-is and no version is
+resolved or downloaded, so a re-start is offline and near-instant. `--update` resolves the
+version constraint and installs the newest match. A version given on the command line
+(`postgres@17`) is always honoured; one replayed from a previous start is not a reason to
+go back to the network.
+
+### Readiness
+
+A service is ready only when it passes **both** stages, in order:
+
+1. the health check from its registry spec — `stdout_match`, docker `exec`, `http`
+   or a TCP wait;
+2. a TCP connect to its primary published port.
+
+The second stage is what makes `stdout_match` services honest: postgres logs
+"ready to accept connections" before its socket accepts, so the log line alone
+is not readiness. **Restart is gated the same way** — a process that came back
+or a container that is running again is not ready until it accepts connections,
+and its state stays `ready: false` until it does.
+
+While waiting, the service's own output is streamed to **stderr** prefixed with
+the service name, alongside a line naming the unmet condition
+(`waiting for tcp 127.0.0.1:5432 (4s)`). **stdout** carries only the structured
+service envelope, so `deps-start postgres > conn.json` stays clean.
+
+```bash
+# starts postgres, prints the connection once ready, leaves it running
 deps-start postgres --port 15432
+
+# `start` is an equivalent spelling, symmetric with stop (flags follow the service)
+deps-start start postgres --port 15432
+
+# run it in this terminal instead; Ctrl-C stops the service
+deps-start postgres --port 15432 -f
 
 # pin versions with the same name@version syntax and constraint
 # semantics as deps install (resolved through the package's registry)
 deps-start postgres@17
-deps-start nats@2.11
+deps-start start nats@2.11
 
-# background + lifecycle
-deps-start valkey -d          # docker runtime (valkey has no binary artifact)
+# install the newest match for the constraint rather than reusing what is installed
+deps-start postgres@17 --update
+
+# lifecycle
+deps-start valkey             # docker runtime (valkey has no binary artifact)
 deps-start list
 deps-start info valkey
 deps-start logs valkey -f
@@ -673,6 +732,10 @@ import "github.com/flanksource/deps/start"
 instance, err := start.Start(ctx, "opensearch",
     start.WithPort(19200),
     start.WithParameters(map[string]string{"jvm-memory": "1g"}),
+    start.WithLogWriter(os.Stderr),                    // tee the service's output while it starts
+    start.WithOnWaiting(func(r start.Readiness) {      // what the readiness wait is blocked on
+        log.Printf("waiting for %s (%s)", r.Waiting, r.Elapsed)
+    }),
 )
 // instance.Connection is a commons-db models.Connection
 defer instance.Stop(ctx)

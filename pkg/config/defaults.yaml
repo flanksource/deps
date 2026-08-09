@@ -49,6 +49,20 @@ registry:
         version_command: --version
         version_regex: 'dcg\s+v?(\d+\.\d+\.\d+)'
 
+    # deps-start ships from this repo's own releases (see `make release-start`);
+    # `deps svc` installs it on demand.
+    deps-start:
+        name: deps-start
+        repo: flanksource/deps
+        asset_patterns:
+            darwin-amd64: deps-start-darwin-amd64.tar.gz
+            darwin-arm64: deps-start-darwin-arm64.tar.gz
+            linux-amd64: deps-start-linux-amd64.tar.gz
+            linux-arm64: deps-start-linux-arm64.tar.gz
+        checksum_file: "{{.asset}}.sha256"
+        version_command: --version
+        version_regex: v?(\d+\.\d+\.\d+)
+
     kubectl:
         name: kubectl
         repo: kubernetes/kubernetes
