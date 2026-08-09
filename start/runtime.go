@@ -3,6 +3,7 @@ package start
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/flanksource/deps/pkg/manager"
@@ -91,6 +92,15 @@ func (svc *ServiceContext) serviceHost() string {
 		return svc.Host
 	}
 	return "localhost"
+}
+
+// serviceLogWriter returns the sink for a service's stdout/stderr: its log
+// file, teed to Opts.LogWriter when a caller wants to watch startup.
+func serviceLogWriter(svc *ServiceContext, logFile io.Writer) io.Writer {
+	if svc.Opts.LogWriter == nil {
+		return logFile
+	}
+	return io.MultiWriter(logFile, svc.Opts.LogWriter)
 }
 
 // selectRuntime picks the runtime to use: the requested one (validated

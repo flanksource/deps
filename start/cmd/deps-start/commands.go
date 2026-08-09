@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -22,6 +24,26 @@ import (
 // completeServiceNames offers registry service names for shell completion.
 func completeServiceNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return start.ServiceNames(), cobra.ShellCompDirectiveNoFileComp
+}
+
+// newStartCmd documents the start verb and completes service names. Real
+// invocations never reach its RunE: normalizeArgs routes them to the
+// service's own command, which carries the flags from its registry spec.
+func newStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:               "start <service>[@version]",
+		Short:             "Start a service (same as `deps-start <service>`)",
+		Long:              "Start a service.\n\nEach service takes flags derived from its registry spec; run\n`deps-start <service> --help` (or `deps-start start <service> --help`) to see them.\nService flags must follow the service name.",
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: completeServiceNames,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return fmt.Errorf("unknown service %q, available: %s", args[0], strings.Join(start.ServiceNames(), ", "))
+		},
+		SilenceUsage: true,
+	}
 }
 
 func newStopCmd(flags *rootFlags) *cobra.Command {
@@ -91,23 +113,42 @@ func newRestartCmd(flags *rootFlags) *cobra.Command {
 
 // restartService restarts in place where the runtime supports it (binary via
 // SupervisedProcess, docker via the restart API); otherwise it stops the
-// service and relaunches it detached with its persisted start options.
+// service and starts it again with its persisted start options.
 func restartService(cmd *cobra.Command, name string, flags *rootFlags) error {
-	instance, err := start.Restart(cmd.Context(), name, flags.options()...)
+	// a restart is health-gated, so show the service's log and what the
+	// readiness wait is blocked on while it comes back
+	stream := newServiceStream(name)
+	started := time.Now()
+	streamCtx, stopStream := context.WithCancel(cmd.Context())
+	defer func() {
+		stopStream()
+		stream.Close()
+	}()
+	// the supervisor writing the log usually lives in another process, so
+	// follow the log file rather than relying on the in-process tee
+	if existing, err := start.Get(cmd.Context(), name, flags.options()...); err == nil && existing.State.LogFile != "" {
+		tailLogsUntil(streamCtx, stream.logWriter(), logTailFrom(existing.State.LogFile))
+	}
+
+	instance, err := start.Restart(cmd.Context(), name, append(flags.options(), stream.options()...)...)
 	if err == nil {
+		stopStream()
 		printAction(icons.Reload, "text-green-600", "restarted %s in place", name)
 		info, infoErr := instance.Info(cmd.Context())
 		if infoErr != nil {
 			return infoErr
 		}
+		printReady(name, info, time.Since(started))
 		return writeServiceOutput(os.Stdout, info, "json")
 	}
+	stopStream()
 	if !errors.Is(err, start.ErrRestartUnsupported) && !errors.Is(err, start.ErrNotRunning) {
 		return err
 	}
 
-	// no in-place restart: stop if running, then relaunch detached with the
-	// persisted options so a binary supervisor outlives this command
+	// no in-place restart: stop if running, then start again with the
+	// persisted options, which backgrounds a supervisor that outlives this
+	// command
 	instance, err = start.Get(cmd.Context(), name, flags.options()...)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -132,7 +173,7 @@ func restartService(cmd *cobra.Command, name string, flags *rootFlags) error {
 }
 
 func restartArgs(name string, so *state.StartOptions, stateDir string) []string {
-	args := []string{name, "--detach"}
+	args := []string{name}
 	if stateDir != "" {
 		args = append(args, "--state-dir", stateDir)
 	}

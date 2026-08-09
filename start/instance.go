@@ -22,9 +22,11 @@ type Instance struct {
 	Action     string            `json:"action,omitempty" yaml:"action,omitempty"`
 	Change     *ConfigChange     `json:"-" yaml:"-"`
 
-	State    *state.State `json:"-" yaml:"-"`
-	runtime  Runtime
-	stateDir string
+	State   *state.State `json:"-" yaml:"-"`
+	runtime Runtime
+	// opts are the resolved options the instance was created with; restart
+	// reuses them so it probes and reports exactly like start did.
+	opts Options
 }
 
 type ServiceInfo struct {
@@ -64,9 +66,9 @@ func (i *Instance) Info(ctx context.Context) (ServiceInfo, error) {
 		ContainerID: i.State.ContainerID, HelmRelease: i.State.HelmRelease,
 		Namespace: i.State.Namespace, Connection: i.Connection,
 		Paths: ServicePaths{
-			State: filepath.Join(i.stateDir, i.Name, "state.yaml"),
-			Run:   filepath.Join(i.stateDir, i.Name, "run"),
-			Data:  filepath.Join(i.stateDir, i.Name, "data"),
+			State: filepath.Join(i.opts.StateDir, i.Name, "state.yaml"),
+			Run:   filepath.Join(i.opts.StateDir, i.Name, "run"),
+			Data:  filepath.Join(i.opts.StateDir, i.Name, "data"),
 			Log:   i.State.LogFile,
 		},
 	}
@@ -74,7 +76,7 @@ func (i *Instance) Info(ctx context.Context) (ServiceInfo, error) {
 	if provider, ok := i.runtime.(runtimeConfigProvider); ok {
 		_, spec, found := config.GetService(i.Name)
 		if found {
-			opts := Options{StateDir: i.stateDir, Namespace: i.State.Namespace}
+			opts := Options{StateDir: i.opts.StateDir, Namespace: i.State.Namespace}
 			if saved := i.State.StartOptions; saved != nil {
 				opts.Version, opts.Port, opts.BindAddress, opts.DataDir = saved.Version, saved.Port, saved.Bind, saved.DataDir
 				opts.VolumeMode, opts.Parameters = VolumeMode(saved.VolumeMode), cloneStrings(saved.Parameters)
@@ -109,14 +111,59 @@ type restarter interface {
 	Restart(ctx context.Context, stateDir string, st *state.State) error
 }
 
+// watcher is implemented by runtimes that can observe a live service for
+// readiness: liveness, output, detected ports and exec probes. Start and
+// Restart both build their processWatch through it so they gate identically.
+type watcher interface {
+	Watch(ctx context.Context, svc *ServiceContext, st *state.State, since logOffset) *processWatch
+}
+
 // Restart restarts the service in place, preserving its supervisor,
-// container and connection.
+// container and connection, and blocks until it passes its readiness probes
+// again. A runtime restart only proves the process or container came back —
+// the service is not ready until it accepts connections.
 func (i *Instance) Restart(ctx context.Context) error {
 	r, ok := i.runtime.(restarter)
 	if !ok {
 		return ErrRestartUnsupported
 	}
-	return r.Restart(ctx, i.stateDir, i.State)
+	// record where the log ends before restarting, so a stdout probe cannot
+	// match the output of the run being replaced
+	since := logOffsetOf(i.State.LogFile)
+	if err := r.Restart(ctx, i.opts.StateDir, i.State); err != nil {
+		return err
+	}
+	if err := i.awaitReady(ctx, since); err != nil {
+		return fmt.Errorf("%s restarted but did not become ready: %w", i.Name, err)
+	}
+	i.State.Ready = true
+	return i.State.Save(i.opts.StateDir)
+}
+
+// awaitReady runs the service's readiness probes against the live service,
+// rebuilding its context from the options it was started with.
+func (i *Instance) awaitReady(ctx context.Context, since logOffset) error {
+	pkg, spec, ok := config.GetService(i.Name)
+	if !ok {
+		return fmt.Errorf("unknown service %q", i.Name)
+	}
+	options := i.opts
+	if saved := i.State.StartOptions; saved != nil {
+		options.Version, options.Port, options.BindAddress, options.DataDir = saved.Version, saved.Port, saved.Bind, saved.DataDir
+		options.VolumeMode, options.Parameters = VolumeMode(saved.VolumeMode), cloneStrings(saved.Parameters)
+		if saved.Namespace != "" {
+			options.Namespace = saved.Namespace
+		}
+	}
+	svc, err := newServiceContext(i.Name, pkg, *spec, options)
+	if err != nil {
+		return err
+	}
+	var watch *processWatch
+	if w, ok := i.runtime.(watcher); ok {
+		watch = w.Watch(ctx, svc, i.State, since)
+	}
+	return awaitHealthy(ctx, svc, runtimeHealth(*spec, i.Runtime), watch)
 }
 
 // Waiter is implemented by runtimes whose service lives in this process

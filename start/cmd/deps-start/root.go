@@ -38,7 +38,8 @@ type startFlags struct {
 	namespaceFlag *pflag.Flag
 	dataDir       string
 	volumeMode    string
-	detach        bool
+	foreground    bool
+	update        bool
 	waitTimeout   time.Duration
 	output        string
 	parameters    map[string]*pflag.Flag
@@ -50,7 +51,16 @@ func newRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "deps-start <service>[@version]",
 		Short:   "Start services (postgres, opensearch, valkey, ...) via binary, docker, helm or a CLI",
-		Long:    "deps-start launches services from the deps registry and prints a commons-db connection.\n\nVersions use the same syntax and constraint semantics as deps install:\n  deps-start postgres@17    deps-start nats@2.11    deps-start valkey@8.1",
+		Long: "deps-start launches services from the deps registry and prints a commons-db connection.\n\n" +
+			"Starting leaves a supervisor running in the background: the command streams the\n" +
+			"service's logs to stderr until it is ready or the start timeout is reached, then\n" +
+			"exits (0 ready, the supervisor's own code if it died, 1 on timeout). Use\n" +
+			"--foreground to run a service in this terminal instead.\n\n" +
+			"Versions use the same syntax and constraint semantics as deps install:\n" +
+			"  deps-start postgres@17    deps-start nats@2.11    deps-start valkey@8.1\n" +
+			"An installed artifact is reused as-is; --update installs the newest match.\n\n" +
+			"`deps-start start <service>` is an equivalent spelling, symmetric with stop:\n" +
+			"  deps-start start postgres@17    deps-start stop postgres",
 		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
 		Args:    cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -59,7 +69,9 @@ func newRootCmd() *cobra.Command {
 			}
 			return fmt.Errorf("unknown service %q, available: %s", args[0], strings.Join(start.ServiceNames(), ", "))
 		},
-		SilenceUsage: true,
+		// main prints the error and maps it to an exit code
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 	cmd.PersistentFlags().StringVar(&flags.stateDir, "state-dir", "", "state directory (default ~/.deps/services)")
 
@@ -70,7 +82,7 @@ func newRootCmd() *cobra.Command {
 	for _, name := range start.ServiceNames() {
 		cmd.AddCommand(newServiceCmd(name, flags))
 	}
-	for _, sub := range []*cobra.Command{newStopCmd(flags), newRestartCmd(flags), newStatusCmd(flags), newInfoCmd(flags), newListCmd(flags), newLogsCmd(flags)} {
+	for _, sub := range []*cobra.Command{newStartCmd(), newStopCmd(flags), newRestartCmd(flags), newStatusCmd(flags), newInfoCmd(flags), newListCmd(flags), newLogsCmd(flags)} {
 		sub.GroupID = "management"
 		cmd.AddCommand(sub)
 	}
@@ -104,7 +116,8 @@ func addStartFlags(cmd *cobra.Command, flags *startFlags, spec *types.ServiceSpe
 	cmd.Flags().StringVar(&flags.bind, "bind", "", "address the service listens on (default 127.0.0.1; use 0.0.0.0 for all interfaces)")
 	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "service data directory override")
 	cmd.Flags().StringVar(&flags.volumeMode, "volume-mode", "", "primary data volume mode: persistent, host or ephemeral")
-	cmd.Flags().BoolVarP(&flags.detach, "detach", "d", false, "run the service in the background")
+	cmd.Flags().BoolVarP(&flags.foreground, "foreground", "f", false, "run the service in the foreground and stop it on exit (starting otherwise leaves a supervisor running in the background)")
+	cmd.Flags().BoolVar(&flags.update, "update", false, "resolve the version and install the newest match (starting a service otherwise reuses the installed artifact and never downloads)")
 	cmd.Flags().DurationVar(&flags.waitTimeout, "wait-timeout", 2*time.Minute, "readiness wait timeout")
 	cmd.Flags().StringVarP(&flags.output, "output", "o", "json", "service output format: json, yaml or env")
 	if spec.Helm != nil {
@@ -204,7 +217,7 @@ func (f *startFlags) options() []start.Option {
 		opts = append(opts, start.WithParameters(parameters))
 	}
 	opts = append(opts,
-		start.WithDetach(f.detach),
+		start.WithUpdate(f.update),
 		start.WithWaitTimeout(f.waitTimeout),
 	)
 	return opts
@@ -224,7 +237,11 @@ func runStart(cmd *cobra.Command, name string, flags *startFlags) error {
 	if flags.parameterErr != nil {
 		return flags.parameterErr
 	}
-	if flags.detach && os.Getenv(supervisorEnv) == "" {
+	// starting a service leaves a supervisor running in the background: the
+	// command streams its logs until it is ready, then returns. The child
+	// itself runs the foreground path, marked by supervisorEnv.
+	if !flags.foreground && daemonizeSupported && os.Getenv(supervisorEnv) == "" {
+		started := time.Now()
 		if err := runDetached(name, flags); err != nil {
 			return err
 		}
@@ -236,13 +253,22 @@ func runStart(cmd *cobra.Command, name string, flags *startFlags) error {
 		if err != nil {
 			return err
 		}
+		printReady(name, info, time.Since(started))
 		return writeServiceOutput(os.Stdout, info, flags.output)
+	}
+	if !flags.foreground && !daemonizeSupported {
+		printAction(icons.Warning, "text-yellow-600", "background start is not supported on this platform, running %s in the foreground", name)
 	}
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	instance, err := start.Start(ctx, name, flags.options()...)
+	// the service's own output and the unmet readiness condition go to
+	// stderr; stdout stays reserved for the structured connection output
+	stream := newServiceStream(name)
+	started := time.Now()
+	instance, err := start.Start(ctx, name, append(flags.options(), stream.options()...)...)
+	stream.Close()
 	if err != nil {
 		return err
 	}
@@ -268,6 +294,7 @@ func runStart(cmd *cobra.Command, name string, flags *startFlags) error {
 	if err != nil {
 		return err
 	}
+	printReady(name, info, time.Since(started))
 	if err := writeServiceOutput(os.Stdout, info, flags.output); err != nil {
 		return err
 	}

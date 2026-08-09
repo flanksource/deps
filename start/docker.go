@@ -103,14 +103,13 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		}
 	}
 
-	watch := &processWatch{
-		alive:  func() bool { return r.isRunning(ctx, id) },
-		output: func() string { return r.containerLogTail(ctx, id) },
-		execProbe: func(ctx context.Context, cmd []string) bool {
-			return r.execProbe(ctx, id, cmd, data)
-		},
+	st := &state.State{ContainerID: id}
+	if svc.Opts.LogWriter != nil {
+		streamCtx, stopStream := context.WithCancel(ctx)
+		go func() { _ = r.Logs(streamCtx, st, true, svc.Opts.LogWriter) }()
+		defer stopStream()
 	}
-	if err := awaitHealthy(ctx, svc, spec.Health, watch); err != nil {
+	if err := awaitHealthy(ctx, svc, spec.Health, r.Watch(ctx, svc, st, logOffset{})); err != nil {
 		return nil, fmt.Errorf("container %s: %w", name, err)
 	}
 
@@ -297,6 +296,26 @@ func renderDockerEnvironment(svc *ServiceContext, data map[string]any) (map[stri
 	return env, nil
 }
 
+// Watch observes the container for readiness: liveness from the container
+// state, output from its log tail and exec probes through docker exec.
+func (r *dockerRuntime) Watch(ctx context.Context, svc *ServiceContext, st *state.State, _ logOffset) *processWatch {
+	if st == nil || st.ContainerID == "" {
+		return nil
+	}
+	id := st.ContainerID
+	if svc.Host == "" {
+		svc.Host = r.daemonHost(ctx)
+	}
+	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
+	return &processWatch{
+		alive:  func() bool { return r.isRunning(ctx, id) },
+		output: func() string { return r.containerLogTail(ctx, id) },
+		execProbe: func(ctx context.Context, cmd []string) bool {
+			return r.execProbe(ctx, id, cmd, data)
+		},
+	}
+}
+
 // execProbe runs a health command inside the container, rendering each
 // argument, and reports success on exit code 0.
 func (r *dockerRuntime) execProbe(ctx context.Context, id string, cmd []string, data map[string]any) bool {
@@ -395,8 +414,9 @@ func (r *dockerRuntime) Restart(ctx context.Context, stateDir string, st *state.
 	for time.Now().Before(deadline) {
 		if r.isRunning(ctx, st.ContainerID) {
 			st.StartedAt = time.Now()
+			// Ready stays false until the caller's readiness probes pass.
 			if fresh, err := state.Load(stateDir, st.Name); err == nil {
-				fresh.StartedAt = st.StartedAt
+				fresh.StartedAt, fresh.Ready = st.StartedAt, false
 				_ = fresh.Save(stateDir)
 			}
 			return nil

@@ -11,6 +11,7 @@ import (
 
 	"github.com/flanksource/clicky/exec"
 	"github.com/flanksource/deps"
+	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/start/state"
 )
 
@@ -66,7 +67,12 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	}
 
 	started := make(chan *exec.Process, 1)
-	proc := exec.NewExec(command, args...).WithProcessGroup().WithEnv(env).WithCwd(svc.RunDir).Stream(logf, logf)
+	// record where the log ends before launching, so a stdout probe only
+	// matches this start's output
+	since := logOffsetOf(svc.LogFile)
+
+	out := serviceLogWriter(svc, logf)
+	proc := exec.NewExec(command, args...).WithProcessGroup().WithEnv(env).WithCwd(svc.RunDir).Stream(out, out)
 	sup := proc.Supervise(exec.SuperviseOptions{
 		RestartPolicy: exec.RestartNo,
 		StopGrace:     10 * time.Second,
@@ -93,13 +99,7 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return nil, ctx.Err()
 	}
 
-	watch := &processWatch{
-		alive: func() bool {
-			return sup.Status() != exec.StatusCrashed && sup.Status() != exec.StatusExited && sup.Status() != exec.StatusStopped
-		},
-		output: func() string { return r.processOutput() },
-	}
-	if err := awaitHealthy(ctx, svc, spec.Health, watch); err != nil {
+	if err := awaitHealthy(ctx, svc, spec.Health, r.Watch(ctx, svc, nil, since)); err != nil {
 		sup.Stop()
 		return nil, err
 	}
@@ -149,18 +149,44 @@ func persistMetrics(stateDir, name string, sup *exec.SupervisedProcess) {
 	}
 }
 
-func (r *binaryRuntime) processOutput() string {
+// Watch observes the supervised process for readiness. Output always comes
+// from the log file rather than the supervisor's in-memory buffer: it is the
+// only view a restart driven from another process has, and the offset keeps
+// an in-place restart from matching the output of the run it replaced.
+func (r *binaryRuntime) Watch(ctx context.Context, svc *ServiceContext, st *state.State, since logOffset) *processWatch {
+	watch := &processWatch{output: since.read}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.proc == nil {
-		return ""
+	sup := r.sup
+	r.mu.Unlock()
+	if sup != nil {
+		watch.alive = func() bool {
+			switch sup.Status() {
+			case exec.StatusCrashed, exec.StatusExited, exec.StatusStopped:
+				return false
+			}
+			return true
+		}
+		watch.ports = sup.Ports
+		return watch
 	}
-	return r.proc.GetOutput()
+	if st != nil {
+		watch.alive = func() bool { return st.PID == 0 || processAlive(st.PID) }
+	}
+	return watch
 }
+
+// versionAny tells the installer to use whatever is already installed and to
+// resolve a version only when nothing is.
+const versionAny = "any"
 
 // installServicePackages ensures the service's artifact (and any extra
 // required packages) are present and fills AppDir/BinDir/Version from the
 // primary package. pkgName defaults to the service's registry key.
+//
+// Starting a service is not an upgrade: without Opts.Update an installed
+// artifact is used as-is, so start stays offline and fast. A version supplied
+// on this invocation is always honoured; one replayed from persisted start
+// options is not a reason to go back to the network.
 func installServicePackages(ctx context.Context, svc *ServiceContext, pkgName string, extra ...string) error {
 	if pkgName == "" {
 		pkgName = svc.Name
@@ -169,28 +195,60 @@ func installServicePackages(ctx context.Context, svc *ServiceContext, pkgName st
 	if version == "" {
 		version = "latest"
 	}
+	if !svc.Opts.Update && !svc.Opts.supplied.version {
+		version = versionAny
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
+	appRoot := filepath.Join(home, ".deps", "opt")
 	opts := []deps.InstallOption{
 		deps.WithBinDir(filepath.Join(home, ".deps", "bin")),
-		deps.WithAppDir(filepath.Join(home, ".deps", "opt")),
+		deps.WithAppDir(appRoot),
 	}
 	result, err := deps.InstallWithContext(ctx, pkgName, version, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to install %s: %w", pkgName, err)
 	}
-	svc.AppDir = result.AppDir
 	svc.BinDir = result.BinDir
-	svc.Version = result.Version.Version
+	// "any" is a sentinel, not a version: keep whatever the state already
+	// recorded rather than reporting it as the running version
+	if resolved := result.Version.Version; resolved != "" && resolved != versionAny {
+		svc.Version = resolved
+	}
+	// the installer reports AppDir only when it actually installs, so an
+	// already-installed directory package has to be located on disk
+	svc.AppDir = result.AppDir
+	if svc.AppDir == "" && result.Package.Mode == "directory" {
+		svc.AppDir = existingAppDir(appRoot, result.Package, svc.Version)
+		if svc.AppDir == "" {
+			return fmt.Errorf("%s reports no install directory under %s; reinstall it with --update", pkgName, appRoot)
+		}
+	}
 
 	for _, name := range extra {
-		if _, err := deps.InstallWithContext(ctx, name, "latest", opts...); err != nil {
+		required := versionAny
+		if svc.Opts.Update {
+			required = "latest"
+		}
+		if _, err := deps.InstallWithContext(ctx, name, required, opts...); err != nil {
 			return fmt.Errorf("failed to install required package %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// existingAppDir locates an installed directory-mode package, covering both
+// versioned and unversioned folder layouts.
+func existingAppDir(root string, pkg types.Package, version string) string {
+	for _, folder := range []string{pkg.FolderName(version), pkg.FolderName("")} {
+		dir := filepath.Join(root, folder)
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return dir
+		}
+	}
+	return ""
 }
 
 // renderCommand resolves the executable path, args and env from the spec.
@@ -319,10 +377,12 @@ func (r *binaryRuntime) restartInProcess(ctx context.Context, stateDir string, s
 
 	st.PID = sup.Pid()
 	st.StartedAt = time.Now()
+	// Ready stays false until the caller's readiness probes pass; a process
+	// that came back up is not yet a service that accepts connections.
 	if fresh, err := state.Load(stateDir, st.Name); err == nil {
 		fresh.PID = st.PID
 		fresh.StartedAt = st.StartedAt
-		fresh.Ready = true
+		fresh.Ready = false
 		return fresh.Save(stateDir)
 	}
 	return nil
