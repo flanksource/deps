@@ -56,6 +56,35 @@ func TestClickHouseVersionExpr(t *testing.T) {
 	}
 }
 
+// The clickhouse binary reports "26.2.4.23" while the registry resolves the
+// release tag to "26.2.4+23"; both must be treated as the same version.
+func TestClickHouseInstalledVersionComparison(t *testing.T) {
+	tests := []struct {
+		installed string
+		expected  string
+		want      types.CheckStatus
+	}{
+		{"26.2.4.23", "26.2.4+23", types.CheckStatusOK},
+		{"26.2.4.23", "26.2.4.23", types.CheckStatusOK},
+		{"25.8.18.1", "25.8.18+1", types.CheckStatusOK},
+		{"26.2.4.23", "26.2.4+24", types.CheckStatusOutdated},
+		{"26.2.4.24", "26.2.4+23", types.CheckStatusNewer},
+		{"26.2.3.2", "26.2.4+23", types.CheckStatusOutdated},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.installed+"_vs_"+tt.expected, func(t *testing.T) {
+			status, err := CompareVersions(tt.installed, tt.expected)
+			if err != nil {
+				t.Fatalf("CompareVersions error: %v", err)
+			}
+			if status != tt.want {
+				t.Errorf("CompareVersions(%q, %q) = %v, want %v", tt.installed, tt.expected, status, tt.want)
+			}
+		})
+	}
+}
+
 func TestClickHousePartialVersionConstraint(t *testing.T) {
 	expr := `(tag.contains("-stable") || tag.contains("-lts")) ? (tag.substring(1).split("-")[0].split(".").size() >= 4 ? tag.substring(1).split("-")[0].split(".")[0] + "." + tag.substring(1).split("-")[0].split(".")[1] + "." + tag.substring(1).split("-")[0].split(".")[2] + "+" + tag.substring(1).split("-")[0].split(".")[3] : tag.substring(1).split("-")[0]) : ""`
 

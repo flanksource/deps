@@ -63,6 +63,7 @@ func isExcludedPackage(packageName string) bool {
 
 		"go",         // Direct URL manager requires explicit version
 		"gcloud-cli", // Direct URL manager requires explicit version
+		"op",         // Direct URL manager requires explicit version
 		"trivy",      // aquasecurity org IP allowlist blocks GitHub Actions runners
 	}
 	return contains(excludedPackages, packageName)
