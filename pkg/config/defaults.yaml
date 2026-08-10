@@ -1085,7 +1085,14 @@ registry:
     timoni:
         manager: github_tags
         repo: stefanprodan/timoni
-        url_template: "https://github.com/stefanprodan/timoni/releases/download/{{.tag}}/timoni_{{.version}}_{{.os}}_{{.arch}}.tar.gz"
+        asset_patterns:
+            darwin-amd64: timoni_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: timoni_{{.version}}_darwin_arm64.tar.gz
+            linux-amd64: timoni_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: timoni_{{.version}}_linux_arm64.tar.gz
+            windows-amd64: timoni_{{.version}}_windows_amd64.zip
+            windows-arm64: timoni_{{.version}}_windows_arm64.zip
+        url_template: "https://github.com/stefanprodan/timoni/releases/download/{{.tag}}/{{.asset}}"
         checksum_file: "https://github.com/stefanprodan/timoni/releases/download/{{.tag}}/timoni_{{.version}}_checksums.txt"
         version_command: version
         version_regex: 'client:\s*v?([0-9]+\.[0-9]+\.[0-9]+)'

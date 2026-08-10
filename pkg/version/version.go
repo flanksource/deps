@@ -3,6 +3,7 @@ package version
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -58,7 +59,37 @@ func Compare(v1, v2 string) (int, error) {
 		return 0, nil
 	}
 
-	return sv1.Compare(sv2), nil
+	if cmp := sv1.Compare(sv2); cmp != 0 {
+		return cmp, nil
+	}
+
+	// Semver ignores build metadata, but for four-component versions normalized
+	// into it (ClickHouse's 26.2.4.23 -> 26.2.4+23) the build number is
+	// significant ordering information.
+	return compareBuildMetadata(sv1.Metadata(), sv2.Metadata()), nil
+}
+
+// compareBuildMetadata orders build metadata numerically when both sides are
+// plain build numbers and lexically otherwise.
+func compareBuildMetadata(m1, m2 string) int {
+	if m1 == m2 {
+		return 0
+	}
+	n1, err1 := strconv.Atoi(m1)
+	n2, err2 := strconv.Atoi(m2)
+	if err1 == nil && err2 == nil {
+		switch {
+		case n1 < n2:
+			return -1
+		case n1 > n2:
+			return 1
+		}
+		return 0
+	}
+	if m1 < m2 {
+		return -1
+	}
+	return 1
 }
 
 // IsCompatible checks if installed version is compatible with required version

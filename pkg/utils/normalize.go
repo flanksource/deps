@@ -1,10 +1,16 @@
 package utils
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
 )
+
+// fourComponentVersion matches bare four-component numeric versions such as
+// ClickHouse's "26.2.4.23". Semver only has three numeric components, so the
+// fourth is expressed as build metadata ("26.2.4+23").
+var fourComponentVersion = regexp.MustCompile(`^(\d+\.\d+\.\d+)\.(\d+)$`)
 
 // Normalize removes common prefixes and suffixes from version strings
 // Handles: v1.2.3 -> 1.2.3, release-1.2.3 -> 1.2.3, version-1.2.3 -> 1.2.3, jq-1.7 -> 1.7
@@ -28,6 +34,14 @@ func Normalize(version string) string {
 	// These are not valid semver prereleases, just naming conventions
 	version = strings.TrimSuffix(version, "-release")
 	version = strings.TrimSuffix(version, "-Release")
+
+	// Four-component versions are not valid semver; the trailing component is a
+	// build number, so express it as build metadata. This makes a version
+	// reported by a binary ("26.2.4.23") comparable to the version the registry
+	// resolved from the release tag ("26.2.4+23").
+	if m := fourComponentVersion.FindStringSubmatch(version); m != nil {
+		return m[1] + "+" + m[2]
+	}
 
 	// If current version is valid semver, don't strip further
 	if _, err := semver.NewVersion(version); err == nil {
