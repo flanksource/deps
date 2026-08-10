@@ -7,10 +7,10 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
-// fourComponentVersion matches bare four-component numeric versions such as
-// ClickHouse's "26.2.4.23". Semver only has three numeric components, so the
-// fourth is expressed as build metadata ("26.2.4+23").
-var fourComponentVersion = regexp.MustCompile(`^(\d+\.\d+\.\d+)\.(\d+)$`)
+// fourComponentVersion matches ClickHouse-style four-component versions with
+// an optional stable or LTS channel suffix. Semver only has three numeric
+// components, so the fourth is expressed as build metadata ("26.2.4+23").
+var fourComponentVersion = regexp.MustCompile(`^(\d+\.\d+\.\d+)\.(\d+)(?:-(?:stable|lts))?$`)
 
 // Normalize removes common prefixes and suffixes from version strings
 // Handles: v1.2.3 -> 1.2.3, release-1.2.3 -> 1.2.3, version-1.2.3 -> 1.2.3, jq-1.7 -> 1.7
