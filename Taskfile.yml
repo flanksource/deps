@@ -314,9 +314,10 @@ tasks:
 
   install:
     desc: Install the binary to /usr/local/bin
-    deps: [build]
+    deps: [build,build-start]
     cmds:
       - mv "{{.BUILD_DIR}}/{{.BINARY_NAME}}" /usr/local/bin
+      - mv "{{.BUILD_DIR}}/{{.BINARY_NAME}}-start" /usr/local/bin
 
   check:
     desc: Run all checks (fmt, vet, lint, test)
