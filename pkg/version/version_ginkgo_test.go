@@ -28,6 +28,8 @@ var _ = Describe("Version", func() {
 			Entry("with alpha suffix", "v1.2.3-alpha", "1.2.3-alpha"),
 			Entry("with package prefix using dash", "jq-1.7", "1.7"),
 			Entry("with package prefix using underscore", "tool_1.2.3", "1.2.3"),
+			Entry("with four-component stable suffix", "v26.2.5.45-stable", "26.2.5+45"),
+			Entry("with four-component lts suffix", "v25.8.18.1-lts", "25.8.18+1"),
 			Entry("empty string", "", ""),
 			Entry("with whitespace", " v1.2.3 ", "1.2.3"),
 		)
