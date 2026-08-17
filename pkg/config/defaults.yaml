@@ -49,6 +49,21 @@ registry:
         version_command: --version
         version_regex: 'dcg\s+v?(\d+\.\d+\.\d+)'
 
+    # deps ships from its own releases (see `make release`). Defining it here keeps
+    # self-installs on explicit asset names instead of the owner/repo glob heuristic.
+    deps:
+        name: deps
+        repo: flanksource/deps
+        asset_patterns:
+            darwin-amd64: deps-darwin-amd64.tar.gz
+            darwin-arm64: deps-darwin-arm64.tar.gz
+            linux-amd64: deps-linux-amd64.tar.gz
+            linux-arm64: deps-linux-arm64.tar.gz
+            windows-amd64: deps-windows-amd64.zip
+        checksum_file: "{{.asset}}.sha256"
+        version_command: --version
+        version_regex: deps version v?(\d+\.\d+\.\d+)
+
     # deps-start ships from this repo's own releases (see `make release-start`);
     # `deps svc` installs it on demand.
     deps-start:

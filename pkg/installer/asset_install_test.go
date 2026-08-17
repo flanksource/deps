@@ -18,7 +18,9 @@ import (
 
 var _ = Describe("asset override installation", func() {
 	It("uses the derived binary name and shows the asset while downloading", func() {
-		payload := []byte("payload")
+		// A shebang script is a runnable artifact on every host, so the install passes
+		// the executable check without needing per-platform object file fixtures.
+		payload := []byte("#!/bin/sh\necho payload\n")
 		requestStarted := make(chan struct{})
 		releaseResponse := make(chan struct{})
 		var releaseOnce sync.Once

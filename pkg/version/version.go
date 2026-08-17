@@ -149,6 +149,13 @@ func GetNewerVersion(v1, v2 string) (string, error) {
 	return v2, nil
 }
 
+// IsAlias reports whether a version string is a moving alias rather than a version.
+// An alias names whatever is current at resolution time, so it can never be compared
+// against a version read off an installed binary.
+func IsAlias(s string) bool {
+	return s == "latest" || s == "stable" || s == "any"
+}
+
 // LooksLikeExactVersion checks if a string is an exact version vs a constraint
 // Examples: "1.2.3", "v1.2.3" -> true
 //

@@ -48,22 +48,73 @@ var _ = Describe("GitHub install filters", func() {
 			{Name: "tool-darwin-arm64.tar.gz"},
 			{Name: "tool"},
 		}
+		linuxAmd64 := manager.AssetSelection{
+			Platform:    platform.Platform{OS: "linux", Arch: "amd64"},
+			PackageName: "tool",
+		}
 
 		It("prefers an exact match before retrying as a prefix", func() {
-			Expect(selectReleaseAsset(assets, []string{"tool"})).To(Equal(&assets[2]))
+			Expect(selectReleaseAsset(assets, []string{"tool"}, linuxAmd64)).To(Equal(&assets[2]))
 		})
 
 		It("appends a wildcard when the exact filter has no match", func() {
-			Expect(selectReleaseAsset(assets, []string{"tool-linux"})).To(Equal(&assets[0]))
+			Expect(selectReleaseAsset(assets, []string{"tool-linux"}, linuxAmd64)).To(Equal(&assets[0]))
 		})
 
 		It("supports MatchItems wildcards and exclusions", func() {
 			filters := []string{"tool-*", "!*darwin*"}
-			Expect(selectReleaseAsset(assets, filters)).To(Equal(&assets[0]))
+			Expect(selectReleaseAsset(assets, filters, linuxAmd64)).To(Equal(&assets[0]))
 		})
 
 		It("returns nil when neither matching pass finds an asset", func() {
-			Expect(selectReleaseAsset(assets, []string{"server"})).To(BeNil())
+			Expect(selectReleaseAsset(assets, []string{"server"}, linuxAmd64)).To(BeNil())
+		})
+
+		It("does not widen a filter into the checksum file beside the binary", func() {
+			withChecksums := []restAsset{
+				{Name: "tool-linux-amd64.sha256"},
+				{Name: "tool-linux-amd64.tar.gz"},
+				{Name: "tool-linux-amd64.tar.gz.sha256"},
+			}
+			Expect(selectReleaseAsset(withChecksums, []string{"tool-linux-amd64"}, linuxAmd64)).
+				To(Equal(&withChecksums[1]))
+		})
+
+		It("still returns a checksum file when one is asked for explicitly", func() {
+			withChecksums := []restAsset{
+				{Name: "tool-linux-amd64.tar.gz"},
+				{Name: "tool-linux-amd64.tar.gz.sha256"},
+			}
+			Expect(selectReleaseAsset(withChecksums, []string{"*.sha256"}, linuxAmd64)).
+				To(Equal(&withChecksums[1]))
+		})
+	})
+
+	Describe("pattern based asset selection", func() {
+		// The assets flanksource/deps v1.0.39 published: the orphan
+		// deps-linux-amd64.sha256 sorts ahead of the binary it describes.
+		assets := []restAsset{
+			{Name: "deps-linux-amd64.sha256"},
+			{Name: "deps-linux-amd64.tar.gz"},
+			{Name: "deps-linux-amd64.tar.gz.sha256"},
+			{Name: "deps-start-linux-amd64.sha256"},
+			{Name: "deps-start-linux-amd64.tar.gz"},
+		}
+		linuxAmd64 := manager.AssetSelection{
+			Platform:    platform.Platform{OS: "linux", Arch: "amd64"},
+			PackageName: "deps",
+		}
+
+		It("never selects a checksum file for the owner/repo glob", func() {
+			Expect(selectAssetByPattern(assets, "*linux*amd64*", linuxAmd64)).To(Equal(&assets[1]))
+		})
+
+		It("honours an exact asset name", func() {
+			Expect(selectAssetByPattern(assets, "deps-start-linux-amd64.tar.gz", linuxAmd64)).To(Equal(&assets[4]))
+		})
+
+		It("returns nil when a literal pattern matches nothing", func() {
+			Expect(selectAssetByPattern(assets, "deps-linux-amd64", linuxAmd64)).To(BeNil())
 		})
 	})
 

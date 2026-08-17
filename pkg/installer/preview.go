@@ -148,10 +148,17 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	}
 	preview.ResolvedVersion = resolvedVersion
 
-	if !i.options.Force && len(i.options.AssetFilters) == 0 {
-		if existingVersion := i.checkExistingInstallation(t, name, pkg, resolvedVersion); existingVersion != "" {
-			return markExisting(existingVersion), nil
+	checkExisting := !i.options.Force && len(i.options.AssetFilters) == 0 && i.existingArchMatches(name, pkg, t)
+
+	// An alias names whatever is current at resolution time, so there is nothing to compare
+	// the installed version against yet — that check has to wait until Resolve() reports the
+	// concrete version behind it. A pinned version is compared here so an already-installed
+	// package needs no network at all.
+	if checkExisting && !versionpkg.IsAlias(resolvedVersion) {
+		if i.markAlreadyInstalled(preview, name, pkg, resolvedVersion, t) {
+			return preview, nil
 		}
+		checkExisting = false
 	}
 
 	resolution, err := mgr.Resolve(resolveCtx, pkg, resolvedVersion, preview.Platform)
@@ -166,15 +173,71 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	preview.Resolution = resolution
 	preview.EffectiveVersion = resolvedVersion
 
-	if mgr.Name() != "github_build" && resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
-		if actualVersion := versionpkg.Normalize(resolution.GitHubAsset.Tag); actualVersion != resolvedVersion {
-			t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
-			t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))
-			preview.EffectiveVersion = actualVersion
+	if actualVersion := concreteResolvedVersion(mgr, resolution, resolvedVersion); actualVersion != "" && actualVersion != resolvedVersion {
+		t.SetName(fmt.Sprintf("%s@%s", name, actualVersion))
+		t.SetDescription(fmt.Sprintf("Resolved %s -> %s", resolvedVersion, actualVersion))
+		preview.EffectiveVersion = actualVersion
+	}
+
+	if checkExisting {
+		if versionpkg.IsAlias(preview.EffectiveVersion) {
+			t.V(3).Infof("%s resolved %s to no concrete version; installing without an existing-installation check", name, resolvedVersion)
+		} else if i.markAlreadyInstalled(preview, name, pkg, preview.EffectiveVersion, t) {
+			return preview, nil
 		}
 	}
 
 	return preview, nil
+}
+
+// concreteResolvedVersion returns the real version a resolution landed on, which is the only
+// thing an installed binary can be compared against when the request was an alias.
+func concreteResolvedVersion(mgr manager.PackageManager, resolution *types.Resolution, resolvedVersion string) string {
+	if mgr.Name() != "github_build" && resolution.GitHubAsset != nil && resolution.GitHubAsset.Tag != "" {
+		return versionpkg.Normalize(resolution.GitHubAsset.Tag)
+	}
+	// Deterministic resolutions (checksum_file + fixed asset pattern) carry no asset metadata
+	// but do report the tag they resolved the alias to.
+	if versionpkg.IsAlias(resolvedVersion) && resolution.Version != "" && !versionpkg.IsAlias(resolution.Version) {
+		return versionpkg.Normalize(resolution.Version)
+	}
+	return ""
+}
+
+// existingArchMatches reports whether an existing binary is usable for the requested arch.
+// A binary built for another architecture has to be reinstalled whatever its version says.
+func (i *Installer) existingArchMatches(name string, pkg types.Package, t *task.Task) bool {
+	if i.options.ArchOverride == "" {
+		return true
+	}
+
+	binaryName := name
+	if pkg.BinaryName != "" {
+		binaryName = pkg.BinaryName
+	}
+	nativeArch := pipeline.DetectBinaryArch(filepath.Join(i.options.BinDir, binaryName))
+	if nativeArch == "" || archMatches(nativeArch, i.options.ArchOverride) {
+		return true
+	}
+
+	t.Debugf("Existing %s is %s but %s requested, reinstalling", binaryName, nativeArch, i.options.ArchOverride)
+	return false
+}
+
+// markAlreadyInstalled fills in the existing-installation fields when the binary on disk
+// already satisfies want, and reports whether it did.
+func (i *Installer) markAlreadyInstalled(preview *InstallPreview, name string, pkg types.Package, want string, t *task.Task) bool {
+	existingVersion := versionpkg.CheckExistingInstallation(t, name, pkg, want, i.options.BinDir, i.options.OSOverride)
+	if existingVersion == "" {
+		return false
+	}
+
+	preview.AlreadyInstalled = true
+	preview.ExistingVersion = existingVersion
+	if path, ok := i.getInstalledPath(name, pkg); ok {
+		preview.ExistingPath = path
+	}
+	return true
 }
 
 func (i *Installer) managerContext(ctx context.Context) context.Context {
