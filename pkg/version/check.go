@@ -131,6 +131,17 @@ func resolveBinaryPath(tool string, pkg types.Package, binDir string, osOverride
 	}, nil
 }
 
+// isExecFormatError reports whether a version command failed because the file is not a
+// runnable binary for this machine, rather than because the command was unsupported.
+func isExecFormatError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "exec format error") ||
+		strings.Contains(message, "not a valid Win32 application")
+}
+
 // GetInstalledVersion executes a binary with its version command and extracts the version.
 // Returns (parsedVersion, rawOutput, error).
 func GetInstalledVersion(t *task.Task, binaryPath, versionCommand, versionPattern string) (string, string, error) {
@@ -208,7 +219,14 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	}
 
 	if lastErr != nil {
-		t.V(3).Infof("All version commands failed for %s", utils.LogPath(binaryPath))
+		// An existing file that cannot be executed at all is a different condition from
+		// a missing or unsupported version command, and must not stay silent: it means
+		// something that is not a binary was installed at this path.
+		if isExecFormatError(lastErr) {
+			t.Warnf("%s exists but is not executable: %v", utils.LogPath(binaryPath), lastErr)
+		} else {
+			t.V(3).Infof("All version commands failed for %s: %v", utils.LogPath(binaryPath), lastErr)
+		}
 		return "", "", lastErr
 	}
 

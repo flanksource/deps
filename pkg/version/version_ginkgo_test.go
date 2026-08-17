@@ -644,6 +644,21 @@ var _ = Describe("Version Expression Filtering", func() {
 		})
 	})
 
+	Describe("IsAlias", func() {
+		DescribeTable("should identify moving aliases correctly",
+			func(version string, expected bool) {
+				Expect(IsAlias(version)).To(Equal(expected))
+			},
+			Entry("latest keyword", "latest", true),
+			Entry("stable keyword", "stable", true),
+			Entry("any keyword", "any", true),
+			Entry("exact version", "3.52.0", false),
+			Entry("tag with v prefix", "v3.52.0", false),
+			Entry("semver constraint", ">=3.52.0", false),
+			Entry("empty string", "", false),
+		)
+	})
+
 	Describe("LooksLikeExactVersion", func() {
 		DescribeTable("should identify exact versions correctly",
 			func(version string, expected bool) {
