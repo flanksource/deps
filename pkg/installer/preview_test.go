@@ -25,7 +25,7 @@ type previewResolverManager struct {
 	discover    []types.Version
 	resolveErr  error
 	installErr  error
-	remoteCalls int
+	resolveCall int
 }
 
 func (m *previewResolverManager) Name() string { return m.name }
@@ -36,14 +36,18 @@ func (m *previewResolverManager) DiscoverVersions(ctx context.Context, pkg types
 }
 
 func (m *previewResolverManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
-	m.remoteCalls++
+	m.resolveCall++
 	if m.resolveErr != nil {
 		return nil, m.resolveErr
 	}
 	resolution := *m.resolution
 	resolution.Package = pkg
 	resolution.Platform = plat
-	resolution.Version = version
+	// Managers that resolve an alias deterministically report the concrete version they
+	// landed on; only echo the requested version back when the fixture set none.
+	if resolution.Version == "" {
+		resolution.Version = version
+	}
 	return &resolution, nil
 }
 

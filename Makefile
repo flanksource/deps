@@ -125,18 +125,22 @@ $(UPX): .bin
 	mkdir -p .bin
 
 # archive_binaries packages built binaries from .bin/ into .release/:
-# .exe -> zip, everything else -> tar.gz, each alongside a .sha256.
+# .exe -> zip, everything else -> tar.gz.
+# Every .sha256 names the asset it describes and is only written for artifacts that are
+# actually published: a checksum whose subject is missing from the release (for example
+# "deps-linux-amd64.sha256" when only the tarball ships) gets picked up by asset globs
+# and installed in place of the binary.
 # $(1) = binary name inside the archive; $(2) = space-separated binary globs.
 define archive_binaries
 @for binary in $(2); do \
 	[ -e "$$binary" ] || continue; \
 	artifact=$$(basename "$$binary"); \
 	archive_base="$${artifact%.exe}"; \
-	(cd .bin && $(SHA256) "$$artifact") > ".release/$$artifact.sha256"; \
 	if [[ "$$artifact" == *.exe ]]; then \
 		cp "$$binary" ".release/$$artifact"; \
+		(cd .bin && $(SHA256) "$$artifact") > ".release/$$artifact.sha256"; \
 		cp "$$binary" ".release/$(1).exe"; \
-		(cd .release && zip -q "$$archive_base.zip" "$(1).exe" && $(SHA256) "$$archive_base.zip" > "$$archive_base.sha256"); \
+		(cd .release && zip -q "$$archive_base.zip" "$(1).exe" && $(SHA256) "$$archive_base.zip" > "$$archive_base.zip.sha256"); \
 		rm -f ".release/$(1).exe"; \
 	else \
 		cp "$$binary" ".release/$(1)"; \

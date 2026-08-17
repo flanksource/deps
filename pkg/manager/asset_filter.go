@@ -12,6 +12,15 @@ type AssetInfo struct {
 	SHA256      string
 }
 
+// nonBinaryExtensions are release asset suffixes that never contain a runnable
+// artifact: signatures, checksums and text files published alongside the binary.
+var nonBinaryExtensions = []string{
+	".asc", ".sig", ".gpg", ".pem", // Signature files
+	".sha1", ".sha256", ".sha512", // Checksum files
+	".md5", ".checksum", // More checksum files
+	".txt", ".json", ".yaml", ".yml", // Text files (often checksums)
+}
+
 // FilterAssetsByPlatform applies iterative filtering to narrow down assets for a specific platform.
 // It performs three stages:
 // 1. Filter out non-binary files (signatures, checksums, docs)
@@ -49,13 +58,6 @@ func FilterAssetsByPlatform(assets []AssetInfo, os, arch string) ([]AssetInfo, e
 
 // filterNonBinaryFiles removes signature files, checksums, and documentation
 func filterNonBinaryFiles(assets []AssetInfo) []AssetInfo {
-	nonBinaryExtensions := []string{
-		".asc", ".sig", ".gpg", ".pem", // Signature files
-		".sha1", ".sha256", ".sha512", // Checksum files
-		".md5", ".checksum", // More checksum files
-		".txt", ".json", ".yaml", // Text files (often checksums)
-	}
-
 	nonBinaryPrefixes := []string{
 		"CHANGELOG", "README", "LICENSE",
 		"COPYING", "NOTICE", "AUTHORS",
@@ -129,11 +131,6 @@ func filterByOS(assets []AssetInfo, os string) ([]AssetInfo, error) {
 	// If no OS-specific files found, return all (might be universal binaries)
 	if len(filtered) == 0 {
 		return assets, nil
-	}
-
-	if len(filtered) == 0 {
-		return nil, fmt.Errorf("no assets found matching OS '%s' (tried: %s)",
-			os, strings.Join(aliases, ", "))
 	}
 
 	return filtered, nil
@@ -248,13 +245,6 @@ func preferArm64Assets(assets []AssetInfo) []AssetInfo {
 // FilterNonBinaryAssetNames filters asset name strings removing non-binary files.
 // Removes .sig, .json, .txt, .yaml, etc. and .msi for non-Windows platforms.
 func FilterNonBinaryAssetNames(assets []string, os string) []string {
-	nonBinaryExtensions := []string{
-		".asc", ".sig", ".gpg", ".pem", // Signature files
-		".sha1", ".sha256", ".sha512", // Checksum files
-		".md5", ".checksum", // More checksum files
-		".txt", ".json", ".yaml", ".yml", // Text/config files
-	}
-
 	var filtered []string
 	for _, asset := range assets {
 		nameLower := strings.ToLower(asset)

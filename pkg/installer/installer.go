@@ -464,6 +464,12 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 		}
 
 		finalPath := filepath.Join(i.options.BinDir, name)
+		if err := i.verifyInstalledArtifact(pkg, finalPath, resolution); err != nil {
+			if result != nil {
+				result.Status = types.InstallStatusFailed
+			}
+			return err
+		}
 		if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
 			if result != nil {
 				result.Status = types.InstallStatusFailed
@@ -507,6 +513,13 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 
 	if resolution.Package.Mode == "directory" && result != nil {
 		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.FolderName(actualVersion))
+	}
+
+	if err := i.verifyInstalledArtifact(pkg, finalPath, resolution); err != nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return err
 	}
 
 	if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
@@ -705,6 +718,32 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 	return evaluator.Execute(celPipeline)
 }
 
+// verifyInstalledArtifact rejects an install whose file the target platform cannot run.
+// Without it a release asset that is really a checksum file or an error page installs
+// silently, and only fails the next time the tool is invoked.
+func (i *Installer) verifyInstalledArtifact(pkg types.Package, finalPath string, resolution *types.Resolution) error {
+	if len(pkg.PostProcess) > 0 || pkg.Mode == "directory" || pkg.WrapperScript != "" {
+		return nil
+	}
+
+	assetName := filepath.Base(finalPath)
+	if resolution != nil && resolution.GitHubAsset != nil && resolution.GitHubAsset.AssetName != "" {
+		assetName = resolution.GitHubAsset.AssetName
+	}
+
+	err := VerifyExecutable(finalPath, assetName, i.getPlatform())
+	if err == nil {
+		return nil
+	}
+
+	// Leaving the rejected file at the target path is what turns a bad asset into a
+	// loop: the next run finds a broken binary, cannot read its version, and reinstalls.
+	if removeErr := os.Remove(finalPath); removeErr != nil && !os.IsNotExist(removeErr) {
+		return fmt.Errorf("%s: %w (and %s could not be removed: %v)", pkg.Name, err, finalPath, removeErr)
+	}
+	return fmt.Errorf("%s: %w", pkg.Name, err)
+}
+
 // finalizeInstallation makes the binary executable and reports success.
 func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg types.Package, t *task.Task) error {
 	// Make executable (skip for directories and when post-process was used)
@@ -744,8 +783,7 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 	// Skip for: cross-platform installs (can't execute), version aliases (nothing concrete to compare)
 	isCrossPlatform := (i.options.OSOverride != "" && i.options.OSOverride != runtime.GOOS) ||
 		(i.options.ArchOverride != "" && i.options.ArchOverride != runtime.GOARCH)
-	isAlias := resolvedVersion == "stable" || resolvedVersion == "latest" || resolvedVersion == "any"
-	if pkg.VersionCommand != "" && !isCrossPlatform && !isAlias {
+	if pkg.VersionCommand != "" && !isCrossPlatform && !versionpkg.IsAlias(resolvedVersion) {
 		t.SetDescription("Verifying installed version")
 
 		// Resolve binary path and version command using the same logic as CheckExistingInstallation

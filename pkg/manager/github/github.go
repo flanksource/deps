@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -402,9 +401,11 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(ctx context.Context, p
 
 	assetFilters := manager.GetAssetFilters(ctx)
 	templatedPattern := strings.Join(assetFilters, ",")
+	selection := manager.AssetSelection{Platform: plat, PackageName: pkg.Name}
+
 	var matched *restAsset
 	if len(assetFilters) > 0 {
-		matched = selectReleaseAsset(release.Assets, assetFilters)
+		matched = selectReleaseAsset(release.Assets, assetFilters, selection)
 	} else {
 		assetPattern, patternErr := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
 		if patternErr != nil {
@@ -425,18 +426,7 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(ctx context.Context, p
 			return nil, err
 		}
 
-		for i, asset := range release.Assets {
-			if asset.Name == templatedPattern {
-				matched = &release.Assets[i]
-				break
-			}
-			if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
-				if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
-					matched = &release.Assets[i]
-					break
-				}
-			}
-		}
+		matched = selectAssetByPattern(release.Assets, templatedPattern, selection)
 
 		if matched == nil {
 			assets := make([]manager.AssetInfo, len(release.Assets))
@@ -567,13 +557,15 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 		return nil, fmt.Errorf("failed to template asset pattern: %w", err)
 	}
 
+	selection := manager.AssetSelection{Platform: plat, PackageName: pkg.Name}
+
 	var filteredAsset *restAsset
 	if assetFilters := manager.GetAssetFilters(ctx); len(assetFilters) > 0 {
 		release, fetchErr := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+tagName)
 		if fetchErr != nil {
 			return nil, fmt.Errorf("failed to fetch release assets for filtering: %w", fetchErr)
 		}
-		filteredAsset = selectReleaseAsset(release.Assets, assetFilters)
+		filteredAsset = selectReleaseAsset(release.Assets, assetFilters, selection)
 		if filteredAsset == nil {
 			return nil, newAssetNotFoundError(pkg, tagName, strings.Join(assetFilters, ","), plat, release.Assets)
 		}
@@ -625,18 +617,7 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 				return nil, fmt.Errorf("failed to fetch release: %w", fetchErr)
 			}
 
-			for i, asset := range release.Assets {
-				if asset.Name == templatedPattern {
-					matchedAsset = &release.Assets[i]
-					break
-				}
-				if strings.Contains(templatedPattern, "*") || strings.Contains(templatedPattern, "?") {
-					if ok, _ := filepath.Match(templatedPattern, asset.Name); ok {
-						matchedAsset = &release.Assets[i]
-						break
-					}
-				}
-			}
+			matchedAsset = selectAssetByPattern(release.Assets, templatedPattern, selection)
 		}
 
 		if matchedAsset == nil {
@@ -692,9 +673,12 @@ func (m *GitHubReleaseManager) resolveViaGoGitHub(ctx context.Context, pkg types
 	}
 
 assetFound:
+	// versionForTemplate is what the download URL was built from, so it is what this
+	// resolution is actually for — reporting "latest"/"stable" back would leave callers
+	// with an alias they cannot compare or template against.
 	resolution := &types.Resolution{
 		Package:     pkg,
-		Version:     version,
+		Version:     versionForTemplate,
 		Platform:    plat,
 		DownloadURL: downloadURL,
 		IsArchive:   isArchive,
@@ -1339,18 +1323,7 @@ func stripChecksumPrefix(digest string) string {
 
 // isArchiveFile returns true if the filename appears to be an archive
 func isArchiveFile(filename string) bool {
-	archiveExtensions := []string{
-		".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz",
-		".zip", ".7z", ".rar",
-	}
-
-	filename = strings.ToLower(filename)
-	for _, ext := range archiveExtensions {
-		if strings.HasSuffix(filename, ext) {
-			return true
-		}
-	}
-	return false
+	return manager.IsCompressedAsset(filename)
 }
 
 // hasURLSchema returns true if the string appears to be a URL with schema
