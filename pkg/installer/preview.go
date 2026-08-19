@@ -124,6 +124,22 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	}
 	preview.RequestedVersion = requestedVersion
 
+	markExisting := func(existingVersion string) *InstallPreview {
+		preview.AlreadyInstalled = true
+		preview.ExistingVersion = existingVersion
+		if path, ok := i.getInstalledPath(name, pkg); ok {
+			preview.ExistingPath = path
+		}
+		return preview
+	}
+
+	if !i.options.Force && len(i.options.AssetFilters) == 0 {
+		existingVersion := i.checkExistingInstallation(t, name, pkg, requestedVersion)
+		if existingVersion != "" && versionpkg.Normalize(existingVersion) == versionpkg.Normalize(requestedVersion) {
+			return markExisting(existingVersion), nil
+		}
+	}
+
 	t.SetDescription(fmt.Sprintf("Resolving version %s", requestedVersion))
 	resolveCtx := i.managerContext(ctx)
 	resolvedVersion, err := i.resolveVersionConstraint(resolveCtx, mgr, pkg, requestedVersion, t)
@@ -133,29 +149,8 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 	preview.ResolvedVersion = resolvedVersion
 
 	if !i.options.Force && len(i.options.AssetFilters) == 0 {
-		if i.options.ArchOverride != "" {
-			binaryName := name
-			if pkg.BinaryName != "" {
-				binaryName = pkg.BinaryName
-			}
-			binPath := filepath.Join(i.options.BinDir, binaryName)
-			if nativeArch := pipeline.DetectBinaryArch(binPath); nativeArch != "" && !archMatches(nativeArch, i.options.ArchOverride) {
-				t.Debugf("Existing %s is %s but %s requested, reinstalling", binaryName, nativeArch, i.options.ArchOverride)
-			} else if existingVersion := versionpkg.CheckExistingInstallation(t, name, pkg, resolvedVersion, i.options.BinDir, i.options.OSOverride); existingVersion != "" {
-				preview.AlreadyInstalled = true
-				preview.ExistingVersion = existingVersion
-				if path, ok := i.getInstalledPath(name, pkg); ok {
-					preview.ExistingPath = path
-				}
-				return preview, nil
-			}
-		} else if existingVersion := versionpkg.CheckExistingInstallation(t, name, pkg, resolvedVersion, i.options.BinDir, i.options.OSOverride); existingVersion != "" {
-			preview.AlreadyInstalled = true
-			preview.ExistingVersion = existingVersion
-			if path, ok := i.getInstalledPath(name, pkg); ok {
-				preview.ExistingPath = path
-			}
-			return preview, nil
+		if existingVersion := i.checkExistingInstallation(t, name, pkg, resolvedVersion); existingVersion != "" {
+			return markExisting(existingVersion), nil
 		}
 	}
 
@@ -205,6 +200,25 @@ func (i *Installer) findExistingAnyInstallation(name string, pkg types.Package) 
 	}
 
 	return "", "", false
+}
+
+func (i *Installer) checkExistingInstallation(t *task.Task, name string, pkg types.Package, requestedVersion string) string {
+	if i.options.ArchOverride != "" {
+		binaryName := name
+		if pkg.BinaryName != "" {
+			binaryName = pkg.BinaryName
+		}
+		if i.options.OSOverride == "windows" && filepath.Ext(binaryName) == "" {
+			binaryName += ".exe"
+		}
+		binPath := filepath.Join(i.options.BinDir, binaryName)
+		if nativeArch := pipeline.DetectBinaryArch(binPath); nativeArch != "" && !archMatches(nativeArch, i.options.ArchOverride) {
+			t.Debugf("Existing %s is %s but %s requested, reinstalling", binaryName, nativeArch, i.options.ArchOverride)
+			return ""
+		}
+	}
+
+	return versionpkg.CheckExistingInstallation(t, name, pkg, requestedVersion, i.options.BinDir, i.options.OSOverride)
 }
 
 func (i *Installer) getInstalledPath(name string, pkg types.Package) (string, bool) {
