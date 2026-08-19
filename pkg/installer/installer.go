@@ -205,23 +205,12 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 					return nil, err
 				}
 
-				// Resolve version constraint if not already resolved from lock file
-				resolvedVersion := version
-				if resolvedVersion == "" {
-					task.V(3).Infof("Resolving version constraint '%s' for %s", depConstraint, depName)
-					mgr, err := i.managers.GetForPackage(pkg)
-					if err != nil {
-						return nil, fmt.Errorf("failed to get package manager for %s: %w", depName, err)
-					}
-
-					resolvedVersion, err = i.resolveVersionConstraint(i.managerContext(ctx.Context), mgr, pkg, depConstraint, task)
-					if err != nil {
-						return nil, fmt.Errorf("failed to resolve version constraint for %s: %w", depName, err)
-					}
-					task.Infof("Resolved %s version: %s -> %s", depName, depConstraint, resolvedVersion)
+				requestedVersion := version
+				if requestedVersion == "" {
+					requestedVersion = depConstraint
 				}
 
-				return nil, i.installWithNewPackageManager(ctx.Context, depName, resolvedVersion, pkg, task)
+				return nil, i.installWithNewPackageManager(ctx.Context, depName, requestedVersion, pkg, task)
 			} else {
 				return nil, fmt.Errorf("dependency %s not found in registry - please add it to deps.yaml registry section", depName)
 			}

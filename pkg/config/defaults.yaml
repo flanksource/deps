@@ -331,7 +331,7 @@ registry:
             linux-arm64: postgrest-{{.tag}}-ubuntu-aarch64.tar.xz
             windows-amd64: postgrest-{{.tag}}-windows-x86-64.zip
         version_command: --help
-        version_regex: .*PostgREST\s+v?(\d+\.\d+\.\d+)
+        version_regex: .*PostgREST\s+v?(\d+\.\d+(\.\d+)?)
     wal-g:
         name: wal-g
 

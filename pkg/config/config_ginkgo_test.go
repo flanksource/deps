@@ -43,6 +43,21 @@ var _ = Describe("Config", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(installed).To(Equal("0.6.7"))
 		})
+
+		It("should parse canonical and legacy PostgREST versions", func() {
+			config, err := LoadDefaultConfig()
+			Expect(err).ToNot(HaveOccurred())
+
+			pattern := config.Registry["postgrest"].VersionRegex
+			for output, expected := range map[string]string{
+				"PostgREST 14.6":   "14.6",
+				"PostgREST 13.0.5": "13.0.5",
+			} {
+				installed, err := version.ExtractFromOutput(output, pattern)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(installed).To(Equal(expected))
+			}
+		})
 	})
 
 	Describe("Package Defaults", func() {
