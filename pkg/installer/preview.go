@@ -208,6 +208,9 @@ func (i *Installer) checkExistingInstallation(t *task.Task, name string, pkg typ
 		if pkg.BinaryName != "" {
 			binaryName = pkg.BinaryName
 		}
+		if i.options.OSOverride == "windows" && filepath.Ext(binaryName) == "" {
+			binaryName += ".exe"
+		}
 		binPath := filepath.Join(i.options.BinDir, binaryName)
 		if nativeArch := pipeline.DetectBinaryArch(binPath); nativeArch != "" && !archMatches(nativeArch, i.options.ArchOverride) {
 			t.Debugf("Existing %s is %s but %s requested, reinstalling", binaryName, nativeArch, i.options.ArchOverride)
