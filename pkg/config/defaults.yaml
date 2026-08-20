@@ -394,11 +394,11 @@ registry:
         binary_path: envtest
 
     controller-gen:
-        name: envtest
+        name: controller-gen
         repo: kubernetes-sigs/controller-tools
         asset_patterns:
-            "*": "{{.tag}}-{{.os}}-{{.arch}}.tar.gz"
-        checksum_file: "{{.asset}}.sha512"
+            "darwin-*,linux-*": "controller-gen-{{.os}}-{{.arch}}"
+            "windows-*": "controller-gen-{{.os}}-{{.arch}}.exe"
         binary_path: controller-gen
 
     kube-apiserver:
