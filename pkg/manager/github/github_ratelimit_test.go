@@ -3,7 +3,11 @@ package github
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 
+	configpkg "github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
@@ -253,6 +257,24 @@ var _ = Describe("Rate Limit Fallback", func() {
 		It("defers 'stable' to the REST path", func() {
 			_, err := mgr.resolveWithoutAPI(ctx, pkg, "flanksource", "mission-control-plugins", "stable", plat)
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	Describe("embedded registry", func() {
+		It("resolves controller-gen v0.19.0 to its published binary", func() {
+			useGitHubRESTTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				Expect(req.URL.Path).To(Equal("/repos/kubernetes-sigs/controller-tools/releases/tags/v0.19.0"))
+				body := `{"tag_name":"v0.19.0","assets":[{"name":"controller-gen-linux-amd64","browser_download_url":"https://github.com/kubernetes-sigs/controller-tools/releases/download/v0.19.0/controller-gen-linux-amd64","digest":"sha256:5df5d2cced0621d7d8d8040ef20482f5c6e2ced32f1b1ad825f1bdf52f433161"}]}`
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			}))
+
+			cfg, err := configpkg.LoadDefaultConfig()
+			Expect(err).NotTo(HaveOccurred())
+
+			resolution, err := mgr.Resolve(ctx, cfg.Registry["controller-gen"], "v0.19.0", platform.Platform{OS: "linux", Arch: "amd64"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolution.DownloadURL).To(Equal("https://github.com/kubernetes-sigs/controller-tools/releases/download/v0.19.0/controller-gen-linux-amd64"))
+			Expect(resolution.Checksum).To(Equal("sha256:5df5d2cced0621d7d8d8040ef20482f5c6e2ced32f1b1ad825f1bdf52f433161"))
 		})
 	})
 
