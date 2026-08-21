@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/flanksource/clicky/task"
+	"golang.org/x/term"
 )
 
 // SystemInstallResult contains information about the system installation result
@@ -35,8 +36,12 @@ func GetSystemInstallerType(filePath string) string {
 	switch ext {
 	case ".pkg":
 		return "macos_installer"
+	case ".dmg":
+		return "macos_disk_image"
 	case ".msi":
 		return "windows_installer"
+	case ".deb":
+		return "debian_package"
 	default:
 		return "unknown"
 	}
@@ -53,8 +58,12 @@ func InstallSystemPackage(installerPath, destDir string, opts *SystemInstallOpti
 	switch installerType {
 	case "macos_installer":
 		return InstallPkg(installerPath, destDir, opts)
+	case "macos_disk_image":
+		return InstallDmg(installerPath, destDir, opts)
 	case "windows_installer":
 		return InstallMsi(installerPath, destDir, opts)
+	case "debian_package":
+		return InstallDeb(installerPath, destDir, opts)
 	default:
 		return nil, fmt.Errorf("unsupported installer type: %s", filepath.Ext(installerPath))
 	}
@@ -285,6 +294,19 @@ func findInstalledBinary(toolName string, t *task.Task) (string, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// CanPrompt reports whether stdin is a terminal a question can be asked at.
+//
+// Without this a system installation started from a script or a task runner
+// reads EOF from the confirmation prompt and reports "cancelled by user",
+// which is a confusing way to say "nobody was there to ask".
+//
+// It asks whether stdin is a terminal, not whether it is a character device:
+// /dev/null is a character device too, so the weaker test calls a redirected
+// run interactive and lets it fall through to the prompt it cannot answer.
+func CanPrompt() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // promptForConfirmation asks the user for confirmation
