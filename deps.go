@@ -49,6 +49,7 @@ var (
 	WithTmpDir         = installer.WithTmpDir
 	WithCacheDir       = installer.WithCacheDir
 	WithForce          = installer.WithForce
+	WithAssumeYes      = installer.WithAssumeYes
 	WithSkipChecksum   = installer.WithSkipChecksum
 	WithStrictChecksum = installer.WithStrictChecksum
 	WithDebug          = installer.WithDebug

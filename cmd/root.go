@@ -24,6 +24,7 @@ import (
 	_ "github.com/flanksource/deps/pkg/manager/gitlab"
 	_ "github.com/flanksource/deps/pkg/manager/golang"
 	_ "github.com/flanksource/deps/pkg/manager/maven"
+	_ "github.com/flanksource/deps/pkg/manager/omnitruck"
 	_ "github.com/flanksource/deps/pkg/manager/url"
 )
 
@@ -33,6 +34,7 @@ var (
 	tmpDir         string
 	cacheDir       string
 	force          bool
+	assumeYes      bool
 	skipChecksum   bool
 	strictChecksum bool
 	verbose        bool
@@ -171,6 +173,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&tmpDir, "tmp-dir", os.TempDir(), "Directory for temporary files (will not be cleaned up on exit)")
 	rootCmd.PersistentFlags().StringVar(&cacheDir, "cache-dir", "", "Directory for download cache (default: ~/.deps/cache, empty to disable)")
 	rootCmd.PersistentFlags().BoolVar(&force, "force", false, "Force reinstall even if binary exists")
+	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "Accept the system-wide installation prompt without asking")
 	rootCmd.PersistentFlags().BoolVar(&skipChecksum, "skip-checksum", false, "Skip checksum verification")
 	rootCmd.PersistentFlags().BoolVar(&strictChecksum, "strict-checksum", true, "Fail installation when checksum verification fails (default: true)")
 	rootCmd.PersistentFlags().StringVar(&osOverride, "os", runtime.GOOS, "Target OS (linux, darwin, windows)")

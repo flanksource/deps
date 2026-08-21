@@ -22,6 +22,16 @@ type InstallOptions struct {
 	IterateVersions int      // Number of releases to try when 'latest' has no matching assets (0 = disabled)
 	AssetFilters    []string // MatchItems patterns for GitHub release asset names
 	ReleaseFilters  []string // MatchItems patterns for GitHub release tags or titles
+	// AssumeYes accepts the system-wide installation prompt without asking.
+	//
+	// A handful of packages are operating-system packages that can only be
+	// installed to an absolute prefix, and installing one mutates the machine
+	// outside bin-dir. That is worth confirming interactively, but a
+	// programmatic caller has no terminal to confirm at — without an explicit
+	// opt-in it would block on a prompt nobody can see. Requiring the flag
+	// keeps "install this system-wide" a decision someone made.
+	AssumeYes bool
+
 	// Legacy compatibility
 	VersionCheck types.VersionCheckMode
 	Timeout      time.Duration
@@ -64,6 +74,14 @@ func WithCacheDir(dir string) InstallOption {
 func WithForce(force bool) InstallOption {
 	return func(opts *InstallOptions) {
 		opts.Force = force
+	}
+}
+
+// WithAssumeYes accepts the system-wide installation prompt without asking.
+// Required for any caller that has no terminal to answer it.
+func WithAssumeYes(assume bool) InstallOption {
+	return func(opts *InstallOptions) {
+		opts.AssumeYes = assume
 	}
 }
 

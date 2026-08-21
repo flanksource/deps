@@ -32,8 +32,12 @@ func GetExtension(url string) string {
 		return ".jar"
 	case strings.HasSuffix(lower, ".pkg"):
 		return ".pkg"
+	case strings.HasSuffix(lower, ".dmg"):
+		return ".dmg"
 	case strings.HasSuffix(lower, ".msi"):
 		return ".msi"
+	case strings.HasSuffix(lower, ".deb"):
+		return ".deb"
 	default:
 		// Fall back to filepath.Ext for other extensions
 		return filepath.Ext(url)

@@ -1118,3 +1118,23 @@ registry:
         url_template: "https://cache.agilebits.com/dist/1P/op2/pkg/v{{.version}}/op_{{.os}}_{{.arch}}_v{{.version}}.zip"
         version_command: --version
         version_regex: '([0-9]+\.[0-9]+\.[0-9]+)'
+
+    # CINC Auditor — the license-free build of Chef InSpec, published through
+    # Omnitruck as an omnibus operating-system package. It only runs from
+    # /opt/cinc-auditor: the build links that prefix into the interpreter's
+    # dylib paths and its $LOAD_PATH, so it is installed system-wide rather
+    # than unpacked into bin-dir. The package's own postinstall then symlinks
+    # cinc-auditor into /usr/local/bin (macOS) or /usr/bin (Linux), which is
+    # where pre_installed finds it afterwards.
+    cinc-auditor:
+        name: cinc-auditor
+        manager: omnitruck
+        extra:
+            channel: stable
+            product: cinc-auditor
+            base_url: "https://omnitruck.cinc.sh"
+        pre_installed:
+            - cinc-auditor
+            - inspec
+        version_command: version
+        version_regex: '([0-9]+\.[0-9]+\.[0-9]+)'

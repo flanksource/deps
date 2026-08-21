@@ -15,6 +15,7 @@ func newCLIInstaller() *installer.Installer {
 		installer.WithTmpDir(tmpDir),
 		installer.WithCacheDir(cacheDirToUse),
 		installer.WithForce(force),
+		installer.WithAssumeYes(assumeYes),
 		installer.WithSkipChecksum(skipChecksum),
 		installer.WithStrictChecksum(strictChecksum),
 		installer.WithDebug(debug),
