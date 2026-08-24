@@ -101,13 +101,14 @@ func awaitDetachedReady(name, stateDir, logPath string, pid int, exited <-chan e
 	deadline := time.Now().Add(timeout)
 	stateFile := filepath.Join(stateDir, name, "state.yaml")
 	for time.Now().Before(deadline) {
-		if info, err := os.Stat(stateFile); err == nil && info.ModTime().After(spawned) {
-			if st, err := state.Load(stateDir, name); err == nil && st.Ready {
-				return nil
-			}
+		if detachedReady(stateDir, name, stateFile, spawned) {
+			return nil
 		}
 		select {
 		case err := <-exited:
+			if detachedReady(stateDir, name, stateFile, spawned) {
+				return nil
+			}
 			return &startFailure{
 				code: supervisorExitCode(err),
 				err:  fmt.Errorf("%s failed to start, see %s:\n%s", name, logPath, tailFile(logPath, 20)),
@@ -117,4 +118,13 @@ func awaitDetachedReady(name, stateDir, logPath string, pid int, exited <-chan e
 	}
 	return fmt.Errorf("timed out after %s waiting for %s to become ready; it is still starting (supervisor pid %d), follow it with `deps-start logs %s -f`",
 		timeout, name, pid, name)
+}
+
+func detachedReady(stateDir, name, stateFile string, spawned time.Time) bool {
+	info, err := os.Stat(stateFile)
+	if err != nil || !info.ModTime().After(spawned) {
+		return false
+	}
+	st, err := state.Load(stateDir, name)
+	return err == nil && st.Ready
 }
