@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	osexec "os/exec"
+	"time"
 
+	"github.com/flanksource/deps/start/state"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -42,5 +44,24 @@ var _ = Describe("startFailure", func() {
 		Expect(failure.code).To(Equal(3))
 		Expect(err.Error()).To(Equal(cause.Error()))
 		Expect(errors.Is(err, cause)).To(BeTrue())
+	})
+})
+
+var _ = Describe("awaitDetachedReady", func() {
+	It("accepts a ready state published immediately before a clean supervisor exit", func() {
+		stateDir := GinkgoT().TempDir()
+		exited := make(chan error, 1)
+		saved := make(chan error, 1)
+		spawned := time.Now()
+
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			saved <- (&state.State{Name: "opensearch", Ready: true}).Save(stateDir)
+			close(exited)
+		}()
+
+		err := awaitDetachedReady("opensearch", stateDir, "supervisor.log", 1234, exited, spawned, time.Second)
+		Expect(<-saved).To(Succeed())
+		Expect(err).ToNot(HaveOccurred())
 	})
 })
