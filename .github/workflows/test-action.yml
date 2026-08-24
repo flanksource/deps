@@ -10,6 +10,83 @@ permissions:
   contents: read
 
 jobs:
+  test-services:
+    name: Test deps-start services
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start PostgreSQL, ClickHouse, and OpenSearch
+        id: start-services
+        uses: ./
+        with:
+          services: |
+            postgres:
+              version: "17"
+              runtime: docker
+              port: 15432
+              volume_mode: ephemeral
+            clickhouse:
+              version: "26.2"
+              runtime: binary
+              port: 19000
+              wait_timeout: 4m
+            opensearch:
+              version: "3.8.0"
+              runtime: docker
+              port: 19200
+              volume_mode: ephemeral
+              wait_timeout: 4m
+              parameters:
+                jvm-memory: 512m
+          version: latest
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify service output and status
+        shell: bash
+        env:
+          SERVICES_STARTED: ${{ steps.start-services.outputs.services-started }}
+        run: |
+          deps-start --version
+          printf '%s\n' "$SERVICES_STARTED" | yq -e -p=json '
+            length == 3 and
+            .[0].name == "clickhouse" and
+            .[0].runtime == "binary" and
+            .[0].status == "running" and
+            (.[0].version | test("^26\\.2\\.")) and
+            .[0].ports.native == 19000 and
+            .[0].connection.type == "clickhouse" and
+            (.[0].connection.url | test("^clickhouse://default:.+@localhost:19000/default$")) and
+            .[1].name == "opensearch" and
+            .[1].runtime == "docker" and
+            .[1].status == "running" and
+            .[1].version == "3.8.0" and
+            .[1].ports.http == 19200 and
+            .[1].parameters."jvm-memory" == "512m" and
+            .[1].connection.url == "http://localhost:19200" and
+            .[2].name == "postgres" and
+            .[2].runtime == "docker" and
+            .[2].status == "running" and
+            (.[2].version | test("^17\\.")) and
+            .[2].ports.postgres == 15432 and
+            .[2].connection.type == "postgres" and
+            (.[2].connection.url | test("^postgres://postgres:.+@localhost:15432/postgres\\?sslmode=disable$"))
+          '
+          deps-start status clickhouse
+          deps-start status opensearch
+          deps-start status postgres
+
+      - name: Stop services
+        if: always()
+        shell: bash
+        run: |
+          if command -v deps-start >/dev/null 2>&1; then
+            deps-start stop clickhouse opensearch postgres
+          fi
+
   test-action:
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -64,5 +141,11 @@ jobs:
 
       - name: Check action outputs
         shell: bash
+        env:
+          SERVICES_STARTED: ${{ steps.install-tools.outputs.services-started }}
         run: |
+          if [ "$SERVICES_STARTED" != "[]" ]; then
+            echo "Expected no started services, got: $SERVICES_STARTED" >&2
+            exit 1
+          fi
           echo "Tools installed: ${{ steps.install-tools.outputs.tools-installed }}"

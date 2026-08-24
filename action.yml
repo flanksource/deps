@@ -1,6 +1,6 @@
 ---
-name: "Install Tools with deps"
-description: "Automatically install development tools using the deps tool"
+name: "Install Tools and Services with deps"
+description: "Automatically install development tools and start local services using deps"
 author: "Flanksource"
 
 branding:
@@ -10,9 +10,14 @@ branding:
 inputs:
   tools:
     description: "List of tools to install (comma-separated or multiline)"
-    required: true
+    required: false
+    default: ""
+  services:
+    description: "YAML map of deps-start services and their startup options"
+    required: false
+    default: ""
   version:
-    description: "Version of deps to use (e.g., v1.0.0 or latest)"
+    description: "Version of deps and deps-start to use (e.g., v1.0.39 or latest)"
     required: false
     default: "latest"
   GITHUB_TOKEN:
@@ -23,6 +28,9 @@ outputs:
   tools-installed:
     description: "JSON array of installed tools with versions"
     value: ${{ steps.report.outputs.tools-installed }}
+  services-started:
+    description: "JSON array of started services and their connections"
+    value: ${{ steps.services.outputs.services-started }}
 
 runs:
   using: "composite"
@@ -50,10 +58,12 @@ runs:
       id: cache-deps
       uses: actions/cache@v4
       with:
-        path: ${{ steps.cache-paths.outputs.deps-bin }}/deps
+        path: |
+          ${{ steps.cache-paths.outputs.deps-bin }}/deps
+          ${{ steps.cache-paths.outputs.deps-bin }}/deps-start
         key: >-
           deps-binary-${{ runner.os }}-${{ runner.arch }}-
-          ${{ inputs.deps-version }}
+          ${{ inputs.version }}
 
     - name: Restore tools cache
       id: cache-tools
@@ -145,21 +155,109 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        TOOLS_INPUT: ${{ inputs.tools }}
       run: |
-        TOOLS_INPUT="${{ inputs.tools }}"
-
         # Parse tools (handle both comma-separated and multiline)
-        TOOLS=$(echo "$TOOLS_INPUT" | tr ',' ' ' | tr -d '\r' | tr '\n' ' ' | \
-          sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
-
-        echo "Installing tools: $TOOLS"
+        TOOLS_STRING=$(printf '%s\n' "$TOOLS_INPUT" | tr ',' ' ' | tr -d '\r' | tr '\n' ' ' | \
+          sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        TOOLS=()
+        read -r -a TOOLS < <(printf '%s\n' "$TOOLS_STRING")
 
         # Install all tools in a single call
-        if [ -n "$TOOLS" ]; then
-          deps install --no-progress $TOOLS
-
-          if [ $? -ne 0 ]; then
+        if [ "${#TOOLS[@]}" -gt 0 ]; then
+          echo "Installing tools: ${TOOLS[*]}"
+          if ! deps install --no-progress "${TOOLS[@]}"; then
             echo "Failed to install tools"
             exit 1
           fi
         fi
+
+    - name: Install deps-start and start services
+      id: services
+      shell: bash
+      env:
+        DEPS_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        SERVICES_INPUT: ${{ inputs.services }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${SERVICES_INPUT//[[:space:]]/}" ]; then
+          echo 'services-started=[]' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          echo "deps-start services are not supported on Windows runners" >&2
+          exit 1
+        fi
+
+        deps install --no-progress "deps-start@$DEPS_VERSION" yq
+        deps-start --version
+
+        ROOT_TYPE=$(printf '%s\n' "$SERVICES_INPUT" | yq -r 'type')
+        if [ "$ROOT_TYPE" != "!!map" ]; then
+          echo "services must be a YAML map keyed by service name" >&2
+          exit 1
+        fi
+
+        INVALID_SERVICES=$(printf '%s\n' "$SERVICES_INPUT" | yq -r '
+          to_entries | .[] |
+          select(.value != null and (.value | type) != "!!map") |
+          .key
+        ')
+        if [ -n "$INVALID_SERVICES" ]; then
+          echo "service options must be YAML maps: $INVALID_SERVICES" >&2
+          exit 1
+        fi
+
+        SERVICES_JSON="["
+        SEPARATOR=""
+        while IFS= read -r SERVICE_NAME; do
+          while IFS= read -r FIELD; do
+            case "$FIELD" in
+              bind|data_dir|namespace|parameters|port|runtime|update|version|volume_mode|wait_timeout)
+                ;;
+              *)
+                echo "unsupported option for $SERVICE_NAME: $FIELD" >&2
+                exit 1
+                ;;
+            esac
+          done < <(printf '%s\n' "$SERVICES_INPUT" | SERVICE_NAME="$SERVICE_NAME" yq -r '
+            .[strenv(SERVICE_NAME)] // {} | keys | sort | .[]
+          ')
+
+          PARAMETER_TYPE=$(printf '%s\n' "$SERVICES_INPUT" | SERVICE_NAME="$SERVICE_NAME" yq -r '
+            (.[strenv(SERVICE_NAME)] // {}).parameters | type
+          ')
+          case "$PARAMETER_TYPE" in
+            "!!map"|"!!null")
+              ;;
+            *)
+              echo "parameters for $SERVICE_NAME must be a YAML map" >&2
+              exit 1
+              ;;
+          esac
+
+          SERVICE_ARGS=("$SERVICE_NAME")
+          while IFS= read -r ARG; do
+            SERVICE_ARGS+=("$ARG")
+          done < <(printf '%s\n' "$SERVICES_INPUT" | SERVICE_NAME="$SERVICE_NAME" yq -r '
+            .[strenv(SERVICE_NAME)] // {} |
+            (
+              to_entries | .[] | select(.key != "parameters") |
+              "--" + (.key | sub("_"; "-")) + "=" + (.value | tostring)
+            ),
+            (
+              .parameters // {} | to_entries | .[] |
+              "--" + .key + "=" + (.value | tostring)
+            )
+          ')
+
+          SERVICE_JSON=$(deps-start "${SERVICE_ARGS[@]}" --output=json | yq -I=0 -o=json '.')
+          SERVICES_JSON="${SERVICES_JSON}${SEPARATOR}${SERVICE_JSON}"
+          SEPARATOR=","
+        done < <(printf '%s\n' "$SERVICES_INPUT" | yq -r 'keys | sort | .[]')
+
+        SERVICES_JSON="${SERVICES_JSON}]"
+        echo "services-started=$SERVICES_JSON" >> "$GITHUB_OUTPUT"
