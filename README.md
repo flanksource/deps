@@ -118,7 +118,7 @@ result, err := deps.RunPython("script.py", deps.RunOptions{
 
 ## Usage: GitHub Action
 
-The deps GitHub Action automatically installs tools across Linux, macOS, and Windows runners with intelligent caching and parallel downloads.
+The deps GitHub Action installs tools across Linux, macOS, and Windows runners with intelligent caching and parallel downloads. On Linux and macOS it can also install `deps-start`, start local services, and wait for them to become ready.
 
 ### Basic Usage
 
@@ -177,15 +177,53 @@ jobs:
       yq@v4.40.5
       kubectl@v1.28.0
       helm@v3.13.0
-    version: v1.0.0  # Pin deps version
+    version: v1.0.39  # Pin both deps and deps-start
 ```
+
+### Start Services
+
+`services` is a YAML map keyed by service name. Each service accepts the standard `deps-start` options `version`, `runtime`, `port`, `bind`, `namespace`, `data_dir`, `volume_mode`, `update`, and `wait_timeout`. Service-specific flags go under `parameters`.
+
+```yaml
+- name: Start local services
+  id: services
+  uses: flanksource/deps@v1
+  with:
+    services: |
+      postgres:
+        version: "17"
+        runtime: docker
+        port: 15432
+        volume_mode: ephemeral
+      clickhouse:
+        version: "26.2"
+        runtime: binary
+        port: 19000
+        wait_timeout: 4m
+      opensearch:
+        version: "3.8.0"
+        runtime: docker
+        port: 19200
+        volume_mode: ephemeral
+        wait_timeout: 4m
+        parameters:
+          jvm-memory: 512m
+
+- name: Use service connections
+  env:
+    SERVICES_STARTED: ${{ steps.services.outputs.services-started }}
+  run: printf '%s\n' "$SERVICES_STARTED" | yq -p=json
+```
+
+Services start sequentially in service-name order after tool installation and remain available to later job steps. Startup logs and readiness progress are written to stderr; the action captures each service's JSON result in `services-started`. That output can contain generated credentials, so avoid printing it in shared logs. Service startup is not supported on Windows because `deps-start` has no Windows release artifact and Windows does not support its background mode.
 
 ### Action Inputs
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `tools` | List of tools to install (comma-separated or multiline) | Yes | - |
-| `version` | Version of deps to use (e.g., `v1.0.0` or `latest`) | No | `latest` |
+| `tools` | List of tools to install (comma-separated or multiline) | No | `""` |
+| `services` | YAML map of `deps-start` services and startup options | No | `""` |
+| `version` | Version of both deps and deps-start to use (e.g., `v1.0.39` or `latest`) | No | `latest` |
 | `GITHUB_TOKEN` | GitHub token for accessing the API and avoiding rate limit | No | - |
 
 ### Action Outputs
@@ -193,11 +231,12 @@ jobs:
 | Output | Description |
 |--------|-------------|
 | `tools-installed` | JSON array of installed tools with versions |
+| `services-started` | JSON array of started service details and connections; `[]` when no services were requested |
 
 ### Caching
 
 The action automatically caches:
-- **deps binary**: Cached per OS/arch/version
+- **deps and deps-start binaries**: Cached per OS/arch/version
 - **Installed tools**: Cached per OS/arch/tool list
 
 No manual cache configuration needed!

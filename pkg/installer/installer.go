@@ -15,13 +15,14 @@ import (
 	"github.com/flanksource/deps/pkg/download"
 	"github.com/flanksource/deps/pkg/extract"
 	"github.com/flanksource/deps/pkg/manager"
-	_ "github.com/flanksource/deps/pkg/manager/apache" // Register apache manager
-	_ "github.com/flanksource/deps/pkg/manager/direct" // Register direct manager
-	_ "github.com/flanksource/deps/pkg/manager/github" // Register github managers
-	_ "github.com/flanksource/deps/pkg/manager/gitlab" // Register gitlab manager
-	_ "github.com/flanksource/deps/pkg/manager/golang" // Register golang manager
-	_ "github.com/flanksource/deps/pkg/manager/maven"  // Register maven manager
-	_ "github.com/flanksource/deps/pkg/manager/url"    // Register url manager
+	_ "github.com/flanksource/deps/pkg/manager/apache"    // Register apache manager
+	_ "github.com/flanksource/deps/pkg/manager/direct"    // Register direct manager
+	_ "github.com/flanksource/deps/pkg/manager/github"    // Register github managers
+	_ "github.com/flanksource/deps/pkg/manager/gitlab"    // Register gitlab manager
+	_ "github.com/flanksource/deps/pkg/manager/golang"    // Register golang manager
+	_ "github.com/flanksource/deps/pkg/manager/maven"     // Register maven manager
+	_ "github.com/flanksource/deps/pkg/manager/omnitruck" // Register omnitruck manager
+	_ "github.com/flanksource/deps/pkg/manager/url"       // Register url manager
 	"github.com/flanksource/deps/pkg/pipeline"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/plugin"
@@ -464,6 +465,12 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 		}
 
 		finalPath := filepath.Join(i.options.BinDir, name)
+		if err := i.verifyInstalledArtifact(pkg, finalPath, resolution); err != nil {
+			if result != nil {
+				result.Status = types.InstallStatusFailed
+			}
+			return err
+		}
 		if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
 			if result != nil {
 				result.Status = types.InstallStatusFailed
@@ -480,6 +487,20 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 			}
 		}
 		return nil
+	}
+
+	// Refuse before the download rather than after it. Whether an artifact is an
+	// operating-system package is known from its URL, and a system install needs
+	// a confirmation a non-interactive caller cannot give — spending a large
+	// download first only to discover nobody can answer wastes time and
+	// bandwidth, and buries the reason under the download's own output.
+	if extract.IsSystemInstallerExtension(extract.GetExtension(resolution.DownloadURL)) {
+		if err := i.checkCanInstallSystemWide(name); err != nil {
+			if result != nil {
+				result.Status = types.InstallStatusFailed
+			}
+			return err
+		}
 	}
 
 	downloadPath, err := i.downloadPackage(ctx, name, actualVersion, resolution, t)
@@ -507,6 +528,13 @@ func (i *Installer) executePackageInstallation(ctx context.Context, name string,
 
 	if resolution.Package.Mode == "directory" && result != nil {
 		result.AppDir = filepath.Join(i.options.AppDir, resolution.Package.FolderName(actualVersion))
+	}
+
+	if err := i.verifyInstalledArtifact(pkg, finalPath, resolution); err != nil {
+		if result != nil {
+			result.Status = types.InstallStatusFailed
+		}
+		return err
 	}
 
 	if err := i.finalizeInstallation(actualVersion, finalPath, pkg, t); err != nil {
@@ -633,7 +661,7 @@ func (i *Installer) downloadPackage(ctx context.Context, name, resolvedVersion s
 
 	// Get file extension to determine download strategy
 	ext := extract.GetExtension(resolution.DownloadURL)
-	isSystemInstaller := strings.ToLower(ext) == ".pkg" || strings.ToLower(ext) == ".msi"
+	isSystemInstaller := extract.IsSystemInstallerExtension(ext)
 
 	if resolution.IsArchive || isSystemInstaller {
 		// Download to temp file with extension preserved (for archives and installers)
@@ -705,6 +733,32 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 	return evaluator.Execute(celPipeline)
 }
 
+// verifyInstalledArtifact rejects an install whose file the target platform cannot run.
+// Without it a release asset that is really a checksum file or an error page installs
+// silently, and only fails the next time the tool is invoked.
+func (i *Installer) verifyInstalledArtifact(pkg types.Package, finalPath string, resolution *types.Resolution) error {
+	if len(pkg.PostProcess) > 0 || pkg.Mode == "directory" || pkg.WrapperScript != "" {
+		return nil
+	}
+
+	assetName := filepath.Base(finalPath)
+	if resolution != nil && resolution.GitHubAsset != nil && resolution.GitHubAsset.AssetName != "" {
+		assetName = resolution.GitHubAsset.AssetName
+	}
+
+	err := VerifyExecutable(finalPath, assetName, i.getPlatform())
+	if err == nil {
+		return nil
+	}
+
+	// Leaving the rejected file at the target path is what turns a bad asset into a
+	// loop: the next run finds a broken binary, cannot read its version, and reinstalls.
+	if removeErr := os.Remove(finalPath); removeErr != nil && !os.IsNotExist(removeErr) {
+		return fmt.Errorf("%s: %w (and %s could not be removed: %v)", pkg.Name, err, finalPath, removeErr)
+	}
+	return fmt.Errorf("%s: %w", pkg.Name, err)
+}
+
 // finalizeInstallation makes the binary executable and reports success.
 func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg types.Package, t *task.Task) error {
 	// Make executable (skip for directories and when post-process was used)
@@ -744,8 +798,7 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 	// Skip for: cross-platform installs (can't execute), version aliases (nothing concrete to compare)
 	isCrossPlatform := (i.options.OSOverride != "" && i.options.OSOverride != runtime.GOOS) ||
 		(i.options.ArchOverride != "" && i.options.ArchOverride != runtime.GOARCH)
-	isAlias := resolvedVersion == "stable" || resolvedVersion == "latest" || resolvedVersion == "any"
-	if pkg.VersionCommand != "" && !isCrossPlatform && !isAlias {
+	if pkg.VersionCommand != "" && !isCrossPlatform && !versionpkg.IsAlias(resolvedVersion) {
 		t.SetDescription("Verifying installed version")
 
 		// Resolve binary path and version command using the same logic as CheckExistingInstallation
@@ -874,11 +927,32 @@ func (i *Installer) handleArchiveInstallation(downloadPath, name, resolvedVersio
 	return finalPath, nil
 }
 
-// handleSystemInstaller handles system installer files (.pkg/.msi)
+// checkCanInstallSystemWide reports whether a system installation can proceed.
+//
+// A system install mutates the machine outside bin-dir, so it is confirmed
+// rather than assumed. Reading that confirmation needs a terminal: without one
+// the prompt reads EOF and reports "cancelled by user", which is a confusing
+// way to say nobody was there to ask.
+func (i *Installer) checkCanInstallSystemWide(name string) error {
+	if i.options.AssumeYes || system.CanPrompt() {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s is an operating-system package and installs system-wide, which needs confirmation, "+
+			"but stdin is not a terminal: re-run interactively or pass --yes", name)
+}
+
+// handleSystemInstaller handles system installer files (.pkg/.dmg/.msi/.deb)
 func (i *Installer) handleSystemInstaller(installerPath, name string, t *task.Task) (string, error) {
+	// Re-checked here because a cached artifact reaches this point without
+	// passing through the download step's check.
+	if err := i.checkCanInstallSystemWide(name); err != nil {
+		return "", err
+	}
+
 	opts := &system.SystemInstallOptions{
 		ToolName: name,
-		Silent:   false, // Always show warnings for system installations
+		Silent:   i.options.AssumeYes,
 		Task:     t,
 	}
 

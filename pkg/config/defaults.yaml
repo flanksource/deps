@@ -49,6 +49,21 @@ registry:
         version_command: --version
         version_regex: 'dcg\s+v?(\d+\.\d+\.\d+)'
 
+    # deps ships from its own releases (see `make release`). Defining it here keeps
+    # self-installs on explicit asset names instead of the owner/repo glob heuristic.
+    deps:
+        name: deps
+        repo: flanksource/deps
+        asset_patterns:
+            darwin-amd64: deps-darwin-amd64.tar.gz
+            darwin-arm64: deps-darwin-arm64.tar.gz
+            linux-amd64: deps-linux-amd64.tar.gz
+            linux-arm64: deps-linux-arm64.tar.gz
+            windows-amd64: deps-windows-amd64.zip
+        checksum_file: "{{.asset}}.sha256"
+        version_command: --version
+        version_regex: deps version v?(\d+\.\d+\.\d+)
+
     # deps-start ships from this repo's own releases (see `make release-start`);
     # `deps svc` installs it on demand.
     deps-start:
@@ -1102,4 +1117,24 @@ registry:
         manager: direct
         url_template: "https://cache.agilebits.com/dist/1P/op2/pkg/v{{.version}}/op_{{.os}}_{{.arch}}_v{{.version}}.zip"
         version_command: --version
+        version_regex: '([0-9]+\.[0-9]+\.[0-9]+)'
+
+    # CINC Auditor — the license-free build of Chef InSpec, published through
+    # Omnitruck as an omnibus operating-system package. It only runs from
+    # /opt/cinc-auditor: the build links that prefix into the interpreter's
+    # dylib paths and its $LOAD_PATH, so it is installed system-wide rather
+    # than unpacked into bin-dir. The package's own postinstall then symlinks
+    # cinc-auditor into /usr/local/bin (macOS) or /usr/bin (Linux), which is
+    # where pre_installed finds it afterwards.
+    cinc-auditor:
+        name: cinc-auditor
+        manager: omnitruck
+        extra:
+            channel: stable
+            product: cinc-auditor
+            base_url: "https://omnitruck.cinc.sh"
+        pre_installed:
+            - cinc-auditor
+            - inspec
+        version_command: version
         version_regex: '([0-9]+\.[0-9]+\.[0-9]+)'

@@ -36,8 +36,27 @@ func WithFullExtract() ExtractOption {
 
 // IsSystemInstaller returns true if the file is a system installer
 func IsSystemInstaller(filePath string) bool {
-	ext := strings.ToLower(filepath.Ext(filePath))
-	return ext == ".pkg" || ext == ".msi"
+	return IsSystemInstallerExtension(filepath.Ext(filePath))
+}
+
+// IsSystemInstallerExtension reports whether an extension names an operating
+// system package rather than something that can be unpacked into bin-dir.
+//
+// Separate from IsSystemInstaller because the download step decides how to name
+// its temporary file from the extension alone, before there is a path to test —
+// and the two answers drifting apart means an installer downloaded without its
+// extension, which then fails to be recognised as one.
+func IsSystemInstallerExtension(ext string) bool {
+	switch strings.ToLower(ext) {
+	// .dmg and .deb are here for packages that only work at the absolute prefix
+	// they were built for. An omnibus build links /opt/<project> into its
+	// interpreter, its shared libraries and its load path, so unpacking one as
+	// an archive yields a tree that cannot run.
+	case ".pkg", ".dmg", ".msi", ".deb":
+		return true
+	default:
+		return false
+	}
 }
 
 // HandleInstaller processes system installers (.pkg/.msi) and returns the installed binary path
