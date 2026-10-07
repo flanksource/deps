@@ -118,6 +118,17 @@ registry:
             linux-amd64: kubernetes-logs_{{.tag}}_linux_amd64.tar.gz
             linux-arm64: kubernetes-logs_{{.tag}}_linux_arm64.tar.gz
         checksum_file: "{{.tag}}_checksums.txt"
+    kubernetes-metrics:
+        name: kubernetes-metrics
+        manager: github_release
+        repo: flanksource/mission-control-plugins
+        binary_path: kubernetes-metrics_mc_plugin
+        asset_patterns:
+            darwin-amd64: kubernetes-metrics_{{.tag}}_darwin_amd64.tar.gz
+            darwin-arm64: kubernetes-metrics_{{.tag}}_darwin_arm64.tar.gz
+            linux-amd64: kubernetes-metrics_{{.tag}}_linux_amd64.tar.gz
+            linux-arm64: kubernetes-metrics_{{.tag}}_linux_arm64.tar.gz
+        checksum_file: "{{.tag}}_checksums.txt"
     arthas-mc-plugin:
         name: arthas
         manager: github_release
