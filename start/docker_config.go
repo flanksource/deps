@@ -8,6 +8,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	mobyclient "github.com/moby/moby/client"
 
+	"github.com/flanksource/deps/pkg/version"
 	"github.com/flanksource/deps/start/state"
 )
 
@@ -25,10 +26,16 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 		return nil, fmt.Errorf("docker volume mode was not resolved for %s", svc.Name)
 	}
 	var err error
-	if svc.Version == "" && spec.DefaultVersion != "" {
+	switch {
+	case svc.Version == "" && spec.DefaultVersion != "":
 		svc.Version = spec.DefaultVersion
-	} else if svc.Version, err = resolveServiceVersion(ctx, svc, svc.Version); err != nil {
-		return nil, err
+	// A concrete version is already a valid image tag; the package manager
+	// tracks binary releases (e.g. Maven for postgres), not registry tags.
+	case version.LooksLikeExactVersion(svc.Version) || version.IsPartialVersion(svc.Version):
+	default:
+		if svc.Version, err = resolveServiceVersion(ctx, svc, svc.Version); err != nil {
+			return nil, err
+		}
 	}
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
 	image, err := render("docker.image", spec.Image, data)

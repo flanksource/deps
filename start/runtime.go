@@ -143,7 +143,7 @@ func runtimePlatforms(spec types.ServiceSpec, kind RuntimeKind) []string {
 // resolveServiceVersion resolves a version constraint ("latest", "17",
 // ">=1.2") to a published release via the package's manager — the same
 // semantics as deps install — so image templates like {{.version}} and
-// {{.major}} always see a concrete version. Service-only entries without an
+// {{.major}} see a concrete version. Service-only entries without an
 // installable artifact use the constraint verbatim as the image tag.
 func resolveServiceVersion(ctx context.Context, svc *ServiceContext, constraint string) (string, error) {
 	if constraint == "" {
