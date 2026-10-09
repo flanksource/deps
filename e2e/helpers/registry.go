@@ -73,9 +73,10 @@ func isExcludedPackage(packageName string) bool {
 // These are packages known to fail on specific platforms due to missing assets or format issues
 var platformExclusions = map[string][]string{
 	"darwin-amd64": {
-		"aws-cli",    // No darwin-amd64 installer asset
-		"opensearch", // Not available for darwin
-		"postgrest",  // Binary format mismatch
+		"aws-cli",       // No darwin-amd64 installer asset
+		"elasticsearch", // 9.5.5 Intel macOS archive returns 404; restore when a patched archive is available (9.5.4 has CVE-2026-102409)
+		"opensearch",    // Not available for darwin
+		"postgrest",     // Binary format mismatch
 	},
 	"darwin-arm64": {
 		"aws-cli",    // No darwin-arm64 installer asset
