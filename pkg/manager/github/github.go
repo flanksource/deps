@@ -173,12 +173,6 @@ func (m *GitHubReleaseManager) discoverVersionsViaREST(ctx context.Context, owne
 
 // Resolve gets the download URL and metadata for a specific version and platform
 func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
-	// Elasticsearch 9.5.5's Intel macOS archive returns 404 (October 2026), while 9.5.4 is available.
-	// Temporarily pin stable only; remove this exception once a newer Intel macOS archive is available.
-	if pkg.Repo == "elastic/elasticsearch" && version == "stable" && plat.OS == "darwin" && plat.Arch == "amd64" {
-		version = "9.5.4"
-	}
-
 	parts := strings.Split(pkg.Repo, "/")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid repo format: %s", pkg.Repo)
