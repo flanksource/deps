@@ -171,8 +171,8 @@ func FindBinaryInDir(extractDir, binaryPath string, t *task.Task) (string, error
 			return err
 		}
 
-		// Skip directories and non-executable files
-		if info.IsDir() || info.Mode()&0111 == 0 {
+		// Skip directories and non-executable files; a .exe from a zip has no exec bit
+		if info.IsDir() || (info.Mode()&0111 == 0 && !strings.EqualFold(filepath.Ext(path), ".exe")) {
 			return nil
 		}
 

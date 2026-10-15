@@ -73,6 +73,15 @@ var _ = Describe("docker runtime", Label("integration"), func() {
 		Expect(tcpProbe(fmt.Sprintf("localhost:%d", port))).To(BeTrue())
 	})
 
+	It("starts OpenSearch, which runs as a non-root user, on an ephemeral data volume", func() {
+		instance, err := Start(ctx, "opensearch", WithStateDir(stateDir), WithRuntime(RuntimeDocker),
+			WithVolumeMode(VolumeEphemeral), WithWaitTimeout(4*time.Minute))
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(func() { _ = Stop(ctx, "opensearch", WithStateDir(stateDir)) })
+
+		Expect(instance.State.Ready).To(BeTrue())
+	})
+
 	It("rejects unsupported runtimes with a helpful error", func() {
 		_, err := Start(ctx, "valkey", WithStateDir(stateDir), WithRuntime(RuntimeBinary))
 		Expect(err).To(HaveOccurred())

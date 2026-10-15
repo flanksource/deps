@@ -273,7 +273,9 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 		case VolumeHost, VolumePersistent:
 			binds = append(binds, desired.Volume.Source+":"+desired.Volume.Target)
 		case VolumeEphemeral:
-			tmpfs[desired.Volume.Target] = "rw"
+			// world-writable like /tmp: images such as opensearch run as a non-root
+			// user and cannot write a root-owned 0755 tmpfs
+			tmpfs[desired.Volume.Target] = "rw,mode=1777"
 		}
 	}
 	for i, v := range spec.Volumes {
