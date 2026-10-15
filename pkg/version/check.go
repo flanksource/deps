@@ -91,6 +91,11 @@ func resolveBinaryPath(tool string, pkg types.Package, binDir string, osOverride
 		if len(cmdParts) > 0 && cmdParts[0] != "bash" && cmdParts[0] != "sh" {
 			symlinkName := filepath.Base(cmdParts[0])
 			binaryPath := filepath.Join(binDir, symlinkName)
+			// Run the link's target: launcher scripts such as bin/elasticsearch source
+			// their siblings from dirname "$0", which a bin-dir symlink points elsewhere.
+			if target, err := filepath.EvalSymlinks(binaryPath); err == nil {
+				binaryPath = target
+			}
 
 			versionCommand := ""
 			if len(cmdParts) > 1 {

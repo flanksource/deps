@@ -451,11 +451,15 @@ registry:
     actions-runner:
         name: actions-runner
         repo: actions/runner
+        # a .NET app directory: run.sh resolves its own symlink to find bin/ and externals/
+        mode: directory
         asset_patterns:
             darwin-amd64: actions-runner-osx-x64-{{.version}}.tar.gz
             darwin-arm64: actions-runner-osx-arm64-{{.version}}.tar.gz
             linux-amd64: actions-runner-linux-x64-{{.version}}.tar.gz
             linux-arm64: actions-runner-linux-arm64-{{.version}}.tar.gz
+        symlinks:
+            - actions-runner->run.sh
 
     caddy:
         name: caddy

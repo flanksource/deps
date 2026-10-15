@@ -261,7 +261,7 @@ var _ = Describe("Omnitruck Manager", func() {
 			// Reconfigure both sides: the fixture only answers for the channel
 			// it was built with, so a mismatch would 404 rather than pass.
 			const current = "current"
-			host.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host.Config.Handler =http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				host.LastPath = r.URL.Path
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(host.Metadata)
