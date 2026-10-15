@@ -79,6 +79,21 @@ jobs:
           deps-start status opensearch
           deps-start status postgres
 
+      - name: Dump service logs
+        if: failure()
+        shell: bash
+        run: |
+          for log in "$HOME"/.deps/services/*/logs/*.log; do
+            echo "::group::$log"
+            tail -n 200 "$log"
+            echo "::endgroup::"
+          done
+          for container in $(docker ps -a --filter name=deps-start --format '{{.Names}}'); do
+            echo "::group::docker logs $container"
+            docker logs --tail 200 "$container" 2>&1
+            echo "::endgroup::"
+          done
+
       - name: Stop services
         if: always()
         shell: bash

@@ -111,8 +111,12 @@ func resolveBinaryPath(tool string, pkg types.Package, binDir string, osOverride
 	}
 
 	if pkg.Mode == "directory" {
+		binaryPath := filepath.Join(binDir, targetName)
+		if appDir, ok := appDirFromSymlinks(pkg.Symlinks, binDir); ok {
+			binaryPath = appDir
+		}
 		return binaryPathInfo{
-			BinaryPath:     filepath.Join(binDir, targetName),
+			BinaryPath:     binaryPath,
 			VersionCommand: pkg.VersionCommand,
 			Mode:           "directory",
 		}, nil
@@ -134,6 +138,28 @@ func resolveBinaryPath(tool string, pkg types.Package, binDir string, osOverride
 		VersionCommand: pkg.VersionCommand,
 		Mode:           "",
 	}, nil
+}
+
+// appDirFromSymlinks recovers a directory-mode package's install directory from the
+// bin-dir links created for it: a link to <appDir>/<target> identifies <appDir>.
+func appDirFromSymlinks(symlinks []string, binDir string) (string, bool) {
+	for _, entry := range symlinks {
+		link, target := filepath.Base(entry), entry
+		if name, dest, ok := strings.Cut(entry, "->"); ok {
+			link, target = strings.TrimSpace(name), strings.TrimSpace(dest)
+		}
+		if strings.ContainsAny(target, "*?[") {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(filepath.Join(binDir, link))
+		if err != nil {
+			continue
+		}
+		if appDir, ok := strings.CutSuffix(resolved, string(filepath.Separator)+filepath.FromSlash(target)); ok {
+			return appDir, true
+		}
+	}
+	return "", false
 }
 
 // isExecFormatError reports whether a version command failed because the file is not a
