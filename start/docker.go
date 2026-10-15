@@ -3,6 +3,7 @@ package start
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/netip"
@@ -60,7 +61,13 @@ func (r *dockerRuntime) daemonHost(ctx context.Context) string {
 	return host
 }
 
-func containerName(service string) string { return "deps-start-" + service }
+func containerName(service, instanceID string) string {
+	name := "deps-start-" + service
+	if instanceID != "" {
+		name += "-" + instanceID
+	}
+	return name
+}
 
 func (r *dockerRuntime) Reconcile(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.State, error) {
 	docker, err := r.client()
@@ -69,7 +76,7 @@ func (r *dockerRuntime) Reconcile(ctx context.Context, svc *ServiceContext, prio
 	}
 	container := prior.ContainerID
 	if container == "" {
-		container = containerName(svc.Name)
+		container = containerName(svc.Name, svc.Opts.InstanceID)
 	}
 	if _, err := docker.ContainerRemove(ctx, container, mobyclient.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to remove container %s for reconciliation: %w", container, err)
@@ -91,8 +98,8 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	svc.Host = r.daemonHost(ctx)
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
 
-	name := containerName(svc.Name)
-	id, running, err := r.ensureContainer(ctx, svc, data, name)
+	name := containerName(svc.Name, svc.Opts.InstanceID)
+	id, running, created, err := r.ensureContainer(ctx, svc, data, name)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +117,20 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		defer stopStream()
 	}
 	if err := awaitHealthy(ctx, svc, spec.Health, r.Watch(ctx, svc, st, logOffset{})); err != nil {
-		return nil, fmt.Errorf("container %s: %w", name, err)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		var cleanupErr error
+		if created || svc.Opts.InstanceID != "" {
+			docker, clientErr := r.client()
+			if clientErr != nil {
+				cleanupErr = clientErr
+			} else {
+				_, cleanupErr = docker.ContainerRemove(cleanupCtx, id, mobyclient.ContainerRemoveOptions{Force: true})
+			}
+		} else if !running {
+			cleanupErr = r.Stop(cleanupCtx, st)
+		}
+		return nil, errors.Join(fmt.Errorf("container %s: %w", name, err), cleanupErr)
 	}
 
 	ports := map[string]int{}
@@ -134,24 +154,24 @@ func (r *dockerRuntime) isRunning(ctx context.Context, id string) bool {
 
 // ensureContainer returns the id of the named service container, reusing a
 // running one, starting a stopped one, or creating a new one via the sdk.
-func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext, data map[string]any, name string) (string, bool, error) {
+func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext, data map[string]any, name string) (string, bool, bool, error) {
 	docker, err := r.client()
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	existing, err := docker.FindContainerByName(ctx, name)
 	if err == nil && existing != nil {
 		desired, configErr := r.DesiredConfig(ctx, svc)
 		if configErr != nil {
-			return "", false, configErr
+			return "", false, false, configErr
 		}
 		encoded, configErr := encodeManagedConfig(desired)
 		if configErr != nil {
-			return "", false, configErr
+			return "", false, false, configErr
 		}
 		if existing.Labels[managedConfigLabel] != encoded {
 			if _, removeErr := docker.ContainerRemove(ctx, existing.ID, mobyclient.ContainerRemoveOptions{Force: true}); removeErr != nil {
-				return "", false, fmt.Errorf("failed to replace unmanaged container %s: %w", name, removeErr)
+				return "", false, false, fmt.Errorf("failed to replace unmanaged container %s: %w", name, removeErr)
 			}
 			existing = nil
 		}
@@ -159,25 +179,35 @@ func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext
 	switch {
 	case err == nil && existing != nil:
 		if existing.State == mobycontainer.StateRunning {
-			return existing.ID, true, nil
+			return existing.ID, true, false, nil
 		}
 		if _, err := docker.ContainerStart(ctx, existing.ID, mobyclient.ContainerStartOptions{}); err != nil {
-			return "", false, fmt.Errorf("failed to start existing container %s: %w", name, err)
+			return "", false, false, fmt.Errorf("failed to start existing container %s: %w", name, err)
 		}
-		return existing.ID, false, nil
+		return existing.ID, false, false, nil
 	case err != nil && !cerrdefs.IsNotFound(err):
-		return "", false, err
+		return "", false, false, err
 	}
 
 	opts, err := r.runOptions(svc, data, name)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	ctr, err := sdkcontainer.Run(ctx, append(opts, sdkcontainer.WithClient(docker))...)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to run container %s: %w", name, err)
+		if svc.Opts.InstanceID != "" {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if partial, findErr := docker.FindContainerByName(cleanupCtx, name); findErr == nil && partial != nil {
+				_, cleanupErr := docker.ContainerRemove(cleanupCtx, partial.ID, mobyclient.ContainerRemoveOptions{Force: true})
+				err = errors.Join(err, cleanupErr)
+			} else if findErr != nil && !cerrdefs.IsNotFound(findErr) {
+				err = errors.Join(err, findErr)
+			}
+		}
+		return "", false, false, fmt.Errorf("failed to run container %s: %w", name, err)
 	}
-	return ctr.ID(), false, nil
+	return ctr.ID(), false, true, nil
 }
 
 // runOptions renders the docker spec into sdk run options.
@@ -491,7 +521,15 @@ func (r *dockerRuntime) Stop(ctx context.Context, st *state.State) error {
 	}
 	timeout := 30
 	_, err = docker.ContainerStop(ctx, st.ContainerID, mobyclient.ContainerStopOptions{Timeout: &timeout})
-	return err
+	if err != nil {
+		return err
+	}
+	if st.StartOptions != nil && st.StartOptions.InstanceID != "" {
+		if _, err := docker.ContainerRemove(ctx, st.ContainerID, mobyclient.ContainerRemoveOptions{}); err != nil {
+			return fmt.Errorf("remove isolated container %s: %w", st.ContainerID, err)
+		}
+	}
+	return nil
 }
 
 func (r *dockerRuntime) Status(ctx context.Context, st *state.State) (state.Status, error) {

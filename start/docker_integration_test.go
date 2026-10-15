@@ -91,7 +91,7 @@ var _ = Describe("docker runtime", Label("integration"), func() {
 		docker, err := runtime.client()
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() {
-			_, _ = docker.ContainerRemove(ctx, containerName(name), mobyclient.ContainerRemoveOptions{Force: true})
+			_, _ = docker.ContainerRemove(ctx, containerName(name, ""), mobyclient.ContainerRemoveOptions{Force: true})
 		})
 
 		newContext := func(memory string) *ServiceContext {
@@ -123,6 +123,6 @@ var _ = Describe("docker runtime", Label("integration"), func() {
 		live, err := runtime.InspectConfig(ctx, updatedService, &state.State{ContainerID: updated.ContainerID})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(live.Parameters).To(Equal(map[string]string{"jvm-memory": "1g"}))
-		Expect(live.Volume).To(Equal(&state.Volume{Mode: "persistent", Source: containerName(name) + "-data", Target: "/usr/share/opensearch/data"}))
+		Expect(live.Volume).To(Equal(&state.Volume{Mode: "persistent", Source: containerName(name, "") + "-data", Target: "/usr/share/opensearch/data"}))
 	})
 })

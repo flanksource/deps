@@ -1,7 +1,10 @@
 package start
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -25,6 +28,31 @@ var _ = Describe("helm args", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(release).To(Equal("deps-postgres"))
 		Expect(data["release"]).To(Equal("deps-postgres"))
+	})
+
+	It("uninstalls an isolated release after upgrade fails", func() {
+		dir := GinkgoT().TempDir()
+		calls := filepath.Join(dir, "calls")
+		binary := filepath.Join(dir, "helm")
+		script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$1\" >> %q\nif [ \"$1\" = upgrade ]; then exit 7; fi\n", calls)
+		Expect(os.WriteFile(binary, []byte(script), 0o755)).To(Succeed())
+		svc := newSvc()
+		svc.Opts.InstanceID = "a1b2c3d4"
+		svc.LogFile = filepath.Join(dir, "helm.log")
+		_, err := (&helmRuntime{helmPath: binary}).Start(context.Background(), svc)
+		Expect(err).To(MatchError(ContainSubstring("upgrade --install")))
+		commands, err := os.ReadFile(calls)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(commands)).To(Equal("upgrade\nuninstall\n"))
+	})
+
+	It("isolates a fixture instance even with a configured release name", func() {
+		svc := newSvc()
+		svc.Opts.InstanceID = "a1b2c3d4"
+		svc.Spec.Helm.ReleaseName = "custom-postgres"
+		release, _, err := helmRelease(svc)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(release).To(Equal("custom-postgres-a1b2c3d4"))
 	})
 
 	It("builds upgrade --install args with repo, namespace and wait", func() {

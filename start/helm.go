@@ -3,6 +3,7 @@ package start
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -133,7 +134,14 @@ func (r *helmRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.St
 	out := serviceLogWriter(svc, logf)
 	proc := exec.NewExec(helm, args...).Stream(out, out).Run()
 	if result := proc.Result(); !result.IsOk() {
-		return nil, fmt.Errorf("helm upgrade --install %s failed (exit %d):\n%s", release, result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 25))
+		startErr := fmt.Errorf("helm upgrade --install %s failed (exit %d):\n%s", release, result.ExitCode, tail(result.Stdout+"\n"+result.Stderr, 25))
+		if svc.Opts.InstanceID != "" {
+			cleanup := exec.NewExec(helm, "uninstall", release, "--namespace", svc.Opts.Namespace, "--ignore-not-found", "--wait").WithTimeout(2 * time.Minute).Run().Result()
+			if !cleanup.IsOk() {
+				startErr = errors.Join(startErr, fmt.Errorf("helm cleanup %s failed (exit %d): %s", release, cleanup.ExitCode, tail(cleanup.Stderr, 10)))
+			}
+		}
+		return nil, startErr
 	}
 
 	primary, _ := svc.Spec.PrimaryPort()
@@ -158,6 +166,12 @@ func helmRelease(svc *ServiceContext) (string, map[string]any, error) {
 	release, err := render("helm.release_name", tmpl, templateData(svc, "", ""))
 	if err != nil {
 		return "", nil, err
+	}
+	if svc.Opts.InstanceID != "" {
+		release += "-" + svc.Opts.InstanceID
+	}
+	if len(release) > 53 {
+		return "", nil, fmt.Errorf("helm release %q exceeds 53 characters", release)
 	}
 	return release, templateData(svc, "", release), nil
 }

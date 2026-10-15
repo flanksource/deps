@@ -99,7 +99,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	desiredOptions := state.StartOptions{
 		Runtime: string(kind), Version: options.Version, Port: options.Port,
 		Bind: options.BindAddress, Namespace: options.Namespace, DataDir: options.DataDir,
-		VolumeMode: string(svc.Opts.VolumeMode), Parameters: persistedParameters,
+		InstanceID: options.InstanceID, VolumeMode: string(svc.Opts.VolumeMode), Parameters: persistedParameters,
 	}
 	var change *ConfigChange
 	if prior != nil {
@@ -171,6 +171,9 @@ func mergePriorOptions(options *Options, prior *state.State) error {
 	}
 	if !options.supplied.namespace && saved.Namespace != "" {
 		options.Namespace = saved.Namespace
+	}
+	if !options.supplied.instanceID {
+		options.InstanceID = saved.InstanceID
 	}
 	if !options.supplied.dataDir && (!options.supplied.volumeMode || options.VolumeMode == VolumeHost) {
 		options.DataDir = saved.DataDir
