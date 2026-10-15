@@ -71,7 +71,7 @@ jobs:
             .[2].name == "postgres" and
             .[2].runtime == "docker" and
             .[2].status == "running" and
-            (.[2].version | test("^17\\.")) and
+            (.[2].version | test("^17(\\.|$)")) and
             .[2].ports.postgres == 15432 and
             .[2].connection.type == "postgres" and
             (.[2].connection.url | test("^postgres://postgres:.+@localhost:15432/postgres\\?sslmode=disable$"))
