@@ -38,7 +38,8 @@ jobs:
               version: "3.8.0"
               runtime: docker
               port: 19200
-              volume_mode: ephemeral
+              # ephemeral tmpfs data needs a deps-start release newer than v1.0.45
+              volume_mode: persistent
               wait_timeout: 4m
               parameters:
                 jvm-memory: 512m
