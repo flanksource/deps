@@ -21,6 +21,8 @@ type Options struct {
 	BindAddress string
 	// Namespace for the helm runtime.
 	Namespace string
+	// InstanceID isolates Docker and Helm resources for concurrent instances.
+	InstanceID string
 	// DataDir overrides the service data directory.
 	DataDir string
 	// VolumeMode controls the primary service data volume for docker and helm.
@@ -50,7 +52,7 @@ type Options struct {
 }
 
 type optionPresence struct {
-	runtime, version, port, bind, namespace, dataDir, volumeMode, parameters bool
+	runtime, version, port, bind, namespace, instanceID, dataDir, volumeMode, parameters bool
 }
 
 type Option func(*Options)
@@ -70,6 +72,16 @@ func ResolveOptions(opts []Option) (Options, error) {
 }
 
 func validateOptions(options *Options) error {
+	if options.InstanceID != "" {
+		if len(options.InstanceID) > 16 || options.InstanceID[0] == '-' || options.InstanceID[len(options.InstanceID)-1] == '-' {
+			return fmt.Errorf("instance id %q must be 1-16 lowercase letters, digits or hyphens, without edge hyphens", options.InstanceID)
+		}
+		for _, r := range options.InstanceID {
+			if r != '-' && (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+				return fmt.Errorf("instance id %q must be 1-16 lowercase letters, digits or hyphens", options.InstanceID)
+			}
+		}
+	}
 	if options.Port < 0 || options.Port > 65535 {
 		return fmt.Errorf("port must be between 1 and 65535, got %d", options.Port)
 	}
@@ -118,6 +130,9 @@ func WithBindAddress(addr string) Option {
 }
 func WithNamespace(ns string) Option {
 	return func(o *Options) { o.Namespace, o.supplied.namespace = ns, true }
+}
+func WithInstanceID(id string) Option {
+	return func(o *Options) { o.InstanceID, o.supplied.instanceID = id, true }
 }
 func WithDataDir(dir string) Option {
 	return func(o *Options) { o.DataDir, o.supplied.dataDir = dir, true }

@@ -25,6 +25,7 @@ type previewResolverManager struct {
 	discover    []types.Version
 	resolveErr  error
 	installErr  error
+	remoteCalls int
 	resolveCall int
 }
 
@@ -36,6 +37,7 @@ func (m *previewResolverManager) DiscoverVersions(ctx context.Context, pkg types
 }
 
 func (m *previewResolverManager) Resolve(ctx context.Context, pkg types.Package, version string, plat platform.Platform) (*types.Resolution, error) {
+	m.remoteCalls++
 	m.resolveCall++
 	if m.resolveErr != nil {
 		return nil, m.resolveErr

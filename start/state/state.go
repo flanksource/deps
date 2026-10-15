@@ -56,6 +56,7 @@ type StartOptions struct {
 	Port       int               `yaml:"port,omitempty"`
 	Bind       string            `yaml:"bind,omitempty"`
 	Namespace  string            `yaml:"namespace,omitempty"`
+	InstanceID string            `yaml:"instance_id,omitempty"`
 	DataDir    string            `yaml:"data_dir,omitempty"`
 	VolumeMode string            `yaml:"volume_mode,omitempty"`
 	Parameters map[string]string `yaml:"parameters,omitempty"`
@@ -70,6 +71,7 @@ func (o *StartOptions) Equal(other *StartOptions) bool {
 		o.Port == other.Port &&
 		o.Bind == other.Bind &&
 		o.Namespace == other.Namespace &&
+		o.InstanceID == other.InstanceID &&
 		o.DataDir == other.DataDir &&
 		o.VolumeMode == other.VolumeMode &&
 		maps.Equal(o.Parameters, other.Parameters)

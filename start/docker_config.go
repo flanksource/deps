@@ -53,7 +53,7 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 		case VolumeHost:
 			config.Volume.Source = svc.DataDir
 		case VolumePersistent:
-			config.Volume.Source = containerName(svc.Name) + "-data"
+			config.Volume.Source = containerName(svc.Name, svc.Opts.InstanceID) + "-data"
 		case VolumeEphemeral:
 		default:
 			return nil, fmt.Errorf("unsupported docker volume mode %q", svc.Opts.VolumeMode)
@@ -69,7 +69,7 @@ func (r *dockerRuntime) InspectConfig(ctx context.Context, svc *ServiceContext, 
 	}
 	id := prior.ContainerID
 	if id == "" {
-		id = containerName(svc.Name)
+		id = containerName(svc.Name, svc.Opts.InstanceID)
 	}
 	res, err := docker.ContainerInspect(ctx, id, mobyclient.ContainerInspectOptions{})
 	if cerrdefs.IsNotFound(err) {
