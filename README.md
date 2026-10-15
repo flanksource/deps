@@ -196,7 +196,7 @@ jobs:
         port: 15432
         volume_mode: ephemeral
       clickhouse:
-        version: "26.2"
+        version: "26.8"
         runtime: binary
         port: 19000
         wait_timeout: 4m

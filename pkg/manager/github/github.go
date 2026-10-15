@@ -707,7 +707,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	logger.V(3).Infof("GitHub fetching releases for %s/%s, looking for version: %s", owner, repo, targetVersion)
 
 	// Fetch releases via REST API
-	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=100", owner, repo)
+	endpoint := fmt.Sprintf("/repos/%s/%s/releases?per_page=%d", owner, repo, releasesPerPage)
 	var releases []restRelease
 	if err := GetClient().RESTRequest(ctx, "GET", endpoint, &releases); err != nil {
 		return "", fmt.Errorf("failed to list releases: %w", err)
@@ -748,12 +748,35 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 		}
 	}
 
-	// Try exact tag match first
+	// A resolved version can be older than the newest page, e.g. a previous ClickHouse minor
+	// series sits behind hundreds of newer patch releases.
+	for page := 1; ; page++ {
+		if tag := matchReleaseTag(releases, targetVersion, versionExpr, releaseFilters); tag != "" {
+			return tag, nil
+		}
+		if len(releases) < releasesPerPage || page >= maxReleasePages {
+			return "", &manager.ErrVersionNotFound{Package: repo, Version: targetVersion}
+		}
+		releases = nil
+		if err := GetClient().RESTRequest(ctx, "GET", fmt.Sprintf("%s&page=%d", endpoint, page+1), &releases); err != nil {
+			return "", fmt.Errorf("failed to list releases: %w", err)
+		}
+	}
+}
+
+const (
+	releasesPerPage = 100
+	maxReleasePages = 10
+)
+
+// matchReleaseTag returns the tag of the release whose tag, normalized tag, or
+// version_expr transformation equals targetVersion, or "" when none does.
+func matchReleaseTag(releases []restRelease, targetVersion, versionExpr string, releaseFilters []string) string {
 	logger.V(4).Infof("Trying exact tag match for: %s or v%s", targetVersion, targetVersion)
 	for _, rel := range releases {
 		if releaseMatchesFilters(rel, releaseFilters) && (rel.TagName == targetVersion || rel.TagName == "v"+targetVersion) {
 			logger.V(3).Infof("Found exact tag match: %s", rel.TagName)
-			return rel.TagName, nil
+			return rel.TagName
 		}
 	}
 
@@ -761,7 +784,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	normalizedTarget := versionpkg.Normalize(targetVersion)
 	for _, rel := range releases {
 		if releaseMatchesFilters(rel, releaseFilters) && versionpkg.Normalize(rel.TagName) == normalizedTarget {
-			return rel.TagName, nil
+			return rel.TagName
 		}
 	}
 
@@ -786,15 +809,12 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 				transformed[0].Version == normalizedTarget ||
 				transformed[0].Tag == targetVersion) {
 				logger.V(3).Infof("Found version_expr match: tag %s transformed to %s", rel.TagName, transformed[0].Version)
-				return rel.TagName, nil
+				return rel.TagName
 			}
 		}
 	}
 
-	return "", &manager.ErrVersionNotFound{
-		Package: repo,
-		Version: targetVersion,
-	}
+	return ""
 }
 
 // fetchAllReleaseAssets fetches all assets from a release using REST API

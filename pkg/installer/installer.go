@@ -813,9 +813,8 @@ func (i *Installer) finalizeInstallation(resolvedVersion, finalPath string, pkg 
 		if pkg.Mode == "directory" && len(pkg.Symlinks) > 0 && !versionpkg.ContainsShellOperators(pkg.VersionCommand) {
 			cmdParts := strings.Fields(pkg.VersionCommand)
 			if len(cmdParts) > 0 && cmdParts[0] != "bash" && cmdParts[0] != "sh" {
-				symlinkPath := filepath.Join(i.options.BinDir, filepath.Base(cmdParts[0]))
-				if _, err := os.Stat(symlinkPath); err == nil {
-					binPath = symlinkPath
+				if target, err := filepath.EvalSymlinks(filepath.Join(i.options.BinDir, filepath.Base(cmdParts[0]))); err == nil {
+					binPath = target
 					versionCmd = strings.Join(cmdParts[1:], " ")
 					versionCheckMode = ""
 				}

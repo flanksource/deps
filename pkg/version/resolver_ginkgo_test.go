@@ -2,6 +2,7 @@ package version
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -360,6 +361,22 @@ var _ = Describe("Version Resolver", func() {
 				result, err := resolver.ResolveConstraint(context.Background(), pkg, "2", plat)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v2.0.0-beta")) // Use prerelease when no stable available
+			})
+
+			It("should widen the search when a partial version is older than the first window", func() {
+				// Partial constraints fetch 100 versions first; the match sits past them.
+				const newer = 150
+				versions := make([]types.Version, 0, newer+1)
+				for patch := newer; patch > 0; patch-- {
+					versions = append(versions, types.Version{Tag: fmt.Sprintf("v26.9.%d", patch), Version: fmt.Sprintf("26.9.%d", patch)})
+				}
+				versions = append(versions, types.Version{Tag: "v26.2.5", Version: "26.2.5"})
+
+				resolver := NewResolver(&mockPackageManager{name: "test", versions: versions})
+				result, err := resolver.ResolveConstraint(context.Background(), types.Package{Name: "test-pkg"}, "26.2",
+					platform.Platform{OS: "linux", Arch: "amd64"})
+				Expect(err).ToNot(HaveOccurred())
+				Expect(result).To(Equal("v26.2.5"))
 			})
 
 			It("should return error when no versions match partial constraint", func() {

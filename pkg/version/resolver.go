@@ -289,6 +289,7 @@ func needsMoreVersions(err error, constraint string) bool {
 	// If we couldn't find an exact version or satisfy a constraint,
 	// it might be in older versions
 	return contains(errStr, "not found") ||
+		contains(errStr, "no versions found matching") ||
 		contains(errStr, "no versions satisfy") ||
 		contains(errStr, "no stable versions")
 }
