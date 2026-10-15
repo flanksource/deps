@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/flanksource/deps/pkg/extract"
 	depshttp "github.com/flanksource/deps/pkg/http"
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
@@ -311,6 +312,7 @@ func (m *GitLabReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		Version:     strings.TrimPrefix(targetRelease.TagName, "v"),
 		Platform:    plat,
 		DownloadURL: downloadURL,
+		IsArchive:   extract.IsArchive(downloadURL),
 	}
 
 	// Handle checksums if available

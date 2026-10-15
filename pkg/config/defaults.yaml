@@ -855,7 +855,8 @@ registry:
         symlinks:
             - bin/opensearch
             - bin/opensearch-plugin
-        version_command: bin/opensearch --version
+        # opensearch prefers $JAVA_HOME over its bundled JDK, which may be too old
+        version_command: bash -c 'OPENSEARCH_JAVA_HOME="$PWD/jdk" bin/opensearch --version 2>&1'
         version_regex: 'Version: (\d+\.\d+\.\d+)'
 
     loki:
