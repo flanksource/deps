@@ -109,4 +109,20 @@ var _ = Describe("preview of an alias version", func() {
 		Expect(preview.ExistingVersion).To(Equal("3.52.0"))
 		Expect(mgr.resolveCall).To(Equal(0), "a pinned version that is already installed must not hit the network")
 	})
+
+	It("reports the resolved version when a constraint resolves to the installed version", func() {
+		const pkgName = "preview-constraint-tool"
+		mgr := registerPreviewManager("mock-preview-constraint", "3.52.0", &types.Resolution{
+			DownloadURL: "file:///dev/null",
+		})
+		writeVersionStub(binDir, pkgName, "3.52.0")
+
+		preview, err := previewInstaller("mock-preview-constraint", pkgName, binDir).Preview(pkgName, "^3.52", &task.Task{})
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(preview.AlreadyInstalled).To(BeTrue())
+		Expect(preview.ResolvedVersion).To(Equal("3.52.0"))
+		Expect(preview.EffectiveVersion).To(Equal("3.52.0"))
+		Expect(mgr.resolveCall).To(Equal(0))
+	})
 })

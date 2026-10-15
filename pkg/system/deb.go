@@ -42,7 +42,7 @@ func InstallDeb(debPath, destDir string, opts *SystemInstallOptions) (*SystemIns
 	}
 
 	var cmd *exec.Cmd
-	if opts.SkipSudo {
+	if opts.SkipSudo || os.Geteuid() == 0 {
 		// Also the path taken when deps already runs as root, which is the
 		// normal case in a container.
 		cmd = exec.Command("dpkg", "--install", debPath)

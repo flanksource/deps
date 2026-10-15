@@ -147,6 +147,7 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 		return nil, fmt.Errorf("failed to resolve version constraint for %s: %w", name, err)
 	}
 	preview.ResolvedVersion = resolvedVersion
+	preview.EffectiveVersion = resolvedVersion
 
 	checkExisting := !i.options.Force && len(i.options.AssetFilters) == 0 && i.existingArchMatches(name, pkg, t)
 

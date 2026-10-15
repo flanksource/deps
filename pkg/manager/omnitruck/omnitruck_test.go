@@ -213,6 +213,40 @@ var _ = Describe("Omnitruck Manager", func() {
 		})
 	})
 
+	Describe("GetChecksums", func() {
+		It("reports the checksum of every platform artifact", func() {
+			checksums, err := subject.GetChecksums(ctx, pkg, newest)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(checksums).To(HaveKeyWithValue("linux-amd64", "sha256:"+artifactSHA))
+		})
+
+		It("fails rather than returning a partial set when an artifact has no checksum", func() {
+			delete(host.Metadata, "sha256")
+
+			_, err := subject.GetChecksums(ctx, pkg, newest)
+
+			Expect(err).To(MatchError(ContainSubstring("cannot be verified")))
+		})
+
+		It("fails rather than returning a partial set when the server errors", func() {
+			host.Close()
+
+			_, err := subject.GetChecksums(ctx, pkg, newest)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err).ToNot(BeAssignableToTypeOf(&manager.ErrVersionNotFound{}))
+		})
+
+		It("reports a version no platform carries as not found", func() {
+			host.Metadata = nil
+
+			_, err := subject.GetChecksums(ctx, pkg, "0.0.1")
+
+			Expect(err).To(MatchError(ContainSubstring("no artifacts found")))
+		})
+	})
+
 	Describe("configuration", func() {
 		It("defaults the product to the package name", func() {
 			pkg.Extra = map[string]interface{}{"base_url": host.URL}

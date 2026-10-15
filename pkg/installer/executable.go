@@ -68,7 +68,7 @@ func VerifyExecutable(path, assetName string, plat platform.Platform) error {
 
 	expected := expectedExecutableFormat(plat.OS)
 	switch detected := detectExecutableFormat(header); {
-	case detected == formatScript, detected == expected:
+	case detected == formatScript && plat.OS != "windows", detected == expected:
 		return nil
 	case detected == formatDylib && expected == formatMachO:
 		return nil

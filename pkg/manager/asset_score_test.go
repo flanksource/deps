@@ -88,6 +88,18 @@ var _ = Describe("SelectBestAsset", func() {
 			expected:  "jq-linux-amd64",
 		},
 		{
+			name:      "drops sum-style checksums and minisign signatures matched by a broad pattern",
+			assets:    []string{"zig-linux-amd64.sha256sum", "zig-linux-amd64.minisig", "zig-linux-amd64.sha512sum", "zig-linux-amd64"},
+			selection: AssetSelection{Platform: platform.Platform{OS: "linux", Arch: "amd64"}, PackageName: "zig"},
+			expected:  "zig-linux-amd64",
+		},
+		{
+			name:        "selects nothing when a broad pattern matches only checksums and signatures",
+			assets:      []string{"zig-linux-amd64.sha256sum", "zig-linux-amd64.minisig", "SHA256SUMS.sums"},
+			selection:   AssetSelection{Platform: platform.Platform{OS: "linux", Arch: "amd64"}, PackageName: "zig"},
+			expectEmpty: true,
+		},
+		{
 			name:      "accepts a version segment in the canonical name",
 			assets:    []string{"tool-1.4.2-linux-amd64.tar.gz", "tool-extras-1.4.2-linux-amd64.tar.gz"},
 			selection: AssetSelection{Platform: platform.Platform{OS: "linux", Arch: "amd64"}, PackageName: "tool"},

@@ -737,6 +737,9 @@ func (i *Installer) executePostProcessing(pkg types.Package, workDir, targetPath
 // Without it a release asset that is really a checksum file or an error page installs
 // silently, and only fails the next time the tool is invoked.
 func (i *Installer) verifyInstalledArtifact(pkg types.Package, finalPath string, resolution *types.Resolution) error {
+	if resolution != nil {
+		pkg = resolution.Package
+	}
 	if len(pkg.PostProcess) > 0 || pkg.Mode == "directory" || pkg.WrapperScript != "" {
 		return nil
 	}

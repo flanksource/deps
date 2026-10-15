@@ -212,7 +212,11 @@ jobs:
 - name: Use service connections
   env:
     SERVICES_STARTED: ${{ steps.services.outputs.services-started }}
-  run: printf '%s\n' "$SERVICES_STARTED" | yq -p=json
+  run: |
+    POSTGRES_URL="$(printf '%s\n' "$SERVICES_STARTED" |
+      yq -p=json '.[] | select(.name == "postgres") | .connection.url')"
+    echo "::add-mask::$POSTGRES_URL"
+    psql "$POSTGRES_URL" -c 'select 1'
 ```
 
 Services start sequentially in service-name order after tool installation and remain available to later job steps. Startup logs and readiness progress are written to stderr; the action captures each service's JSON result in `services-started`. That output can contain generated credentials, so avoid printing it in shared logs. Service startup is not supported on Windows because `deps-start` has no Windows release artifact and Windows does not support its background mode.

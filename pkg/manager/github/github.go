@@ -690,7 +690,7 @@ assetFound:
 		if githubAsset != nil {
 			assetName = githubAsset.AssetName
 		}
-		resolution.BinaryPath = m.guessBinaryPath(pkg, assetName, version, tagName, plat)
+		resolution.BinaryPath = m.guessBinaryPath(pkg, assetName, versionForTemplate, tagName, plat)
 	}
 
 	if assetSHA256 != "" {
