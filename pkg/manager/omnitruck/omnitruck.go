@@ -19,6 +19,7 @@ package omnitruck
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -252,11 +253,15 @@ func (m *Manager) GetChecksums(ctx context.Context, pkg types.Package, requested
 	for _, name := range supportedPlatforms() {
 		parts := strings.SplitN(name, "-", 2)
 		resolution, err := m.Resolve(ctx, pkg, requested, platform.Platform{OS: parts[0], Arch: parts[1]})
-		if err != nil {
+		var notFound *manager.ErrVersionNotFound
+		if errors.As(err, &notFound) {
 			// A platform the product does not build for is not an error for the
 			// set: cinc-auditor ships no darwin-amd64 build for every version.
 			logger.Tracef("omnitruck: no %s artifact for %s %s: %v", name, pkg.Name, requested, err)
 			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 		checksums[name] = resolution.Checksum
 	}

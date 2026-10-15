@@ -78,8 +78,29 @@ var _ = Describe("VerifyExecutable", func() {
 		Entry("shebang script on any platform", []byte("#!/usr/bin/env bash\necho hi\n"), platform.Platform{OS: "linux", Arch: "amd64"}),
 	)
 
+	It("rejects a shebang script for a windows target, which needs a PE executable", func() {
+		err := VerifyExecutable(write("tool.exe", []byte("#!/usr/bin/env bash\necho hi\n")), "tool-windows-amd64.exe",
+			platform.Platform{OS: "windows", Arch: "amd64"})
+
+		Expect(err).To(MatchError(ContainSubstring("is a script binary, but windows-amd64 needs PE")))
+	})
+
 	It("ignores directories, which are validated by their symlinks", func() {
 		Expect(VerifyExecutable(dir, "tool", platform.Platform{OS: "linux", Arch: "amd64"})).To(Succeed())
+	})
+})
+
+var _ = Describe("verifyInstalledArtifact", func() {
+	It("applies the validation exemptions of the resolved package", func() {
+		path := filepath.Join(GinkgoT().TempDir(), "tool")
+		Expect(os.WriteFile(path, checksumFile, 0o755)).To(Succeed())
+		declared := types.Package{Name: "tool"}
+		resolved := declared
+		resolved.PostProcess = []string{"chmod_exec(dir)"}
+
+		err := New().verifyInstalledArtifact(declared, path, &types.Resolution{Package: resolved})
+
+		Expect(err).ToNot(HaveOccurred())
 	})
 })
 

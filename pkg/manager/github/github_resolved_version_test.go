@@ -28,6 +28,17 @@ var _ = Describe("resolved version reporting", func() {
 		Expect(res.DownloadURL).To(Equal("https://get.example.com/helm-like-v3.52.0-linux-amd64.tar.gz"))
 	})
 
+	It("templates the archive binary path with the tag behind an alias", func() {
+		archived := pkg
+		archived.BinaryPath = "helm-like-{{.version}}/bin/helm-like"
+
+		res, err := NewGitHubReleaseManager().resolveViaGoGitHub(context.Background(), archived, "latest", "v3.52.0", plat)
+
+		Expect(err).ToNot(HaveOccurred())
+		Expect(res.IsArchive).To(BeTrue())
+		Expect(res.BinaryPath).To(Equal("helm-like-3.52.0/bin/helm-like"))
+	})
+
 	It("reports a pinned version unchanged", func() {
 		res, err := NewGitHubReleaseManager().resolveViaGoGitHub(context.Background(), pkg, "3.52.0", "v3.52.0", plat)
 

@@ -15,9 +15,9 @@ type AssetInfo struct {
 // nonBinaryExtensions are release asset suffixes that never contain a runnable
 // artifact: signatures, checksums and text files published alongside the binary.
 var nonBinaryExtensions = []string{
-	".asc", ".sig", ".gpg", ".pem", // Signature files
-	".sha1", ".sha256", ".sha512", // Checksum files
-	".md5", ".checksum", // More checksum files
+	".asc", ".sig", ".gpg", ".pem", ".minisig", // Signature files
+	".sha1", ".sha256", ".sha512", ".sha1sum", ".sha256sum", ".sha512sum", // Checksum files
+	".md5", ".checksum", ".sum", ".sums", // More checksum files
 	".txt", ".json", ".yaml", ".yml", // Text files (often checksums)
 }
 
