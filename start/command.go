@@ -48,13 +48,9 @@ func (r *commandRuntime) Start(ctx context.Context, svc *ServiceContext) (*state
 	}
 
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
-	env := map[string]string{}
-	for k, v := range spec.Env {
-		rendered, err := render("command.env."+k, v, data)
-		if err != nil {
-			return nil, err
-		}
-		env[k] = rendered
+	env, err := renderHostEnv(svc, "command.env", spec.Env, data)
+	if err != nil {
+		return nil, err
 	}
 	for name, content := range spec.Files {
 		rendered, err := render("command.files."+name, content, data)
