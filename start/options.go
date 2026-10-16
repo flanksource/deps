@@ -29,6 +29,11 @@ type Options struct {
 	VolumeMode VolumeMode
 	// Env adds/overrides service environment variables.
 	Env map[string]string
+	// HostEnv is the base environment of a service run as a host process (the
+	// binary and command runtimes): the catalog's env and Env override it.
+	// Docker and helm services never see it, since host-side values such as a
+	// 127.0.0.1 proxy mean nothing inside a container.
+	HostEnv map[string]string
 	// Parameters are explicit service-specific flag values keyed by registry
 	// parameter name. Start validates and resolves them for the chosen runtime.
 	Parameters map[string]string
@@ -140,7 +145,8 @@ func WithDataDir(dir string) Option {
 func WithVolumeMode(mode VolumeMode) Option {
 	return func(o *Options) { o.VolumeMode, o.supplied.volumeMode = mode, true }
 }
-func WithEnv(env map[string]string) Option { return func(o *Options) { o.Env = env } }
+func WithEnv(env map[string]string) Option     { return func(o *Options) { o.Env = env } }
+func WithHostEnv(env map[string]string) Option { return func(o *Options) { o.HostEnv = env } }
 func WithParameters(parameters map[string]string) Option {
 	return func(o *Options) {
 		o.supplied.parameters = true

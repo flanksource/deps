@@ -268,18 +268,31 @@ func renderCommand(svc *ServiceContext, data map[string]any) (string, []string, 
 		return "", nil, nil, err
 	}
 
+	env, err := renderHostEnv(svc, "binary.env", spec.Env, data)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	return command, args, env, nil
+}
+
+// renderHostEnv is the environment a host-process service runs with, layered
+// HostEnv, then the catalog's (rendered) spec env, then Env.
+func renderHostEnv(svc *ServiceContext, name string, spec map[string]string, data map[string]any) (map[string]string, error) {
 	env := map[string]string{}
-	for k, v := range spec.Env {
-		rendered, err := render("binary.env."+k, v, data)
+	for k, v := range svc.Opts.HostEnv {
+		env[k] = v
+	}
+	for k, v := range spec {
+		rendered, err := render(name+"."+k, v, data)
 		if err != nil {
-			return "", nil, nil, err
+			return nil, err
 		}
 		env[k] = rendered
 	}
 	for k, v := range svc.Opts.Env {
 		env[k] = v
 	}
-	return command, args, env, nil
+	return env, nil
 }
 
 // writeRunFiles renders spec files (configs) into the run dir and the
