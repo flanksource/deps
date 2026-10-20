@@ -102,29 +102,9 @@ func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, opts ...Dis
 		options = opts[0]
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", gitRefsURL(owner, repo), nil)
+	refs, err := fetchGitRefs(ctx, owner, repo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// GitHub checks user-agent to determine response format
-	req.Header.Set("User-Agent", "git/2.20.1")
-	req.Header.Set("Accept", "application/x-git-upload-pack-advertisement, */*")
-
-	client := gitRefsHTTPClient()
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch git refs: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d from git info/refs", resp.StatusCode)
-	}
-
-	refs, err := parseGitUploadPackRefs(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse git refs: %w", err)
+		return nil, err
 	}
 
 	// Filter to only refs/tags/
@@ -176,6 +156,76 @@ func DiscoverVersionsViaGit(ctx context.Context, owner, repo string, opts ...Dis
 	version.SortVersions(versions)
 
 	return versions, nil
+}
+
+// fetchGitRefs reads every ref advertised by github.com/{owner}/{repo} over git HTTP,
+// including the peeled "^{}" entries that give an annotated tag's commit.
+func fetchGitRefs(ctx context.Context, owner, repo string) ([]GitRef, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", gitRefsURL(owner, repo), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// GitHub checks user-agent to determine response format
+	req.Header.Set("User-Agent", "git/2.20.1")
+	req.Header.Set("Accept", "application/x-git-upload-pack-advertisement, */*")
+
+	resp, err := gitRefsHTTPClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch git refs: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d from git info/refs", resp.StatusCode)
+	}
+
+	refs, err := parseGitUploadPackRefs(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse git refs: %w", err)
+	}
+	return refs, nil
+}
+
+// FindTagsByCommitViaGit returns the tags of github.com/{owner}/{repo} that point at
+// commit, newest version first.
+func FindTagsByCommitViaGit(ctx context.Context, owner, repo, commit string) ([]string, error) {
+	refs, err := fetchGitRefs(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return tagsPointingAt(refs, commit), nil
+}
+
+// tagsPointingAt returns the tags whose commit is commit, newest version first. An
+// annotated tag's own ref names the tag object, so its peeled "^{}" ref is the commit.
+func tagsPointingAt(refs []GitRef, commit string) []string {
+	commits := map[string]string{}
+	for _, ref := range refs {
+		name, isTag := strings.CutPrefix(ref.Name, "refs/tags/")
+		if !isTag {
+			continue
+		}
+		if peeled, isPeeled := strings.CutSuffix(name, "^{}"); isPeeled {
+			commits[peeled] = ref.SHA
+		} else if _, seen := commits[name]; !seen {
+			commits[name] = ref.SHA
+		}
+	}
+
+	var versions []types.Version
+	for tag, sha := range commits {
+		if strings.EqualFold(sha, commit) {
+			versions = append(versions, types.ParseVersion(version.Normalize(tag), tag))
+		}
+	}
+	version.SortVersions(versions)
+
+	var tags []string
+	for _, v := range versions {
+		tags = append(tags, v.Tag)
+	}
+	return tags
 }
 
 // parseGitUploadPackRefs parses the git-upload-pack protocol response

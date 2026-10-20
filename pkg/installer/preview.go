@@ -66,18 +66,19 @@ func (i *Installer) Preview(name, version string, t *task.Task) (*InstallPreview
 		t = &task.Task{}
 	}
 
-	if i.depsConfig != nil {
-		if pkg, exists := i.depsConfig.Registry[name]; exists {
-			return i.previewPackageInstallation(context.Background(), name, version, pkg, t)
-		}
+	tool, err := parseToolArg(name, version)
+	if err != nil {
+		return nil, err
 	}
-
-	if isGitHubRepoPattern(name) {
-		pkg := createGitHubPackage(name)
-		return i.previewPackageInstallation(context.Background(), pkg.Name, version, pkg, t)
+	scoped, err := i.forTool(tool)
+	if err != nil {
+		return nil, err
 	}
-
-	return nil, fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", name)
+	pkgName, pkg, err := scoped.lookupPackage(tool.Name)
+	if err != nil {
+		return nil, err
+	}
+	return scoped.previewPackageInstallation(context.Background(), pkgName, tool.Version, pkg, t)
 }
 
 func (i *Installer) previewPackageInstallation(ctx context.Context, name, version string, pkg types.Package, t *task.Task) (*InstallPreview, error) {
@@ -88,7 +89,7 @@ func (i *Installer) previewPackageInstallation(ctx context.Context, name, versio
 		RequestedInput:   version,
 		RequestedVersion: version,
 	}
-	if err := i.validateGitHubFilters(name, pkg); err != nil {
+	if err := i.validateGitHubFilters(name, pkg, version); err != nil {
 		return nil, err
 	}
 
@@ -245,6 +246,7 @@ func (i *Installer) managerContext(ctx context.Context) context.Context {
 	ctx = manager.WithStrictChecksum(ctx, i.options.StrictChecksum)
 	ctx = manager.WithIterateVersions(ctx, i.options.IterateVersions)
 	ctx = manager.WithAssetFilters(ctx, i.options.AssetFilters)
+	ctx = manager.WithRequireImmutable(ctx, i.options.requireImmutable)
 	return manager.WithReleaseFilters(ctx, i.options.ReleaseFilters)
 }
 

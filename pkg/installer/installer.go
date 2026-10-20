@@ -34,11 +34,19 @@ import (
 	"github.com/flanksource/gomplate/v3"
 )
 
-// ToolSpec represents a tool with optional version
+// ToolSpec represents a tool with optional asset hint and version, written as
+// name[#asset][@version][+immutable].
 type ToolSpec struct {
-	Name    string
+	Name string
+	// Asset selects the GitHub release asset by exact name or prefix, e.g. "opensearch"
+	// in "flanksource/mission-control-plugins#opensearch@v1.8.0".
+	Asset   string
 	Version string
+	// Immutable only installs a GitHub release marked immutable. Always on for commit versions.
+	Immutable bool
 }
+
+const immutableSuffix = "+immutable"
 
 // DownloadResult holds information about a completed download
 type DownloadResult struct {
@@ -107,28 +115,105 @@ func (i *Installer) getPlatform() platform.Platform {
 	return plat
 }
 
+// ParseToolSpec parses name[#asset][@version][+immutable], e.g.
+// "flanksource/mission-control-plugins#opensearch@v1.8.0+immutable".
+func ParseToolSpec(spec string) (ToolSpec, error) {
+	withoutSuffix, immutable := strings.CutSuffix(spec, immutableSuffix)
+	nameAndAsset, version, hasVersion := strings.Cut(withoutSuffix, "@")
+	name, asset, hasAsset := strings.Cut(nameAndAsset, "#")
+	switch {
+	case name == "":
+		return ToolSpec{}, fmt.Errorf("invalid tool spec %q: empty package name", spec)
+	case hasAsset && asset == "":
+		return ToolSpec{}, fmt.Errorf("invalid tool spec %q: empty asset hint after #", spec)
+	case hasVersion && version == "":
+		return ToolSpec{}, fmt.Errorf("invalid tool spec %q: empty version after @", spec)
+	case strings.Contains(version, "@"):
+		return ToolSpec{}, fmt.Errorf("invalid tool spec %q: more than one @version", spec)
+	}
+	return ToolSpec{Name: name, Asset: asset, Version: version, Immutable: immutable}, nil
+}
+
 // ParseTools parses tool specifications from string arguments
-func ParseTools(args []string) []ToolSpec {
+func ParseTools(args []string) ([]ToolSpec, error) {
 	var tools []ToolSpec
 	for _, arg := range args {
-		parts := strings.Split(arg, "@")
-		tool := ToolSpec{Name: parts[0]}
-		if len(parts) > 1 {
-			tool.Version = parts[1]
+		tool, err := ParseToolSpec(arg)
+		if err != nil {
+			return nil, err
 		}
 		tools = append(tools, tool)
 	}
-	return tools
+	return tools, nil
 }
 
-// Install installs a single tool with task progress tracking
+// parseToolArg parses a library caller's name, which may carry #asset[@version][+immutable],
+// together with a separately passed version, which may carry +immutable.
+func parseToolArg(name, version string) (ToolSpec, error) {
+	tool, err := ParseToolSpec(name)
+	if err != nil {
+		return ToolSpec{}, err
+	}
+	version, immutable := strings.CutSuffix(version, immutableSuffix)
+	tool.Immutable = tool.Immutable || immutable
+	if version != "" {
+		if tool.Version != "" && tool.Version != version {
+			return ToolSpec{}, fmt.Errorf("conflicting versions for %s: %q in the name and %q passed separately", tool.Name, tool.Version, version)
+		}
+		tool.Version = version
+	}
+	return tool, nil
+}
+
+// Install installs a single tool with task progress tracking. name may carry an asset
+// hint: "owner/repo#asset".
 func (i *Installer) Install(name, version string, t *task.Task) error {
-	return i.installTool(ToolSpec{Name: name, Version: version}, t)
+	tool, err := parseToolArg(name, version)
+	if err != nil {
+		return err
+	}
+	return i.installTool(tool, t)
 }
 
-// InstallWithResult installs a single tool and returns detailed installation result
+// InstallWithResult installs a single tool and returns detailed installation result. name
+// may carry an asset hint: "owner/repo#asset".
 func (i *Installer) InstallWithResult(name, version string, t *task.Task) (*types.InstallResult, error) {
-	return i.installToolWithResult(ToolSpec{Name: name, Version: version}, t)
+	tool, err := parseToolArg(name, version)
+	if err != nil {
+		return &types.InstallResult{Status: types.InstallStatusFailed, Error: err}, err
+	}
+	return i.installToolWithResult(tool, t)
+}
+
+// forTool returns the installer to use for tool: its asset hint becomes the only asset
+// filter and +immutable requires an immutable release, without changing the shared installer.
+func (i *Installer) forTool(tool ToolSpec) (*Installer, error) {
+	if tool.Asset == "" && !tool.Immutable {
+		return i, nil
+	}
+	scoped := *i
+	if tool.Asset != "" {
+		if len(i.options.AssetFilters) > 0 {
+			return nil, fmt.Errorf("%s#%s: use either the #asset hint or --asset, not both", tool.Name, tool.Asset)
+		}
+		scoped.options.AssetFilters = []string{tool.Asset}
+	}
+	scoped.options.requireImmutable = tool.Immutable
+	return &scoped, nil
+}
+
+// lookupPackage finds the registry package for name, or builds one for an owner/repo name.
+func (i *Installer) lookupPackage(name string) (string, types.Package, error) {
+	if i.depsConfig != nil {
+		if pkg, exists := i.depsConfig.Registry[name]; exists {
+			return name, pkg, nil
+		}
+	}
+	if isGitHubRepoPattern(name) {
+		pkg := createGitHubPackage(name)
+		return pkg.Name, pkg, nil
+	}
+	return "", types.Package{}, fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", name)
 }
 
 // InstallMultiple installs multiple tools
@@ -202,13 +287,12 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 		task.StartTask(taskName, func(ctx flanksourceContext.Context, task *task.Task) (interface{}, error) {
 			if useNewPackageManager {
 				pkg := depsConfig.Registry[depName]
-				if err := i.validateGitHubFilters(depName, pkg); err != nil {
-					return nil, err
-				}
-
 				requestedVersion := version
 				if requestedVersion == "" {
 					requestedVersion = depConstraint
+				}
+				if err := i.validateGitHubFilters(depName, pkg, requestedVersion); err != nil {
+					return nil, err
 				}
 
 				return nil, i.installWithNewPackageManager(ctx.Context, depName, requestedVersion, pkg, task)
@@ -223,21 +307,15 @@ func (i *Installer) InstallFromConfig(t *task.Task) error {
 
 // installTool handles the installation of a single tool
 func (i *Installer) installTool(tool ToolSpec, t *task.Task) error {
-	// Check if package is defined in new registry format first
-	if i.depsConfig != nil {
-		if pkg, exists := i.depsConfig.Registry[tool.Name]; exists {
-			return i.installWithNewPackageManager(context.Background(), tool.Name, tool.Version, pkg, t)
-		}
+	scoped, err := i.forTool(tool)
+	if err != nil {
+		return err
 	}
-
-	// Heuristic: Detect owner/repo pattern (GitHub repository)
-	if isGitHubRepoPattern(tool.Name) {
-		pkg := createGitHubPackage(tool.Name)
-		return i.installWithNewPackageManager(context.Background(), pkg.Name, tool.Version, pkg, t)
+	name, pkg, err := scoped.lookupPackage(tool.Name)
+	if err != nil {
+		return err
 	}
-
-	// No fallback - package must be in registry
-	return fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", tool.Name)
+	return scoped.installWithNewPackageManager(context.Background(), name, tool.Version, pkg, t)
 }
 
 // installToolWithResult handles the installation of a single tool and returns detailed result
@@ -248,28 +326,22 @@ func (i *Installer) installToolWithResult(tool ToolSpec, t *task.Task) (*types.I
 	}
 	startTime := time.Now()
 
-	// Check if package is defined in new registry format first
-	if i.depsConfig != nil {
-		if pkg, exists := i.depsConfig.Registry[tool.Name]; exists {
-			err := i.installWithNewPackageManagerWithResult(context.Background(), tool.Name, tool.Version, pkg, t, result)
-			result.Duration = time.Since(startTime)
-			result.Error = err
-			return result, err
-		}
+	scoped, err := i.forTool(tool)
+	var name string
+	var pkg types.Package
+	if err == nil {
+		name, pkg, err = scoped.lookupPackage(tool.Name)
 	}
-
-	// Heuristic: Detect owner/repo pattern (GitHub repository)
-	if isGitHubRepoPattern(tool.Name) {
-		pkg := createGitHubPackage(tool.Name)
-		err := i.installWithNewPackageManagerWithResult(context.Background(), pkg.Name, tool.Version, pkg, t, result)
-		result.Duration = time.Since(startTime)
+	if err != nil {
+		result.Status = types.InstallStatusFailed
 		result.Error = err
 		return result, err
 	}
 
-	// No fallback - package must be in registry
-	result.Status = types.InstallStatusFailed
-	return result, fmt.Errorf("tool %s not found in registry - please add it to deps.yaml registry section", tool.Name)
+	err = scoped.installWithNewPackageManagerWithResult(context.Background(), name, tool.Version, pkg, t, result)
+	result.Duration = time.Since(startTime)
+	result.Error = err
+	return result, err
 }
 
 // isGitHubRepoPattern checks if a name matches owner/repo pattern
@@ -297,7 +369,7 @@ func createGitHubPackage(repo string) types.Package {
 
 // installWithNewPackageManager installs using the new package manager system
 func (i *Installer) installWithNewPackageManager(ctx context.Context, name, version string, pkg types.Package, t *task.Task) error {
-	if err := i.validateGitHubFilters(name, pkg); err != nil {
+	if err := i.validateGitHubFilters(name, pkg, version); err != nil {
 		return err
 	}
 	// First check if there's a plugin that can handle this package
@@ -331,7 +403,7 @@ func (i *Installer) installWithNewPackageManager(ctx context.Context, name, vers
 // installWithNewPackageManagerWithResult installs using the new package manager system and populates result
 func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, name, version string, pkg types.Package, t *task.Task, result *types.InstallResult) error {
 	result.Package = pkg
-	if err := i.validateGitHubFilters(name, pkg); err != nil {
+	if err := i.validateGitHubFilters(name, pkg, version); err != nil {
 		result.Status = types.InstallStatusFailed
 		return err
 	}
@@ -371,15 +443,30 @@ func (i *Installer) installWithNewPackageManagerWithResult(ctx context.Context, 
 	return i.executePackageInstallation(ctx, name, pkg, preview, mgr, t, result)
 }
 
-func (i *Installer) validateGitHubFilters(name string, pkg types.Package) error {
-	if len(i.options.AssetFilters) == 0 && len(i.options.ReleaseFilters) == 0 {
+// validateGitHubFilters rejects GitHub-release-only selection and pinning (asset/release
+// filters, +immutable, commit versions) for packages not installed from a GitHub release.
+func (i *Installer) validateGitHubFilters(name string, pkg types.Package, version string) error {
+	var used []string
+	if len(i.options.AssetFilters) > 0 {
+		used = append(used, "--asset")
+	}
+	if len(i.options.ReleaseFilters) > 0 {
+		used = append(used, "--release-filter")
+	}
+	if i.options.requireImmutable {
+		used = append(used, immutableSuffix)
+	}
+	if versionpkg.IsCommitSHA(version) {
+		used = append(used, "a commit version")
+	}
+	if len(used) == 0 {
 		return nil
 	}
 	if pkg.Manager != "github_release" {
-		return fmt.Errorf("--asset and --release-filter require the github_release manager, got %s for %s", pkg.Manager, name)
+		return fmt.Errorf("%s: only supported by the github_release manager, got %s for %s", strings.Join(used, ", "), pkg.Manager, name)
 	}
 	if handler := i.plugins.FindHandler(name, pkg); handler != nil {
-		return fmt.Errorf("--asset and --release-filter cannot be used with the %s plugin for %s", handler.Name(), name)
+		return fmt.Errorf("%s: not supported by the %s plugin for %s", strings.Join(used, ", "), handler.Name(), name)
 	}
 	return nil
 }
@@ -1170,7 +1257,7 @@ func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.Pa
 	// - exact versions: Resolve() will try direct tag lookup first, then fall back
 	// This avoids version_expr normalization for exact tags like "jdk-21.0.5+11"
 	if mgr.Name() == "github_release" {
-		if constraint == "latest" || constraint == "stable" || versionpkg.LooksLikeExactVersion(constraint) {
+		if constraint == "latest" || constraint == "stable" || versionpkg.LooksLikeExactVersion(constraint) || versionpkg.IsCommitSHA(constraint) {
 			t.V(3).Infof("Using fast path for '%s' constraint with github_release manager", constraint)
 			return constraint, nil
 		}

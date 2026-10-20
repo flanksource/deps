@@ -22,6 +22,9 @@ type InstallOptions struct {
 	IterateVersions int      // Number of releases to try when 'latest' has no matching assets (0 = disabled)
 	AssetFilters    []string // MatchItems patterns for GitHub release asset names
 	ReleaseFilters  []string // MatchItems patterns for GitHub release tags or titles
+	// requireImmutable only installs GitHub releases marked immutable, whose tag and assets
+	// cannot change after publishing. Set per tool by a "+immutable" spec suffix.
+	requireImmutable bool
 	// AssumeYes accepts the system-wide installation prompt without asking.
 	//
 	// A handful of packages are operating-system packages that can only be
