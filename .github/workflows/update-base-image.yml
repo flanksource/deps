@@ -1,0 +1,122 @@
+# This workflow automatically creates a PR on flanksource/base-image
+# to update the deps version after a release is published.
+#
+# Requirements:
+# - FLANKBOT_GITHUB_TOKEN secret must be configured with permissions to:
+#   - Read from flanksource/base-image
+#   - Create branches and PRs on flanksource/base-image
+#
+# The workflow will:
+# 1. Extract the version from the release tag
+# 2. Checkout flanksource/base-image
+# 3. Update the Dockerfile to reference the specific deps version
+# 4. Create a PR with the changes
+
+name: Update base-image
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-base-image:
+    name: Create PR to update deps in base-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get release version
+        id: version
+        run: |
+          # Extract version from the release tag (remove 'v' prefix if present)
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Checkout base-image repository
+        uses: actions/checkout@v4
+        with:
+          repository: flanksource/base-image
+          token: ${{ secrets.FLANKBOT_GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create branch and update Dockerfile
+        run: |
+          BRANCH="update-deps-${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          
+          # Check if branch already exists (exact match to avoid false positives)
+          if git ls-remote --heads origin "$BRANCH" | grep -q "refs/heads/$BRANCH$"; then
+            echo "Branch $BRANCH already exists, skipping branch creation."
+            exit 0
+          fi
+          
+          git checkout -b "$BRANCH"
+          
+          # Update the Dockerfile to use the specific version instead of latest
+          # Expected current format: https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz
+          # Expected new format: https://github.com/flanksource/deps/releases/download/<TAG>/deps-linux-${TARGETARCH}.tar.gz
+          # Note: \${TARGETARCH} is a literal string in the Dockerfile (Docker build arg), not a shell variable
+          
+          CURRENT_URL='https://github.com/flanksource/deps/releases/latest/download/deps-linux-${TARGETARCH}.tar.gz'
+          NEW_URL="https://github.com/flanksource/deps/releases/download/${TAG}/deps-linux-\${TARGETARCH}.tar.gz"
+          
+          sed -i "s|${CURRENT_URL}|${NEW_URL}|g" Dockerfile
+          
+          # Verify that the substitution occurred by checking the complete URL pattern
+          # The Dockerfile contains literal ${TARGETARCH} (Docker build arg, not shell variable)
+          if ! grep -q "${NEW_URL}" Dockerfile; then
+            echo "Error: Failed to update Dockerfile with version ${TAG}"
+            echo "The Dockerfile URL format may have changed."
+            echo "Expected to find: ${NEW_URL}"
+            echo "Current Dockerfile content:"
+            cat Dockerfile
+            exit 1
+          fi
+          
+          # Check if changes were made
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git add Dockerfile
+          git commit -m "chore: update deps to ${{ steps.version.outputs.version }}"
+          git push origin "$BRANCH"
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.FLANKBOT_GITHUB_TOKEN }}
+        run: |
+          BRANCH="update-deps-${{ steps.version.outputs.version }}"
+          
+          # Check if PR already exists (using json output for robustness)
+          PR_COUNT=$(gh pr list --repo flanksource/base-image --head "$BRANCH" --state open --json number --jq 'length')
+          if [ "$PR_COUNT" -gt 0 ]; then
+            echo "PR for branch $BRANCH already exists, skipping PR creation."
+            exit 0
+          fi
+          
+          gh pr create \
+            --repo flanksource/base-image \
+            --title "chore: update deps to ${{ steps.version.outputs.version }}" \
+            --body "This PR updates the deps version to [${{ steps.version.outputs.version }}](https://github.com/flanksource/deps/releases/tag/${{ steps.version.outputs.tag }}) after the release.
+
+**Changes:**
+- Updates deps binary download URL to use version ${{ steps.version.outputs.version }}
+
+**Release Notes:**
+${{ github.event.release.body }}
+
+---
+*This PR was automatically created by the deps release workflow.*" \
+            --head "update-deps-${{ steps.version.outputs.version }}" \
+            --base main
