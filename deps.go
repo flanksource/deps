@@ -56,6 +56,9 @@ var (
 	WithOS             = installer.WithOS
 	WithTimeout        = installer.WithTimeout
 	WithProgress       = installer.WithProgress
+	// WithAssetFilters selects a GitHub release asset; a "#asset" hint in the package name does the same per package.
+	WithAssetFilters   = installer.WithAssetFilters
+	WithReleaseFilters = installer.WithReleaseFilters
 )
 
 // Install installs a package and returns detailed installation result.

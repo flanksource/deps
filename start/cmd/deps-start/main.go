@@ -83,8 +83,9 @@ func expandVersionArg(args []string) []string {
 	if len(args) < 2 || !strings.Contains(args[1], "@") {
 		return args
 	}
-	tool := installer.ParseTools([]string{args[1]})[0]
-	if tool.Version == "" {
+	// A malformed spec is left as-is for the start command to report.
+	tool, err := installer.ParseToolSpec(args[1])
+	if err != nil || tool.Version == "" {
 		return args
 	}
 	return append([]string{args[0], tool.Name, "--version", tool.Version}, args[2:]...)

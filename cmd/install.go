@@ -22,7 +22,7 @@ var (
 )
 
 var installCmd = &cobra.Command{
-	Use:          "install [tool[@version]...]",
+	Use:          "install [tool[#asset][@version][+immutable]...]",
 	Short:        "Install one or more dependencies",
 	SilenceUsage: true,
 	Long: `Install one or more dependencies with optional version specification.
@@ -36,6 +36,10 @@ Examples:
   deps install jq yq@v4.16.2 kind    # Install multiple tools
   deps install --asset 'cli-linux*' owner/repo
   deps install --release-filter 'v2*' owner/repo
+  deps install owner/repo#opensearch@v1.8.0   # Pick the release asset named/prefixed opensearch
+  deps install owner/repo#opensearch@712ce23a27c49bcf4bf161044c8c2203abecadeb
+                                     # Pin a commit: the release whose tag points at it, which must be immutable
+  deps install owner/repo@v1.8.0+immutable    # Only install the release if it is marked immutable
   deps install --check jq            # Install jq and verify the installation`,
 	RunE: runInstall,
 }
@@ -63,7 +67,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Parse tools and install them
-		tools := installer.ParseTools(args)
+		tools, err := installer.ParseTools(args)
+		if err != nil {
+			return err
+		}
 		if err := inst.InstallMultiple(tools); err != nil {
 			return err
 		}
@@ -111,7 +118,10 @@ func runPostInstallCheck(args []string, t *task.Task) error {
 		}
 	} else {
 		// Check only the tools that were installed
-		tools := installer.ParseTools(args)
+		tools, err := installer.ParseTools(args)
+		if err != nil {
+			return err
+		}
 		for _, tool := range tools {
 			toolsToCheck = append(toolsToCheck, tool.Name)
 		}

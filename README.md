@@ -270,6 +270,32 @@ deps install owner/repo --asset cli-linux --asset '!*-debug*'
 
 # Select the newest GitHub release whose tag or title matches.
 deps install owner/repo --release-filter 'v2*'
+
+# Same as --asset, scoped to one package: name[#asset][@version][+immutable]
+deps install flanksource/mission-control-plugins#opensearch@v1.8.0
+
+# Pin a commit: installs the release whose tag points at it
+deps install flanksource/mission-control-plugins#opensearch@712ce23a27c49bcf4bf161044c8c2203abecadeb
+
+# Only install the release if it is marked immutable (owner/repo+immutable for latest)
+deps install owner/repo@v1.8.0+immutable
+```
+
+#### Pinning GitHub releases
+
+A version can be a full 40-character commit SHA. deps finds the tags pointing at that commit (an annotated tag by the commit it peels to) and installs the newest one that has a release. Short SHAs are rejected because they don't name exactly one commit.
+
+A commit pins the tag, but a release's assets can still be replaced after publishing unless the release is [immutable](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases). So a commit version always requires an immutable release, and a `+immutable` suffix applies the same check to any version. Only that exact suffix is consumed, so build metadata such as `jdk-21.0.5+11` stays part of the version. With either, resolution only uses the REST release metadata that carries the flag, so there is no fallback to deterministic URLs, `url_template` or the rate-limit fallback version. A mutable release fails the install:
+
+```text
+release v1.8.0 of flanksource/mission-control-plugins is not immutable; enable immutable releases on the repository and publish a new release
+```
+
+Both, and `#asset`, require the `github_release` manager. Library callers can pass the hint in the package name, and `+immutable` on either the name or the version:
+
+```go
+deps.InstallWithContext(ctx, "flanksource/mission-control-plugins#opensearch", "v1.8.0+immutable",
+    deps.WithBinDir("./bin"))
 ```
 
 ### Lock File Management

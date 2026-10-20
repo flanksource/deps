@@ -156,6 +156,20 @@ func IsAlias(s string) bool {
 	return s == "latest" || s == "stable" || s == "any"
 }
 
+// IsCommitSHA reports whether s is a full 40-character git commit SHA. Short SHAs are
+// rejected: a pin must name exactly one commit.
+func IsCommitSHA(s string) bool {
+	if len(s) != 40 {
+		return false
+	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
 // LooksLikeExactVersion checks if a string is an exact version vs a constraint
 // Examples: "1.2.3", "v1.2.3" -> true
 //
