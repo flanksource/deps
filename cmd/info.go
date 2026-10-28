@@ -57,9 +57,12 @@ func runInfo(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("package name required (or use --all to list all packages)")
 	}
 
-	toolSpec := installer.ParseTools(args)[0]
+	toolSpec, err := installer.ParseToolSpec(args[0])
+	if err != nil {
+		return err
+	}
 	inst := newCLIInstaller()
-	preview, err := inst.Preview(toolSpec.Name, toolSpec.Version, &task.Task{})
+	preview, err := inst.Preview(args[0], "", &task.Task{})
 	if err != nil {
 		return err
 	}

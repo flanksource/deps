@@ -34,6 +34,7 @@ type restRelease struct {
 	Name            string      `json:"name"`
 	Prerelease      bool        `json:"prerelease"`
 	Draft           bool        `json:"draft"`
+	Immutable       bool        `json:"immutable"`
 	PublishedAt     time.Time   `json:"published_at"`
 	Assets          []restAsset `json:"assets"`
 	Author          *restUser   `json:"author,omitempty"`
@@ -177,9 +178,20 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 		return nil, fmt.Errorf("invalid repo format: %s", pkg.Repo)
 	}
 	owner, repo := parts[0], parts[1]
+
+	// A commit pins the tag; immutability pins the release assets behind it.
+	if versionpkg.IsCommitSHA(version) {
+		return m.resolveCommit(manager.WithRequireImmutable(ctx, true), pkg, owner, repo, version, plat)
+	}
+
 	assetFilters := manager.GetAssetFilters(ctx)
 	releaseFilters := manager.GetReleaseFilters(ctx)
-	hasFilters := len(assetFilters) > 0 || len(releaseFilters) > 0
+	// Only REST release metadata carries filters' targets and the immutable flag, so the
+	// no-API, rate-limit and go-github fallbacks are off when either is in play.
+	hasFilters := len(assetFilters) > 0 || len(releaseFilters) > 0 || manager.GetRequireImmutable(ctx)
+	if manager.GetRequireImmutable(ctx) && pkg.URLTemplate != "" {
+		return nil, fmt.Errorf("%s uses url_template, so its download cannot be verified against an immutable GitHub release", pkg.Name)
+	}
 
 	// No-API fast path: deterministic asset pattern + checksum_file => no REST API call,
 	// for both latest (tag via redirect) and pinned versions.
@@ -215,9 +227,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			if buildErr == nil {
 				return resolution, nil
 			}
-			// If platform is not supported, return immediately (no point iterating)
-			var platformErr *manager.ErrPlatformNotSupported
-			if errors.As(buildErr, &platformErr) {
+			if isTerminalBuildError(buildErr) {
 				return nil, buildErr
 			}
 			// REST fetched the release but couldn't build resolution (asset not found)
@@ -251,9 +261,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 				resolution.Version = "stable"
 				return resolution, nil
 			}
-			// If platform is not supported, return immediately (no point iterating)
-			var platformErr *manager.ErrPlatformNotSupported
-			if errors.As(buildErr, &platformErr) {
+			if isTerminalBuildError(buildErr) {
 				return nil, buildErr
 			}
 			// Asset not found - automatically iterate for stable (no flag required)
@@ -286,9 +294,7 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 			if buildErr == nil {
 				return resolution, nil
 			}
-			// If platform is not supported, return immediately
-			var platformErr *manager.ErrPlatformNotSupported
-			if errors.As(buildErr, &platformErr) {
+			if isTerminalBuildError(buildErr) {
 				return nil, buildErr
 			}
 			logger.V(3).Infof("Direct tag lookup found %s but failed to build resolution: %v", version, buildErr)
@@ -328,14 +334,71 @@ func (m *GitHubReleaseManager) Resolve(ctx context.Context, pkg types.Package, v
 				resolution.Version = version
 				return resolution, nil
 			}
+			if isTerminalBuildError(buildErr) {
+				return nil, buildErr
+			}
+			restErr = buildErr
 			logger.V(3).Infof("REST API failed to build resolution: %v, falling back to go-github", buildErr)
 		} else {
 			logger.V(3).Infof("REST API failed: %v, falling back to go-github", restErr)
+		}
+		if manager.GetRequireImmutable(ctx) {
+			return nil, fmt.Errorf("immutable release required for %s@%s, but REST release metadata is unavailable: %w", pkg.Repo, tagName, restErr)
 		}
 	}
 
 	// Fallback: use go-github library for URL template cases or when REST fails
 	return m.resolveViaGoGitHub(ctx, pkg, version, tagName, plat)
+}
+
+// ErrReleaseNotImmutable is returned when an immutable release is required but the
+// resolved release can still have its assets replaced.
+type ErrReleaseNotImmutable struct {
+	Repo string
+	Tag  string
+}
+
+func (e *ErrReleaseNotImmutable) Error() string {
+	return fmt.Sprintf("release %s of %s is not immutable; enable immutable releases on the repository and publish a new release", e.Tag, e.Repo)
+}
+
+// isTerminalBuildError reports whether no other release lookup or fallback can fix err.
+func isTerminalBuildError(err error) bool {
+	var platformErr *manager.ErrPlatformNotSupported
+	var mutableErr *ErrReleaseNotImmutable
+	return errors.As(err, &platformErr) || errors.As(err, &mutableErr)
+}
+
+// resolveCommit installs the release whose tag points at commit. Only REST release
+// metadata is used, so the release's immutability is always checked.
+func (m *GitHubReleaseManager) resolveCommit(ctx context.Context, pkg types.Package, owner, repo, commit string, plat platform.Platform) (*types.Resolution, error) {
+	if pkg.URLTemplate != "" {
+		return nil, fmt.Errorf("%s uses url_template, so a commit version cannot be verified against a GitHub release", pkg.Name)
+	}
+	tags, err := FindTagsByCommitViaGit(ctx, owner, repo, commit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tags of %s/%s: %w", owner, repo, err)
+	}
+	if len(tags) == 0 {
+		return nil, fmt.Errorf("no tag in %s points at commit %s: %w", pkg.Repo, commit, &manager.ErrVersionNotFound{Package: pkg.Repo, Version: commit})
+	}
+
+	releaseFilters := manager.GetReleaseFilters(ctx)
+	for _, tag := range tags {
+		release, err := m.fetchReleaseViaREST(ctx, owner, repo, "tags/"+tag)
+		if err != nil {
+			if isRateLimitError(err) {
+				return nil, fmt.Errorf("commit version %s requires release metadata: %w", commit, err)
+			}
+			logger.V(3).Infof("Tag %s at commit %s has no release: %v", tag, commit, err)
+			continue
+		}
+		if release.Draft || !releaseMatchesFilters(*release, releaseFilters) {
+			continue
+		}
+		return m.buildResolutionFromRelease(ctx, pkg, release, plat)
+	}
+	return nil, fmt.Errorf("no release for tags %v at commit %s: %w", tags, commit, &manager.ErrVersionNotFound{Package: pkg.Repo, Version: commit})
 }
 
 // fetchReleaseViaREST fetches a release using REST API (includes digest field).
@@ -375,6 +438,9 @@ func (m *GitHubReleaseManager) fetchLatestMatchingRelease(ctx context.Context, o
 
 // buildResolutionFromRelease builds a Resolution from REST API release response
 func (m *GitHubReleaseManager) buildResolutionFromRelease(ctx context.Context, pkg types.Package, release *restRelease, plat platform.Platform) (*types.Resolution, error) {
+	if manager.GetRequireImmutable(ctx) && !release.Immutable {
+		return nil, &ErrReleaseNotImmutable{Repo: pkg.Repo, Tag: release.TagName}
+	}
 	tagName := release.TagName
 	version := versionpkg.Normalize(tagName)
 

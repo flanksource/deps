@@ -66,11 +66,12 @@ var _ = Describe("End-to-End Pipeline Error Propagation", func() {
 	Describe("Pipeline Error Propagation", func() {
 		It("should fail when post-processing pipeline contains undefined functions", func() {
 			// Parse the tool spec
-			tools := ParseTools([]string{"test-failing-pipeline@1.0.0"})
+			tools, err := ParseTools([]string{"test-failing-pipeline@1.0.0"})
+			Expect(err).NotTo(HaveOccurred())
 			Expect(tools).To(HaveLen(1))
 
 			// This should fail due to the undefined 'rdir' function in post-processing
-			err := installer.InstallMultiple(tools)
+			err = installer.InstallMultiple(tools)
 
 			// The current bug: InstallMultiple returns nil even when post-processing fails
 			// This test documents the expected behavior vs actual behavior
@@ -104,8 +105,9 @@ var _ = Describe("End-to-End Pipeline Error Propagation", func() {
 				WithDebug(true),
 			)
 
-			tools := ParseTools([]string{"test-valid-pipeline@1.0.0"})
-			err := updatedInstaller.InstallMultiple(tools)
+			tools, err := ParseTools([]string{"test-valid-pipeline@1.0.0"})
+			Expect(err).NotTo(HaveOccurred())
+			err = updatedInstaller.InstallMultiple(tools)
 
 			// This should succeed because the pipeline is valid
 			Expect(err).ToNot(HaveOccurred())

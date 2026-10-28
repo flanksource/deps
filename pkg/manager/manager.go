@@ -20,7 +20,20 @@ const (
 	AssetFiltersKey contextKey = "assetFilters"
 	// ReleaseFiltersKey is used to pass GitHub release tag or title filters.
 	ReleaseFiltersKey contextKey = "releaseFilters"
+	// RequireImmutableKey is used to require GitHub immutable releases.
+	RequireImmutableKey contextKey = "requireImmutable"
 )
+
+// WithRequireImmutable returns a context that requires resolved GitHub releases to be immutable.
+func WithRequireImmutable(ctx context.Context, require bool) context.Context {
+	return context.WithValue(ctx, RequireImmutableKey, require)
+}
+
+// GetRequireImmutable reports whether ctx requires immutable GitHub releases.
+func GetRequireImmutable(ctx context.Context) bool {
+	require, _ := ctx.Value(RequireImmutableKey).(bool)
+	return require
+}
 
 // WithStrictChecksum returns a context with strict checksum mode set
 func WithStrictChecksum(ctx context.Context, strict bool) context.Context {

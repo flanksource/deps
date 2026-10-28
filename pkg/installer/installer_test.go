@@ -65,7 +65,7 @@ var _ = Describe("Installer", func() {
 
 		It("rejects filters for managers that cannot apply them", func() {
 			inst := New(WithAssetFilters("cli*"))
-			Expect(inst.validateGitHubFilters("tool", types.Package{Name: "tool", Manager: "url"})).To(MatchError("--asset and --release-filter require the github_release manager, got url for tool"))
+			Expect(inst.validateGitHubFilters("tool", types.Package{Name: "tool", Manager: "url"}, "1.0.0")).To(MatchError("--asset: only supported by the github_release manager, got url for tool"))
 		})
 	})
 
