@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	httpmiddlewares "github.com/flanksource/commons/http/middlewares"
+	httpmiddlewares "github.com/flanksource/commons/http/middlewares/tracing"
 	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/commons/properties"
 )

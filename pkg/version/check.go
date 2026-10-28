@@ -271,7 +271,6 @@ func GetInstalledVersionWithMode(t *task.Task, binaryPath, versionCommand, versi
 	return version, rawOutput, nil
 }
 
-
 // CheckBinaryVersion checks the version of a binary against expected versions
 func CheckBinaryVersion(t *task.Task, tool string, pkg types.Package, binDir string, expectedVersion, requestedVersion string) types.CheckResult {
 	result := types.CheckResult{
@@ -399,7 +398,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 
 	pathInfo, err := resolveBinaryPath(name, pkg, binDir, osOverride)
 	if err != nil {
-		t.V(1).Infof(err.Error())
+		t.V(1).Infof("%s", err.Error())
 		return ""
 	}
 
@@ -419,7 +418,7 @@ func CheckExistingInstallation(t *task.Task, name string, pkg types.Package, req
 	// Try to get the installed version
 	installedVersion, _, err := GetInstalledVersionWithMode(t, pathInfo.BinaryPath, pathInfo.VersionCommand, pkg.VersionRegex, pathInfo.Mode)
 	if err != nil {
-		t.V(2).Infof(err.Error())
+		t.V(2).Infof("%s", err.Error())
 		return ""
 	}
 

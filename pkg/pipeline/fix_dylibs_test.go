@@ -3,11 +3,14 @@
 package pipeline
 
 import (
+	"fmt"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
 
 func TestParseOtoolOutput(t *testing.T) {
+	missingLibrary := filepath.Join(t.TempDir(), "libpq.5.dylib")
 	tests := []struct {
 		name     string
 		output   string
@@ -15,13 +18,13 @@ func TestParseOtoolOutput(t *testing.T) {
 	}{
 		{
 			name: "typical postgrest output with broken ref",
-			output: `/tmp/postgrest:
-	/opt/homebrew/opt/libpq/lib/libpq.5.dylib (compatibility version 5.0.0, current version 5.17.0)
+			output: fmt.Sprintf(`postgrest:
+	%s (compatibility version 5.0.0, current version 5.17.0)
 	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.0.0)
 	/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (compatibility version 150.0.0, current version 2503.1.0)
-`,
+`, missingLibrary),
 			expected: []DylibRef{
-				{Path: "/opt/homebrew/opt/libpq/lib/libpq.5.dylib", Found: false},
+				{Path: missingLibrary, Found: false},
 			},
 		},
 		{
