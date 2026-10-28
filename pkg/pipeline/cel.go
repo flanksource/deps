@@ -147,7 +147,7 @@ func (f *functions) logFunctionEntry(funcName string, args ...interface{}) time.
 	start := time.Now()
 	f.args = args
 	if f.ctx.Task != nil {
-		f.ctx.Task.V(3).Infof(fmt.Sprintf("%s(%v)", funcName, args))
+		f.ctx.Task.V(3).Infof("%s(%v)", funcName, args)
 	}
 	return start
 }
@@ -156,7 +156,7 @@ func (f *functions) logFunctionEntry(funcName string, args ...interface{}) time.
 func (f *functions) logFunctionSuccess(funcName string, start time.Time, result interface{}) {
 	duration := time.Since(start)
 	if f.ctx.Task != nil {
-		f.ctx.Task.V(2).Infof(fmt.Sprintf("%s(%v) => %v (%s) ", funcName, f.args, f.formatResult(result), duration))
+		f.ctx.Task.V(2).Infof("%s(%v) => %v (%s) ", funcName, f.args, f.formatResult(result), duration)
 	}
 }
 
@@ -307,7 +307,7 @@ func (f *functions) unarchive(filename string) (int, error) {
 	f.ctx.LogInfo(fmt.Sprintf("Extracted %s to destination %s in %v (%d files extracted)",
 		filename, absSandboxDir, extractDuration, len(extractedFiles.Files)))
 	if f.ctx.Task != nil {
-		f.ctx.Task.V(4).Infof(fmt.Sprintf("Extracted files from %s to destination %s: %v", filename, absSandboxDir, extractedFiles.Files))
+		f.ctx.Task.V(4).Infof("Extracted files from %s to destination %s: %v", filename, absSandboxDir, extractedFiles.Files)
 	}
 
 	// Remove the archive after extraction
@@ -315,7 +315,7 @@ func (f *functions) unarchive(filename string) (int, error) {
 		f.ctx.LogDebug(fmt.Sprintf("Failed to remove archive %s after extraction: %v", filename, err))
 	} else {
 		if f.ctx.Task != nil {
-			f.ctx.Task.V(3).Infof(fmt.Sprintf("Removed archive %s after extraction", filename))
+			f.ctx.Task.V(3).Infof("Removed archive %s after extraction", filename)
 		}
 	}
 
@@ -675,12 +675,12 @@ func (f *functions) deleteFiles(matches []string, context string) ([]string, err
 		if info, err := os.Stat(absMatch); err == nil {
 			if info.IsDir() {
 				if entries, err := os.ReadDir(absMatch); err == nil && f.ctx.Task != nil {
-					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting directory '%s'  (%d entries)", itemName, len(entries)))
+					f.ctx.Task.V(4).Infof("Deleting directory '%s'  (%d entries)", itemName, len(entries))
 				}
 			} else {
 				totalSize += info.Size()
 				if f.ctx.Task != nil {
-					f.ctx.Task.V(4).Infof(fmt.Sprintf("Deleting '%s' (%d bytes)", itemName, info.Size()))
+					f.ctx.Task.V(4).Infof("Deleting '%s' (%d bytes)", itemName, info.Size())
 				}
 			}
 		}
