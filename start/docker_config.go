@@ -27,6 +27,11 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 	}
 	var err error
 	switch {
+	case spec.ResolveVersion && svc.Tag != "":
+	case spec.ResolveVersion:
+		if svc.Version, err = resolveServiceVersion(ctx, svc, svc.Version); err != nil {
+			return nil, err
+		}
 	case svc.Version == "" && spec.DefaultVersion != "":
 		svc.Version = spec.DefaultVersion
 	// A concrete version is already a valid image tag; the package manager

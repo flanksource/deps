@@ -10,6 +10,21 @@
 
 dependencies: {}
 registry:
+    silo:
+        name: silo
+        repo: pgsty/silo
+        version_expr: 'tag.startsWith("RELEASE.") && tag >= "RELEASE.2026-08-06T00-00-00Z"'
+        asset_patterns:
+            linux-amd64: silo_{{.version}}_linux_amd64.tar.gz
+            linux-arm64: silo_{{.version}}_linux_arm64.tar.gz
+            darwin-amd64: silo_{{.version}}_darwin_amd64.tar.gz
+            darwin-arm64: silo_{{.version}}_darwin_arm64.tar.gz
+            windows-amd64: silo_{{.version}}_windows_amd64.zip
+            windows-arm64: silo_{{.version}}_windows_arm64.zip
+        binary_path: 'os == "windows" ? "silo.exe" : "silo"'
+        checksum_file: silo_{{.version}}_checksums.txt
+        version_command: --version
+        version_regex: 'silo version (RELEASE\.[0-9TZ.\-]+)'
     helm:
         name: helm
         repo: helm/helm

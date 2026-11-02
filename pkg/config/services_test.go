@@ -13,6 +13,13 @@ import (
 var identifierSafe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9]*$`)
 
 var _ = Describe("Service registry", func() {
+	It("provides all three Silo runtimes", func() {
+		pkg, spec, ok := GetService("silo")
+		Expect(ok).To(BeTrue())
+		Expect(pkg.Repo).To(Equal("pgsty/silo"))
+		Expect(spec.Runtimes()).To(Equal([]string{"binary", "docker", "helm"}))
+		Expect(spec.Type).To(Equal("aws"))
+	})
 	var config *types.DepsConfig
 
 	BeforeEach(func() {

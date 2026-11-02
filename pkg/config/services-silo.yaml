@@ -1,0 +1,54 @@
+services:
+    silo:
+        type: aws
+        ports: [{name: s3, port: 9000}, {name: console, port: 9001}]
+        credentials: {username: silo-admin}
+        parameters:
+            region: {type: string, description: AWS region, default: us-east-1}
+        url: 'http://{{.host}}'
+        properties:
+            endpoint: 'http://{{.host}}'
+            region: '{{index .parameters "region"}}'
+            console_url: 'http://{{if .release}}{{.release}}-console.{{.namespace}}{{else}}{{.hostname}}{{end}}:{{.ports.console}}'
+        health: {http: /minio/health/ready, port: s3, timeout: 60s}
+        binary:
+            command: '{{.binDir}}/silo'
+            args: [server, '{{.dataDir}}', --address, '{{.bind}}:{{.port}}', --console-address, '{{.bind}}:{{.ports.console}}']
+            env: {MINIO_ROOT_USER: '{{.username}}', MINIO_ROOT_PASSWORD: '{{.password}}', MINIO_REGION_NAME: '{{index .parameters "region"}}'}
+        docker:
+            resolve_version: true
+            image: 'pgsty/silo:{{.tag}}'
+            args: [server, /data, --address, ':9000', --console-address, ':9001']
+            env: {MINIO_ROOT_USER: '{{.username}}', MINIO_ROOT_PASSWORD: '{{.password}}', MINIO_REGION_NAME: '{{index .parameters "region"}}'}
+            data_path: /data
+        helm:
+            resolve_version: true
+            chart: silo
+            chart_version: 7.0.3
+            source:
+                url: https://codeload.github.com/pgsty/silo/tar.gz/c3ad836aed0d8a7d23c2e44a5eaa3009d08525e3
+                sha256: bb2bd806f1f5d9a26c18db988ed663a8afe2236b0114df14fb68f54f32e333b4
+                path: silo-c3ad836aed0d8a7d23c2e44a5eaa3009d08525e3/helm/silo
+            resource_prefix: resources
+            values: |
+                resources:
+                  requests:
+                    memory: 512Mi
+            set:
+                mode: standalone
+                replicas: '1'
+                fullnameOverride: '{{.release}}'
+                serviceAccount.name: '{{.release}}'
+                image.tag: '{{.tag}}'
+                rootUser: '{{.username}}'
+                rootPassword: '{{.password}}'
+                environment.MINIO_REGION_NAME: '{{index .parameters "region"}}'
+                persistence.size: 1Gi
+            port_set: {service.port: '{{.port}}'}
+            volume:
+                mount_path: /export
+                modes:
+                    persistent: {set: {persistence.enabled: 'true', 'persistence.annotations.helm\.sh/resource-policy': keep}}
+                    ephemeral: {set: {persistence.enabled: 'false'}}
+            service: {name: '{{.release}}', port: 9000}
+            secret: {name: '{{.release}}', key: rootPassword, username_key: rootUser}

@@ -24,22 +24,32 @@ type helmRuntime struct {
 
 func (r *helmRuntime) Kind() RuntimeKind { return RuntimeHelm }
 
-func (r *helmRuntime) DesiredConfig(_ context.Context, svc *ServiceContext) (*state.EffectiveConfig, error) {
+func (r *helmRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) (*state.EffectiveConfig, error) {
 	spec := svc.Spec.Helm
 	if spec == nil {
 		return nil, fmt.Errorf("service %s has no helm runtime", svc.Name)
+	}
+	if spec.ResolveVersion && svc.Tag == "" {
+		resolved, err := resolveServiceVersion(ctx, svc, svc.Version)
+		if err != nil {
+			return nil, err
+		}
+		svc.Version = resolved
 	}
 	release, _, err := helmRelease(svc)
 	if err != nil {
 		return nil, err
 	}
 	config := &state.EffectiveConfig{
-		Runtime: string(RuntimeHelm), Version: svc.Opts.Version, Chart: spec.Chart,
+		Runtime: string(RuntimeHelm), Version: svc.Version, Chart: spec.Chart,
 		Parameters: cloneStrings(svc.Opts.Parameters), Ports: configuredPorts(svc),
 		Namespace: svc.Opts.Namespace,
 	}
 	if spec.ChartVersion != "" {
 		config.Chart += "@" + spec.ChartVersion
+	}
+	if spec.Source != nil {
+		config.Chart += "#" + spec.Source.URL + ":" + spec.Source.SHA256 + ":" + spec.Source.Path
 	}
 	if spec.Volume == nil {
 		if svc.Opts.VolumeMode != "" {
@@ -116,13 +126,24 @@ func (r *helmRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.St
 		return nil, err
 	}
 
-	release, data, err := helmRelease(svc)
+	release, _, err := helmRelease(svc)
 	if err != nil {
 		return nil, err
 	}
+	if _, err := r.DesiredConfig(ctx, svc); err != nil {
+		return nil, err
+	}
+	data := templateData(svc, "", release)
 	args, err := buildHelmArgs(svc, data, release)
 	if err != nil {
 		return nil, err
+	}
+	if svc.Spec.Helm.Source != nil {
+		chart, err := prepareHelmChart(ctx, svc)
+		if err != nil {
+			return nil, err
+		}
+		args[3] = chart
 	}
 
 	logf, err := os.OpenFile(svc.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
@@ -189,7 +210,7 @@ func buildHelmArgs(svc *ServiceContext, data map[string]any, release string) ([]
 	if spec.Repo != "" {
 		args = append(args, "--repo", spec.Repo)
 	}
-	if spec.ChartVersion != "" {
+	if spec.ChartVersion != "" && spec.Source == nil {
 		args = append(args, "--version", spec.ChartVersion)
 	}
 	if spec.Values != "" {

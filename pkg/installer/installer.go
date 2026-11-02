@@ -1275,7 +1275,8 @@ func (i *Installer) resolveVersionConstraint(ctx context.Context, mgr manager.Pa
 
 	// Use the centralized version resolver
 	resolver := versionpkg.NewResolver(mgr)
-	return resolver.ResolveConstraint(ctx, pkg, constraint, i.getPlatform())
+	resolved, err := resolver.ResolveConstraint(ctx, pkg, constraint, i.getPlatform())
+	return resolved.ResolvedString(), err
 }
 
 // downloadWithChecksum attempts to download with checksum verification

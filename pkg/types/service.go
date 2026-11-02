@@ -126,6 +126,8 @@ type InitStep struct {
 
 // DockerRuntime runs the service as a container.
 type DockerRuntime struct {
+	// ResolveVersion maps package constraints to release tags, including exact versions.
+	ResolveVersion bool `json:"resolve_version,omitempty" yaml:"resolve_version,omitempty"`
 	// Image is a templated reference, e.g. "postgres:{{.major}}".
 	Image string `json:"image" yaml:"image"`
 	// DefaultVersion is used when no version is requested, instead of
@@ -171,6 +173,9 @@ type CommandRuntime struct {
 
 // HelmRuntime installs the service as a helm release.
 type HelmRuntime struct {
+	// ResolveVersion resolves the package's app version independently of the chart version.
+	ResolveVersion bool             `json:"resolve_version,omitempty" yaml:"resolve_version,omitempty"`
+	Source         *HelmChartSource `json:"source,omitempty" yaml:"source,omitempty"`
 	// Chart is either an oci:// reference or a chart name used with Repo.
 	Chart string `json:"chart" yaml:"chart"`
 	// Repo is the https chart repository URL when Chart is not oci://.
@@ -197,6 +202,12 @@ type HelmRuntime struct {
 	// Service is the in-cluster endpoint used to build "svc://<name>.<namespace>:<port>".
 	Service *ServiceRef  `json:"service,omitempty" yaml:"service,omitempty"`
 	Health  *HealthCheck `json:"health,omitempty" yaml:"health,omitempty"`
+}
+
+type HelmChartSource struct {
+	URL    string `json:"url" yaml:"url"`
+	SHA256 string `json:"sha256" yaml:"sha256"`
+	Path   string `json:"path" yaml:"path"`
 }
 
 type HelmVolume struct {

@@ -60,6 +60,7 @@ type ServiceContext struct {
 
 	// Version is the resolved artifact/image/chart app version.
 	Version string
+	Tag     string
 	// Username, Password and Database are the resolved credentials.
 	Username string
 	Password string
@@ -160,5 +161,6 @@ func resolveServiceVersion(ctx context.Context, svc *ServiceContext, constraint 
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve version %q of %s: %w", constraint, svc.Name, err)
 	}
-	return resolved, nil
+	svc.Tag = resolved.Tag
+	return resolved.Version, nil
 }

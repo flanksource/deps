@@ -47,9 +47,9 @@ func NewResolver(mgr PackageManager) *VersionResolver {
 
 // ResolveConstraint resolves a version constraint to a specific version
 // Handles "latest", exact versions, and semver constraints uniformly across all managers
-func (r *VersionResolver) ResolveConstraint(ctx context.Context, pkg types.Package, constraint string, plat platform.Platform) (string, error) {
+func (r *VersionResolver) ResolveConstraint(ctx context.Context, pkg types.Package, constraint string, plat platform.Platform) (types.Version, error) {
 	if constraint == "" {
-		return "", fmt.Errorf("empty version constraint")
+		return types.Version{}, fmt.Errorf("empty version constraint")
 	}
 
 	// Determine optimal limit based on constraint type
@@ -58,11 +58,11 @@ func (r *VersionResolver) ResolveConstraint(ctx context.Context, pkg types.Packa
 	// Get versions from the package manager
 	versions, err := r.mgr.DiscoverVersions(ctx, pkg, plat, limit)
 	if err != nil {
-		return "", fmt.Errorf("failed to discover versions: %w", err)
+		return types.Version{}, fmt.Errorf("failed to discover versions: %w", err)
 	}
 
 	if len(versions) == 0 {
-		return "", fmt.Errorf("no versions found")
+		return types.Version{}, fmt.Errorf("no versions found")
 	}
 
 	// Try to resolve with the limited set
@@ -79,16 +79,25 @@ func (r *VersionResolver) ResolveConstraint(ctx context.Context, pkg types.Packa
 
 			moreVersions, err2 := r.mgr.DiscoverVersions(ctx, pkg, plat, newLimit)
 			if err2 != nil {
-				return "", fmt.Errorf("failed to discover more versions: %w", err2)
+				return types.Version{}, fmt.Errorf("failed to discover more versions: %w", err2)
 			}
 
 			if len(moreVersions) > len(versions) {
+				versions = moreVersions
 				resolved, err = r.selectBestVersion(pkg, moreVersions, constraint)
 			}
 		}
 	}
 
-	return resolved, err
+	if err != nil {
+		return types.Version{}, err
+	}
+	for _, candidate := range versions {
+		if getBestVersionString(candidate) == resolved {
+			return candidate, nil
+		}
+	}
+	return types.Version{}, fmt.Errorf("resolved version %q has no release metadata", resolved)
 }
 
 // getOptimalLimit returns the optimal number of versions to fetch for a given constraint
@@ -180,18 +189,7 @@ func (r *VersionResolver) selectBestVersion(pkg types.Package, versions []types.
 // For packages where Tag and Version differ fundamentally (e.g., github_build), returns Version.
 // For regular packages where Tag is the version tag (possibly with v prefix), returns Tag.
 func getBestVersionString(v types.Version) string {
-	// For regular packages, Tag is the version tag (e.g., "v1.2.3")
-	if v.Tag != "" {
-		// Check if Tag and Version are the same version (ignoring v prefix)
-		normalizedTag := strings.TrimPrefix(v.Tag, "v")
-		if normalizedTag == v.Version || v.Tag == v.Version {
-			return v.Tag // Return original tag format
-		}
-		// If they differ fundamentally (e.g., Tag is build date like "20251010"),
-		// return the actual software version
-		return v.Version
-	}
-	return v.Version
+	return v.ResolvedString()
 }
 
 // getLatestVersion returns the latest version, optionally excluding prereleases

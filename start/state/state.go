@@ -25,6 +25,7 @@ type State struct {
 	Name    string `yaml:"name"`
 	Runtime string `yaml:"runtime"`
 	Version string `yaml:"version,omitempty"`
+	Tag     string `yaml:"tag,omitempty"`
 	PID     int    `yaml:"pid,omitempty"`
 	// SupervisorPID is the process supervising a binary service; SIGHUP to
 	// it triggers an in-place SupervisedProcess restart.

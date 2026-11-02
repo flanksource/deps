@@ -147,8 +147,11 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "latest", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "latest", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
+				Expect(resolvedVersion.Tag).To(Equal("v2.1.0"))
+				Expect(resolvedVersion.Version).To(Equal("2.1.0"))
 				Expect(result).To(Equal("v2.1.0"))
 			})
 
@@ -162,7 +165,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "stable", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "stable", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v2.1.0"))
 			})
@@ -177,7 +181,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "any", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "any", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v2.1.0"))
 			})
@@ -192,7 +197,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "v1.5.0", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "v1.5.0", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.5.0"))
 			})
@@ -207,7 +213,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5.0", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5.0", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.5.0"))
 			})
@@ -222,7 +229,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "^1.0.0", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "^1.0.0", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.5.0"))
 			})
@@ -237,7 +245,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "~1.4.0", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "~1.4.0", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.4.0"))
 			})
@@ -272,7 +281,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "3", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "3", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v3.1.2")) // Latest 3.x.x
 			})
@@ -287,7 +297,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "v2", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "v2", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v2.1.0")) // Latest 2.x.x
 			})
@@ -302,7 +313,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.5.3")) // Latest 1.5.x
 			})
@@ -317,7 +329,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "v3.0", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "v3.0", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v3.0.5")) // Latest 3.0.x
 			})
@@ -338,7 +351,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "1.5", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v1.5.3")) // Skip prerelease, use latest stable
 			})
@@ -358,7 +372,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "2", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "2", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v2.0.0-beta")) // Use prerelease when no stable available
 			})
@@ -373,8 +388,9 @@ var _ = Describe("Version Resolver", func() {
 				versions = append(versions, types.Version{Tag: "v26.2.5", Version: "26.2.5"})
 
 				resolver := NewResolver(&mockPackageManager{name: "test", versions: versions})
-				result, err := resolver.ResolveConstraint(context.Background(), types.Package{Name: "test-pkg"}, "26.2",
-					platform.Platform{OS: "linux", Arch: "amd64"})
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), types.Package{Name: "test-pkg"}, "26.2", platform.Platform{OS: "linux", Arch: "amd64"})
+				result := getBestVersionString(resolvedVersion)
+
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).To(Equal("v26.2.5"))
 			})
@@ -389,7 +405,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "5", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "5", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("no versions found matching pattern 5"))
 				Expect(result).To(Equal(""))
@@ -411,7 +428,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "stable", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "stable", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("no stable versions found"))
 				Expect(result).To(Equal(""))
@@ -427,7 +445,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "v3.0.0", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "v3.0.0", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Version v3.0.0 not found"))
 				Expect(result).To(Equal(""))
@@ -443,7 +462,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("empty version constraint"))
 				Expect(result).To(Equal(""))
@@ -459,7 +479,8 @@ var _ = Describe("Version Resolver", func() {
 				pkg := types.Package{Name: "test-pkg"}
 				plat := platform.Platform{OS: "linux", Arch: "amd64"}
 
-				result, err := resolver.ResolveConstraint(context.Background(), pkg, "latest", plat)
+				resolvedVersion, err := resolver.ResolveConstraint(context.Background(), pkg, "latest", plat)
+				result := getBestVersionString(resolvedVersion)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("no versions found"))
 				Expect(result).To(Equal(""))

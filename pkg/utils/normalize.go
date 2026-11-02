@@ -3,6 +3,7 @@ package utils
 import (
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 )
@@ -21,6 +22,9 @@ func Normalize(version string) string {
 
 	// Trim whitespace first
 	version = strings.TrimSpace(version)
+	if timestamp, err := time.Parse("RELEASE.2006-01-02T15-04-05Z", version); err == nil {
+		return timestamp.Format("20060102150405") + ".0.0"
+	}
 
 	// Remove common prefixes (check longer prefixes first)
 	version = strings.TrimPrefix(version, "version-")

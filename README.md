@@ -665,6 +665,23 @@ deps run --runtime-version=">=7.0" advanced.ps1
 
 ## Usage: deps-start (services)
 
+`deps start` and its alias `deps services` forward the complete `deps-start` CLI, installing it on demand. For example, `deps services silo`, `deps start silo --runtime docker`, and `deps services stop silo`. Existing `deps svc` commands remain available.
+
+Silo provides S3 object storage through native binary, Docker, and Helm runtimes. It exposes S3 on port 9000 and Console on 9001, generates a root password, and emits an `aws` connection with endpoint, region, and `console_url`. Use `--region` to change the default `us-east-1`, or `--port` to change the S3 port.
+
+```sh
+deps install silo
+deps services silo@RELEASE.2026-10-26T00-00-00Z
+deps services silo --runtime docker --volume-mode persistent
+deps services silo --runtime helm -n dev --volume-mode ephemeral --memory-request 512Mi
+deps services info silo
+deps services stop silo
+```
+
+Silo's Helm deployment uses the pinned upstream source chart in standalone mode, with 1Gi persistent storage and a 512Mi memory request by default. Credentials reference the chart Secret. Persistent PVCs are retained on stop and restart; remove them explicitly when their data is no longer needed. `--volume-mode ephemeral` selects emptyDir; host volumes are unsupported. Docker uses `/data` and the existing host, persistent, and ephemeral volume modes.
+
+Custom Helm specs can use `source: {url: <archive-url>, sha256: <checksum>, path: <chart-directory-in-archive>}` instead of `repo`. Set `chart` and `chart_version` to the archive's Chart.yaml metadata. Archives are verified before extraction. Docker and Helm specs with `resolve_version: true` resolve package versions to their original release tags for `{{.tag}}` templates.
+
 `deps-start` (a separate binary from the `start/` submodule) launches services from
 the registry — postgres, opensearch, valkey, mysql, mssql, elasticsearch, loki,
 prometheus, grafana, jaeger, otel-collector, clickhouse, nats, rabbitmq, rclone,

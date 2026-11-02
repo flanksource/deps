@@ -224,7 +224,7 @@ func checkDependencyUpdate(ctx context.Context, name, constraint string, depsCon
 		if err != nil {
 			info.Available = fmt.Sprintf("error: %v", err)
 		} else {
-			info.Available = availableVersion
+			info.Available = availableVersion.Version
 		}
 	} else {
 		// Use legacy system - just use the constraint as available version

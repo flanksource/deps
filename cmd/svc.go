@@ -49,6 +49,14 @@ var svcVerbs = map[string]string{
 }
 
 func init() {
+	rootCmd.AddCommand(&cobra.Command{
+		Use: "start <service>[@version]", Aliases: []string{"services"},
+		Short:              "Start and manage services through deps-start",
+		DisableFlagParsing: true, SilenceUsage: true, SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDepsStart(cmd.Context(), args...)
+		},
+	})
 	rootCmd.AddCommand(svcCmd)
 	for verb, short := range svcVerbs {
 		svcCmd.AddCommand(newSvcPassthroughCmd(verb, short))

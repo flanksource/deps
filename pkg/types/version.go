@@ -18,6 +18,14 @@ func (v Version) String() string {
 	return v.Version
 }
 
+// ResolvedString selects the software version when a build tag names a different version scheme.
+func (v Version) ResolvedString() string {
+	if v.Tag != "" && strings.TrimPrefix(v.Tag, "v") == v.Version {
+		return v.Tag
+	}
+	return v.Version
+}
+
 // IsSemver returns true if Major/Minor/Patch are populated
 func (v Version) IsSemver() bool {
 	return v.Major > 0 || v.Minor > 0 || v.Patch > 0
@@ -129,7 +137,7 @@ func (v Version) Pretty() api.Text {
 	}
 
 	if !v.Published.IsZero() {
-		text.Append(" " + v.Published.Format("2006-01-02"), "text-gray-500")
+		text.Append(" "+v.Published.Format("2006-01-02"), "text-gray-500")
 	}
 
 	return text
