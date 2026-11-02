@@ -34,21 +34,35 @@ The release workflow will automatically trigger and create the GitHub release wi
 
 ## Workflow Files
 
-- `.github/workflows/auto-release.yml` - Automatic version bumping and tagging on main branch merges
-- `.github/workflows/release.yml` - GoReleaser workflow that triggers on tag pushes
-- `.goreleaser.yml` - GoReleaser configuration for building and releasing binaries
+- `.github/workflows/release.yml` - Automated release workflow that triggers on main branch pushes. Creates version tags and builds binaries.
+- `.github/workflows/update-base-image.yml` - Automatically creates a PR on flanksource/base-image to update the deps version after a release is published.
+- `.github/workflows/test.yml` - Unit and integration tests
+- `.github/workflows/test-action.yml` - Tests the GitHub Action functionality
+- `.github/workflows/golangci-lint.yml` - Code quality checks
 
 ## Version Calculation
 
-The auto-release workflow uses [svu](https://github.com/caarlos0/svu) to calculate the next version based on:
+The release workflow uses [svu](https://github.com/caarlos0/svu) to calculate the next version based on:
 
 1. Conventional commit messages since the last tag
 2. Current semantic version from the latest tag
-3. If no tags exist, starts with v0.1.0
+3. Automatically creates patch versions on every main branch push
 
-## Disabling Auto-Release
+## Cross-Repository Updates
 
-To skip auto-release for a specific merge, you can:
+After a release is published, the `update-base-image.yml` workflow automatically:
 
-1. Use commit messages that don't trigger version bumps (avoid feat/fix/breaking changes)
-2. Or temporarily disable the workflow by adding `[skip ci]` to commit messages
+1. Checks out the [flanksource/base-image](https://github.com/flanksource/base-image) repository
+2. Updates the Dockerfile to reference the specific deps version (instead of latest)
+3. Creates a pull request with:
+   - Version update in the Dockerfile
+   - Release notes from the deps release
+   - Link to the release
+
+**Requirements:**
+- A `FLANKBOT_GITHUB_TOKEN` secret must be configured in the repository with permissions to:
+  - Read from flanksource/base-image
+  - Create branches on flanksource/base-image
+  - Create pull requests on flanksource/base-image
+
+This ensures that base-image is kept up-to-date with the latest tested deps releases.
