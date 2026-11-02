@@ -196,7 +196,7 @@ func runInfoAll(out io.Writer, ctx context.Context, includePrerelease bool) erro
 			continue
 		}
 
-		fmt.Fprintf(out, "%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, truncateVersion(resolved, 20), "ok")
+		fmt.Fprintf(out, "%-*s  %-12s  %-20s  %s\n", maxNameLen, name, pkg.Manager, truncateVersion(resolved.Version, 20), "ok")
 	}
 
 	return nil

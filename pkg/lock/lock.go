@@ -433,7 +433,8 @@ func (g *Generator) getPlatformsFromLock(lockFile *types.LockFile, opts types.Lo
 func (g *Generator) resolveVersionConstraint(ctx context.Context, mgr manager.PackageManager, pkg types.Package, constraint string) (string, error) {
 	// Use the centralized version resolver
 	resolver := version.NewResolver(mgr)
-	return resolver.ResolveConstraint(ctx, pkg, constraint, platform.Current())
+	resolved, err := resolver.ResolveConstraint(ctx, pkg, constraint, platform.Current())
+	return resolved.ResolvedString(), err
 }
 
 // formatPackageIdentifier creates a consistent package identifier string with relevant details

@@ -801,6 +801,9 @@ func UntarWithFilterAndResult(tarball, target string, filter FileFilter, opts *U
 			archive.Files = append(archive.Files, path)
 			archive.ExtractedSize += bytesWritten
 
+		case tar.TypeXGlobalHeader:
+			// archive/tar exposes global PAX metadata as a header, not a filesystem entry.
+			continue
 		default:
 			return nil, fmt.Errorf("unsupported file type %c (%d) for %s", header.Typeflag, header.Typeflag, path)
 		}

@@ -67,6 +67,9 @@ func templateData(svc *ServiceContext, host, release string) map[string]any {
 		"namespace":    svc.Opts.Namespace,
 		"parameters":   svc.Parameters,
 	}
+	if svc.Tag != "" {
+		data["tag"] = svc.Tag
+	}
 	if len(parts) > 1 {
 		data["minor"] = parts[1]
 	}

@@ -72,6 +72,9 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 		return nil, err
 	}
 	svc.Parameters = parameters
+	if prior != nil && !options.Update && !options.supplied.version && prior.Tag != "" {
+		svc.Version, svc.Tag = prior.Version, prior.Tag
+	}
 	svc.Opts.Parameters = persistedParameters
 
 	var liveConfig, desiredConfig *state.EffectiveConfig
@@ -90,6 +93,9 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 			return nil, err
 		}
 	} else {
+		if prior != nil {
+			liveConfig = prior.EffectiveConfig
+		}
 		if options.VolumeMode != "" {
 			return nil, fmt.Errorf("volume mode is only supported by docker and helm runtimes")
 		}
@@ -122,6 +128,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	}
 
 	st.Name = name
+	st.Tag = svc.Tag
 	st.Runtime = string(kind)
 	st.LogFile = svc.LogFile
 	if svc.Version != "" {

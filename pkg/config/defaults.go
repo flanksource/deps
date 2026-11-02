@@ -12,7 +12,7 @@ import (
 //go:embed defaults.yaml
 var defaultDepsYAML []byte
 
-//go:embed services.yaml services-kubernetes.yaml
+//go:embed services.yaml services-kubernetes.yaml services-silo.yaml
 var defaultServicesFS embed.FS
 
 // LoadDefaultConfig loads the embedded default configuration
@@ -68,7 +68,7 @@ func LoadDefaultConfig() (*types.DepsConfig, error) {
 // entries (no installable artifact, e.g. mysql, mssql, valkey).
 func attachServiceSpecs(config *types.DepsConfig) error {
 	services := map[string]*types.ServiceSpec{}
-	for _, filename := range []string{"services.yaml", "services-kubernetes.yaml"} {
+	for _, filename := range []string{"services.yaml", "services-kubernetes.yaml", "services-silo.yaml"} {
 		data, err := defaultServicesFS.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read embedded services config %s: %w", filename, err)
