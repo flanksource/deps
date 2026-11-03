@@ -995,6 +995,20 @@ registry:
         version_command: version
         version_regex: 'Ginkgo Version (\d+\.\d+\.\d+)'
 
+    golangci-lint:
+        name: golangci-lint
+        repo: golangci/golangci-lint
+        asset_patterns:
+            darwin-amd64: golangci-lint-{{.version}}-darwin-amd64.tar.gz
+            darwin-arm64: golangci-lint-{{.version}}-darwin-arm64.tar.gz
+            linux-amd64: golangci-lint-{{.version}}-linux-amd64.tar.gz
+            linux-arm64: golangci-lint-{{.version}}-linux-arm64.tar.gz
+            windows-amd64: golangci-lint-{{.version}}-windows-amd64.zip
+            windows-arm64: golangci-lint-{{.version}}-windows-arm64.zip
+        checksum_file: golangci-lint-{{.version}}-checksums.txt
+        version_command: --version
+        version_regex: 'golangci-lint has version v?(\d+\.\d+\.\d+)'
+
     python:
         name: python
         repo: astral-sh/python-build-standalone
