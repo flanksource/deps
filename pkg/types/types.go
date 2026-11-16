@@ -13,7 +13,7 @@ import (
 	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/utils"
-	"github.com/flanksource/gomplate/v3"
+	"github.com/flanksource/gomplate/v4"
 	"github.com/samber/lo"
 )
 

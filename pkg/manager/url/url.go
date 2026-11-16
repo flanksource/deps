@@ -17,7 +17,7 @@ import (
 	depstemplate "github.com/flanksource/deps/pkg/template"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/version"
-	"github.com/flanksource/gomplate/v3"
+	"github.com/flanksource/gomplate/v4"
 )
 
 // versionMetadata stores additional metadata for a version
@@ -300,10 +300,10 @@ func (m *URLManager) Resolve(ctx context.Context, pkg types.Package, version str
 
 		// Resolve asset pattern if specified
 		if asset == "" && len(pkg.AssetPatterns) > 0 {
-		assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
-		if err != nil {
-			return nil, err
-		}
+			assetPattern, err := manager.ResolveAssetPattern(pkg.AssetPatterns, plat, pkg.Name)
+			if err != nil {
+				return nil, err
+			}
 
 			// Template the asset pattern
 			asset, err = depstemplate.TemplateURL(assetPattern, version, plat.OS, plat.Arch)

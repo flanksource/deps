@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/flanksource/deps/pkg/types"
-	"github.com/flanksource/gomplate/v3"
+	"github.com/flanksource/gomplate/v4"
 )
 
 // ApplyVersionExpr applies a CEL expression to filter and/or transform versions
