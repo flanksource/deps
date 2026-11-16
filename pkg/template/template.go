@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	depsversion "github.com/flanksource/deps/pkg/version"
-	"github.com/flanksource/gomplate/v3"
+	"github.com/flanksource/gomplate/v4"
 )
 
 func NormalizeVersion(version string) string {

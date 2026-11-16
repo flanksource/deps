@@ -31,7 +31,7 @@ import (
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/pkg/utils"
 	versionpkg "github.com/flanksource/deps/pkg/version"
-	"github.com/flanksource/gomplate/v3"
+	"github.com/flanksource/gomplate/v4"
 )
 
 // ToolSpec represents a tool with optional asset hint and version, written as
