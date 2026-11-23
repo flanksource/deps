@@ -189,6 +189,12 @@ func restartArgs(name string, so *state.StartOptions, stateDir string) []string 
 	if so.Port != 0 {
 		args = append(args, "--port", strconv.Itoa(so.Port))
 	}
+	if so.InstanceID != "" {
+		args = append(args, "--instance-id", so.InstanceID)
+	}
+	for name, port := range so.Ports {
+		args = append(args, "--ports", name+"="+strconv.Itoa(port))
+	}
 	if so.Bind != "" {
 		args = append(args, "--bind", so.Bind)
 	}
