@@ -81,6 +81,7 @@ func (i *Instance) Info(ctx context.Context) (ServiceInfo, error) {
 				opts.Version, opts.Port, opts.BindAddress, opts.DataDir = saved.Version, saved.Port, saved.Bind, saved.DataDir
 				opts.VolumeMode, opts.Parameters = VolumeMode(saved.VolumeMode), cloneStrings(saved.Parameters)
 				opts.InstanceID = saved.InstanceID
+				opts.Ports = saved.Ports
 			}
 			svc := &ServiceContext{Name: i.Name, Spec: *spec, Opts: opts, DataDir: info.Paths.Data}
 			live, err := provider.InspectConfig(ctx, svc, i.State)
@@ -153,6 +154,7 @@ func (i *Instance) awaitReady(ctx context.Context, since logOffset) error {
 		options.Version, options.Port, options.BindAddress, options.DataDir = saved.Version, saved.Port, saved.Bind, saved.DataDir
 		options.VolumeMode, options.Parameters = VolumeMode(saved.VolumeMode), cloneStrings(saved.Parameters)
 		options.InstanceID = saved.InstanceID
+		options.Ports = saved.Ports
 		if saved.Namespace != "" {
 			options.Namespace = saved.Namespace
 		}
@@ -161,6 +163,11 @@ func (i *Instance) awaitReady(ctx context.Context, since logOffset) error {
 	if err != nil {
 		return err
 	}
+	parameters, _, err := resolveServiceParameters(*spec, i.Runtime, options.Parameters)
+	if err != nil {
+		return err
+	}
+	svc.Parameters = parameters
 	var watch *processWatch
 	if w, ok := i.runtime.(watcher); ok {
 		watch = w.Watch(ctx, svc, i.State, since)

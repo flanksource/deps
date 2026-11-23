@@ -3,6 +3,7 @@ package start
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,7 +16,8 @@ type Options struct {
 	// Version of the package/image/chart app; empty means latest/spec default.
 	Version string
 	// Port overrides the host port for the primary service port.
-	Port int
+	Port  int
+	Ports map[string]int
 	// BindAddress is the address services listen on, default 127.0.0.1.
 	// Use 0.0.0.0 to expose services on all interfaces.
 	BindAddress string
@@ -129,6 +131,11 @@ func WithVersion(version string) Option {
 }
 func WithPort(port int) Option {
 	return func(o *Options) { o.Port, o.supplied.port = port, true }
+}
+
+// WithPorts overrides named host ports without changing container listen ports.
+func WithPorts(ports map[string]int) Option {
+	return func(o *Options) { o.Ports = maps.Clone(ports) }
 }
 func WithBindAddress(addr string) Option {
 	return func(o *Options) { o.BindAddress, o.supplied.bind = addr, true }

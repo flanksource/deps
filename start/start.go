@@ -103,6 +103,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	}
 
 	desiredOptions := state.StartOptions{
+		Ports:   options.Ports,
 		Runtime: string(kind), Version: options.Version, Port: options.Port,
 		Bind: options.BindAddress, Namespace: options.Namespace, DataDir: options.DataDir,
 		InstanceID: options.InstanceID, VolumeMode: string(svc.Opts.VolumeMode), Parameters: persistedParameters,
@@ -164,6 +165,9 @@ func mergePriorOptions(options *Options, prior *state.State) error {
 		return nil
 	}
 	saved := prior.StartOptions
+	if options.Ports == nil {
+		options.Ports = saved.Ports
+	}
 	if !options.supplied.runtime {
 		options.Runtime = RuntimeKind(prior.Runtime)
 	}
@@ -438,6 +442,9 @@ func newRuntime(kind RuntimeKind) (Runtime, error) {
 // The password is reused from prior state so restarts keep working against
 // initialized data dirs.
 func newServiceContext(name string, pkg types.Package, spec types.ServiceSpec, options Options) (*ServiceContext, error) {
+	if err := validateServiceOptions(spec, options); err != nil {
+		return nil, err
+	}
 	dir, err := state.Dir(options.StateDir, name)
 	if err != nil {
 		return nil, err

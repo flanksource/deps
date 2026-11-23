@@ -2,6 +2,7 @@ package start
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 
@@ -54,6 +55,19 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 		Runtime: string(RuntimeDocker), Version: svc.Version, Image: image,
 		Parameters: cloneStrings(svc.Opts.Parameters), Ports: configuredPorts(svc),
 		Bind: dockerBindAddress(svc),
+	}
+	for path, content := range spec.Files {
+		rendered, err := render("docker.files."+path, content, data)
+		if err != nil {
+			return nil, err
+		}
+		if rendered == "" {
+			continue
+		}
+		if config.Files == nil {
+			config.Files = map[string]string{}
+		}
+		config.Files[path] = fmt.Sprintf("%x", sha256.Sum256([]byte(rendered)))
 	}
 	if spec.DataPath != "" {
 		config.Volume = &state.Volume{Mode: string(svc.Opts.VolumeMode), Target: spec.DataPath}
