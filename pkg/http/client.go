@@ -53,8 +53,7 @@ func GetHttpClient(opts ...ClientOption) *http.Client {
 		opt(cfg)
 	}
 
-	baseTransport := http.DefaultTransport.(*http.Transport).Clone()
-	var transport http.RoundTripper = baseTransport
+	transport := http.DefaultTransport
 
 	if traceConfig, ok := resolveHTTPLogConfig(cfg); ok {
 		transport = httpmiddlewares.NewLogger(traceConfig)(transport)
