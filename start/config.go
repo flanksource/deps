@@ -76,6 +76,9 @@ func configuredPorts(svc *ServiceContext) map[string]int {
 	primary, _ := svc.Spec.PrimaryPort()
 	for _, port := range svc.Spec.Ports {
 		ports[port.Name] = port.Port
+		if override, ok := svc.Opts.Ports[port.Name]; ok {
+			ports[port.Name] = override
+		}
 		if port.Name == primary.Name && svc.Opts.Port != 0 {
 			ports[port.Name] = svc.Opts.Port
 		}

@@ -105,13 +105,7 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	}
 	go persistMetrics(svc.Opts.StateDir, svc.Name, sup)
 
-	ports := map[string]int{}
-	for _, p := range svc.Spec.Ports {
-		ports[p.Name] = p.Port
-	}
-	if primary, ok := svc.Spec.PrimaryPort(); ok && svc.Opts.Port != 0 {
-		ports[primary.Name] = svc.Opts.Port
-	}
+	ports := configuredPorts(svc)
 	return &state.State{PID: sup.Pid(), SupervisorPID: os.Getpid(), Ports: ports}, nil
 }
 

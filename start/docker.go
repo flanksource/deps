@@ -247,7 +247,7 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 		if err != nil {
 			return nil, err
 		}
-		hostPort := p.Port
+		hostPort := configuredPorts(svc)[p.Name]
 		if p.Name == primary.Name && svc.Opts.Port != 0 {
 			hostPort = svc.Opts.Port
 		}
@@ -272,7 +272,9 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 		if err != nil {
 			return nil, err
 		}
-		binds = append(binds, rendered)
+		if rendered != "" {
+			binds = append(binds, rendered)
+		}
 	}
 
 	opts := []sdkcontainer.ContainerCustomizer{
@@ -288,6 +290,16 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 			hc.Privileged = spec.Privileged
 			hc.RestartPolicy = mobycontainer.RestartPolicy{Name: mobycontainer.RestartPolicyUnlessStopped}
 		}),
+	}
+	for path, content := range spec.Files {
+		rendered, err := render("docker.files."+path, content, data)
+		if err != nil {
+			return nil, err
+		}
+		if rendered == "" {
+			continue
+		}
+		opts = append(opts, sdkcontainer.WithFiles(sdkcontainer.File{Reader: strings.NewReader(rendered), ContainerPath: path, Mode: 0o644}))
 	}
 	if len(cmd) > 0 {
 		opts = append(opts, sdkcontainer.WithCmd(cmd...))
@@ -320,6 +332,9 @@ func renderDockerEnvironment(svc *ServiceContext, data map[string]any) (map[stri
 // Watch observes the container for readiness: liveness from the container
 // state, output from its log tail and exec probes through docker exec.
 func (r *dockerRuntime) Watch(ctx context.Context, svc *ServiceContext, st *state.State, _ logOffset) *processWatch {
+	if svc.Host == "" {
+		svc.Host = r.daemonHost(ctx)
+	}
 	if st == nil || st.ContainerID == "" {
 		return nil
 	}
@@ -351,11 +366,9 @@ func (r *dockerRuntime) execProbe(ctx context.Context, id string, cmd []string, 
 	if err != nil {
 		return false
 	}
-	rendered := make([]string, len(cmd))
-	for i, c := range cmd {
-		if rendered[i], err = render(fmt.Sprintf("health.exec[%d]", i), c, data); err != nil {
-			return false
-		}
+	rendered, err := renderArguments("health.exec", cmd, data)
+	if err != nil {
+		return false
 	}
 	created, err := docker.ExecCreate(ctx, id, mobyclient.ExecCreateOptions{Cmd: rendered})
 	if err != nil {

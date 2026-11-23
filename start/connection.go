@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
+	"os"
 	"strings"
 	"text/template"
 
@@ -18,6 +19,9 @@ func hostPort(svc *ServiceContext) int {
 		return svc.Opts.Port
 	}
 	primary, _ := svc.Spec.PrimaryPort()
+	if port, ok := svc.Opts.Ports[primary.Name]; ok {
+		return port
+	}
 	return primary.Port
 }
 
@@ -31,11 +35,8 @@ func bindAddress(svc *ServiceContext) string {
 
 // templateData builds the variable map available to all ServiceSpec templates.
 func templateData(svc *ServiceContext, host, release string) map[string]any {
-	ports := map[string]int{}
+	ports := configuredPorts(svc)
 	primary, _ := svc.Spec.PrimaryPort()
-	for _, p := range svc.Spec.Ports {
-		ports[p.Name] = p.Port
-	}
 	if svc.Opts.Port != 0 {
 		ports[primary.Name] = svc.Opts.Port
 	}
@@ -77,6 +78,7 @@ func templateData(svc *ServiceContext, host, release string) map[string]any {
 }
 
 var templateFuncs = template.FuncMap{
+	"readFile": func(path string) (string, error) { data, err := os.ReadFile(path); return string(data), err },
 	// pipeline-friendly: {{.tag | replace "+" "-"}}
 	"replace": func(old, new, s string) string { return strings.ReplaceAll(s, old, new) },
 }

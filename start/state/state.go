@@ -55,6 +55,7 @@ type StartOptions struct {
 	Runtime    string            `yaml:"runtime,omitempty"`
 	Version    string            `yaml:"version,omitempty"`
 	Port       int               `yaml:"port,omitempty"`
+	Ports      map[string]int    `yaml:"ports,omitempty"`
 	Bind       string            `yaml:"bind,omitempty"`
 	Namespace  string            `yaml:"namespace,omitempty"`
 	InstanceID string            `yaml:"instance_id,omitempty"`
@@ -70,6 +71,7 @@ func (o *StartOptions) Equal(other *StartOptions) bool {
 	return o.Runtime == other.Runtime &&
 		o.Version == other.Version &&
 		o.Port == other.Port &&
+		maps.Equal(o.Ports, other.Ports) &&
 		o.Bind == other.Bind &&
 		o.Namespace == other.Namespace &&
 		o.InstanceID == other.InstanceID &&
@@ -81,6 +83,7 @@ func (o *StartOptions) Equal(other *StartOptions) bool {
 // EffectiveConfig is the canonical, credential-free projection managed by
 // deps-start. Runtime metadata stores the same projection for live inspection.
 type EffectiveConfig struct {
+	Files      map[string]string `json:"files,omitempty" yaml:"files,omitempty"`
 	Runtime    string            `json:"runtime" yaml:"runtime"`
 	Version    string            `json:"version,omitempty" yaml:"version,omitempty"`
 	Image      string            `json:"image,omitempty" yaml:"image,omitempty"`
