@@ -82,12 +82,38 @@ services:
         type: redis
         ports: [{name: valkey, port: 6379}]
         credentials: {username: default}
+        parameters: &redisTLSParameters
+            tls: {type: bool, description: Require TLS connections, default: "false", runtimes: [docker]}
+            tls-dir: {type: string, description: Absolute directory containing CA and server/client PEM files, runtimes: [docker]}
+            tls-auth-clients: {type: bool, description: Require client certificates, default: "false", runtimes: [docker]}
         url: "redis://{{.username}}:{{.password}}@{{.host}}"
         docker:
             image: "valkey/valkey:{{.version}}"
-            args: ["--requirepass", "{{.password}}"]
+            args: &redisTLSArgs
+                - --requirepass
+                - '{{.password}}'
+                - --port
+                - '{{if index .parameters "tls"}}0{{else}}6379{{end}}'
+                - '{{if index .parameters "tls"}}--tls-port{{end}}'
+                - '{{if index .parameters "tls"}}6379{{end}}'
+                - '{{if index .parameters "tls"}}--tls-cert-file{{end}}'
+                - '{{if index .parameters "tls"}}/tls/server.crt{{end}}'
+                - '{{if index .parameters "tls"}}--tls-key-file{{end}}'
+                - '{{if index .parameters "tls"}}/tls/server.key{{end}}'
+                - '{{if index .parameters "tls"}}--tls-ca-cert-file{{end}}'
+                - '{{if index .parameters "tls"}}/tls/ca.crt{{end}}'
+                - '{{if index .parameters "tls"}}--tls-auth-clients{{end}}'
+                - '{{if index .parameters "tls"}}{{if index .parameters "tls-auth-clients"}}yes{{else}}no{{end}}{{end}}'
+            files: &tlsFiles
+                /tls/ca.crt: '{{if index .parameters "tls"}}{{readFile (printf "%s/ca.crt" (index .parameters "tls-dir"))}}{{end}}'
+                /tls/server.crt: '{{if index .parameters "tls"}}{{readFile (printf "%s/server.crt" (index .parameters "tls-dir"))}}{{end}}'
+                /tls/server.key: '{{if index .parameters "tls"}}{{readFile (printf "%s/server.key" (index .parameters "tls-dir"))}}{{end}}'
+                /tls/server.pem: '{{if index .parameters "tls"}}{{readFile (printf "%s/server.pem" (index .parameters "tls-dir"))}}{{end}}'
+                /tls/client.crt: '{{if index .parameters "tls"}}{{readFile (printf "%s/client.crt" (index .parameters "tls-dir"))}}{{end}}'
+                /tls/client.key: '{{if index .parameters "tls"}}{{readFile (printf "%s/client.key" (index .parameters "tls-dir"))}}{{end}}'
+                /tls/client.pem: '{{if index .parameters "tls"}}{{readFile (printf "%s/client.pem" (index .parameters "tls-dir"))}}{{end}}'
             data_path: /data
-            health: {exec: ["valkey-cli", "-a", "{{.password}}", "ping"], timeout: 30s}
+            health: {exec: ["valkey-cli", '-a', '{{.password}}', '{{if index .parameters "tls"}}--tls{{end}}', '{{if index .parameters "tls"}}--cacert{{end}}', '{{if index .parameters "tls"}}/tls/ca.crt{{end}}', '{{if index .parameters "tls"}}--cert{{end}}', '{{if index .parameters "tls"}}/tls/client.crt{{end}}', '{{if index .parameters "tls"}}--key{{end}}', '{{if index .parameters "tls"}}/tls/client.key{{end}}', ping], timeout: 60s}
         helm:
             repo: https://groundhog2k.github.io/helm-charts/
             chart: valkey
@@ -101,9 +127,71 @@ services:
                   requirepass {{.password}}
             service: {name: "{{.release}}", port: 6379}
 
+    redis:
+        type: redis
+        ports: [{name: redis, port: 6379}]
+        credentials: {username: default}
+        parameters: *redisTLSParameters
+        url: 'redis://{{.username}}:{{.password}}@{{.host}}'
+        docker:
+            image: 'redis:{{.version}}'
+            args: *redisTLSArgs
+            files: *tlsFiles
+            data_path: /data
+            health:
+                exec: [redis-cli, -a, '{{.password}}', '{{if index .parameters "tls"}}--tls{{end}}', '{{if index .parameters "tls"}}--cacert{{end}}', '{{if index .parameters "tls"}}/tls/ca.crt{{end}}', '{{if index .parameters "tls"}}--cert{{end}}', '{{if index .parameters "tls"}}/tls/client.crt{{end}}', '{{if index .parameters "tls"}}--key{{end}}', '{{if index .parameters "tls"}}/tls/client.key{{end}}', ping]
+                timeout: 60s
+
+    mongodb:
+        type: mongodb
+        ports: [{name: mongo, port: 27017}]
+        credentials: {username: admin, database: admin}
+        parameters: *redisTLSParameters
+        url: 'mongodb://{{.username}}:{{.password}}@{{.host}}/?authSource=admin{{if index .parameters "tls"}}&tls=true{{end}}'
+        docker:
+            image: 'mongo:{{.version}}'
+            env: {MONGO_INITDB_ROOT_USERNAME: '{{.username}}', MONGO_INITDB_ROOT_PASSWORD: '{{.password}}'}
+            data_path: /data/db
+            files: *tlsFiles
+            args:
+                - --bind_ip_all
+                - '{{if index .parameters "tls"}}--tlsMode{{end}}'
+                - '{{if index .parameters "tls"}}requireTLS{{end}}'
+                - '{{if index .parameters "tls"}}--tlsCertificateKeyFile{{end}}'
+                - '{{if index .parameters "tls"}}/tls/server.pem{{end}}'
+                - '{{if index .parameters "tls"}}--tlsCAFile{{end}}'
+                - '{{if index .parameters "tls"}}/tls/ca.crt{{end}}'
+                - '{{if index .parameters "tls"}}{{if not (index .parameters "tls-auth-clients")}}--tlsAllowConnectionsWithoutCertificates{{end}}{{end}}'
+            health:
+                exec: [mongosh, --quiet, --username, '{{.username}}', --password, '{{.password}}', --authenticationDatabase, admin, '{{if index .parameters "tls"}}--tls{{end}}', '{{if index .parameters "tls"}}--tlsCAFile{{end}}', '{{if index .parameters "tls"}}/tls/ca.crt{{end}}', '{{if index .parameters "tls"}}--tlsCertificateKeyFile{{end}}', '{{if index .parameters "tls"}}/tls/client.pem{{end}}', --eval, 'if (db.adminCommand({ping: 1}).ok !== 1) quit(1)']
+                timeout: 120s
+
+    gitea:
+        type: http
+        ports: [{name: http, port: 3000}, {name: ssh, port: 2222}]
+        url: 'http://{{.host}}'
+        health: {http: /api/healthz, timeout: 120s}
+        docker:
+            image: 'gitea/gitea:{{.version}}-rootless'
+            data_path: /var/lib/gitea
+            env: {GITEA__database__DB_TYPE: sqlite3, GITEA__security__INSTALL_LOCK: 'true'}
+
+    ldap:
+        type: ldap
+        ports: [{name: ldap, port: 10389}]
+        url: 'ldap://{{.host}}'
+        credentials: {username: 'uid=admin,ou=system', password: secret}
+        parameters:
+            ldif-file: {type: string, description: Absolute path to the seed LDIF}
+        docker:
+            image: quay.io/toni0/apacheds:2.0.0_AM25_1
+            env: {BOOTSTRAP_FILE: /bootstrap/data.ldif}
+            files: {/bootstrap/data.ldif: '{{readFile (index .parameters "ldif-file")}}'}
+            health: {port: ldap, timeout: 120s}
+
     opensearch:
         type: opensearch
-        ports: [{name: http, port: 9200}]
+        ports: [{name: http, port: 9200}, {name: transport, port: 9300}]
         credentials: {username: admin}
         parameters:
             jvm-memory: {type: string, description: JVM minimum and maximum heap, default: 512m, pattern: '^[1-9][0-9]*[kKmMgG]$'}
@@ -111,7 +199,7 @@ services:
         health: {http: /_cluster/health, port: http, timeout: 180s}
         binary:
             command: bin/opensearch
-            args: ["-Ediscovery.type=single-node", "-Eplugins.security.disabled=true", "-Ehttp.port={{.port}}", "-Epath.data={{.dataDir}}"]
+            args: ["-Ediscovery.type=single-node", "-Eplugins.security.disabled=true", "-Ehttp.port={{.port}}", "-Etransport.port={{.ports.transport}}", "-Epath.data={{.dataDir}}"]
             env: {OPENSEARCH_JAVA_OPTS: '-Xms{{index .parameters "jvm-memory"}} -Xmx{{index .parameters "jvm-memory"}}'}
             platforms: ["linux-*"] # no darwin bundles are published
         docker:
@@ -241,6 +329,8 @@ services:
     prometheus:
         type: prometheus
         ports: [{name: http, port: 9090}]
+        parameters:
+            file-sd-dir: {type: string, description: Absolute directory of Prometheus file discovery JSON targets, runtimes: [binary], pattern: '^/'}
         url: "http://{{.host}}"
         health: {http: /-/ready, port: http, timeout: 60s}
         binary:
@@ -254,6 +344,12 @@ services:
                       - job_name: self
                         static_configs:
                           - targets: ["localhost:{{.port}}"]
+                    {{if index .parameters "file-sd-dir"}}
+                      - job_name: file_sd
+                        file_sd_configs:
+                          - files: [{{printf "%q" (printf "%s/*.json" (index .parameters "file-sd-dir"))}}]
+                            refresh_interval: 1s
+                    {{end}}
         docker:
             image: 'prom/prometheus:{{if eq .version "latest"}}latest{{else}}v{{.version}}{{end}}'
             data_path: /prometheus
