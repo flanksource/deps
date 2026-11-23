@@ -33,6 +33,8 @@ type startFlags struct {
 	runtime       string
 	version       string
 	port          int
+	ports         map[string]int
+	instanceID    string
 	bind          string
 	namespace     string
 	namespaceFlag *pflag.Flag
@@ -49,8 +51,8 @@ type startFlags struct {
 func newRootCmd() *cobra.Command {
 	flags := &rootFlags{}
 	cmd := &cobra.Command{
-		Use:     "deps-start <service>[@version]",
-		Short:   "Start services (postgres, opensearch, valkey, ...) via binary, docker, helm or a CLI",
+		Use:   "deps-start <service>[@version]",
+		Short: "Start services (postgres, opensearch, valkey, ...) via binary, docker, helm or a CLI",
 		Long: "deps-start launches services from the deps registry and prints a commons-db connection.\n\n" +
 			"Starting leaves a supervisor running in the background: the command streams the\n" +
 			"service's logs to stderr until it is ready or the start timeout is reached, then\n" +
@@ -113,6 +115,8 @@ func addStartFlags(cmd *cobra.Command, flags *startFlags, spec *types.ServiceSpe
 	cmd.Flags().StringVar(&flags.runtime, "runtime", "", fmt.Sprintf("runtime to use: %s (default: first supported)", strings.Join(spec.Runtimes(), ", ")))
 	cmd.Flags().StringVar(&flags.version, "version", "", "service version to install/run (default: latest)")
 	cmd.Flags().IntVar(&flags.port, "port", 0, "primary service port override")
+	cmd.Flags().StringToIntVar(&flags.ports, "ports", nil, "named host ports (e.g. s3=19000,console=19001)")
+	cmd.Flags().StringVar(&flags.instanceID, "instance-id", "", "isolate container and Helm resource names")
 	cmd.Flags().StringVar(&flags.bind, "bind", "", "address the service listens on (default 127.0.0.1; use 0.0.0.0 for all interfaces)")
 	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "service data directory override")
 	cmd.Flags().StringVar(&flags.volumeMode, "volume-mode", "", "primary data volume mode: persistent, host or ephemeral")
@@ -189,6 +193,12 @@ func (f *rootFlags) options() []start.Option {
 
 func (f *startFlags) options() []start.Option {
 	var opts []start.Option
+	if f.instanceID != "" {
+		opts = append(opts, start.WithInstanceID(f.instanceID))
+	}
+	if f.ports != nil {
+		opts = append(opts, start.WithPorts(f.ports))
+	}
 	if f.runtime != "" {
 		opts = append(opts, start.WithRuntime(start.RuntimeKind(f.runtime)))
 	}
