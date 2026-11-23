@@ -143,7 +143,7 @@ type DockerRuntime struct {
 	DataPath string `json:"data_path,omitempty" yaml:"data_path,omitempty"`
 	// Volumes are extra "hostTemplate:containerPath" mounts.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
-	// Files maps container paths to templated content (mounted read-only).
+	// Files maps container paths to templated content uploaded before startup.
 	Files     map[string]string `json:"files,omitempty" yaml:"files,omitempty"`
 	Platforms []string          `json:"platforms,omitempty" yaml:"platforms,omitempty"`
 	// Privileged runs the container in privileged mode (k3s).
