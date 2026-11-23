@@ -216,7 +216,7 @@ runs:
         while IFS= read -r SERVICE_NAME; do
           while IFS= read -r FIELD; do
             case "$FIELD" in
-              bind|data_dir|namespace|parameters|port|runtime|update|version|volume_mode|wait_timeout)
+              bind|data_dir|namespace|instance_id|parameters|ports|port|runtime|update|version|volume_mode|wait_timeout)
                 ;;
               *)
                 echo "unsupported option for $SERVICE_NAME: $FIELD" >&2
@@ -245,12 +245,16 @@ runs:
           done < <(printf '%s\n' "$SERVICES_INPUT" | SERVICE_NAME="$SERVICE_NAME" yq -r '
             .[strenv(SERVICE_NAME)] // {} |
             (
-              to_entries | .[] | select(.key != "parameters") |
+              to_entries | .[] | select(.key != "parameters" and .key != "ports") |
               "--" + (.key | sub("_"; "-")) + "=" + (.value | tostring)
             ),
             (
               .parameters // {} | to_entries | .[] |
               "--" + .key + "=" + (.value | tostring)
+            ),
+            (
+              .ports // {} | to_entries | .[] |
+              "--ports=" + .key + "=" + (.value | tostring)
             )
           ')
 

@@ -665,6 +665,10 @@ deps run --runtime-version=">=7.0" advanced.ps1
 
 ## Usage: deps-start (services)
 
+Named host ports can be isolated with `--ports s3=19000,console=19001` or the Go API `start.WithPorts(map[string]int{"s3": 19000, "console": 19001})`. The primary `--port` option remains available; conflicting primary overrides fail. Use `--instance-id` alongside a separate `--state-dir` to isolate container resources. The GitHub Action accepts the corresponding `ports` map and `instance_id` option.
+
+MongoDB (`mongodb`), Redis (`redis`) and Valkey (`valkey`) provide container TLS with `--tls --tls-dir /absolute/certificates`. The directory contains `ca.crt`, `server.crt`, `server.key`, `server.pem` (certificate and key), `client.crt`, `client.key`, and `client.pem`. Use `--tls-auth-clients` for mTLS. Certificates are copied through the Docker API before startup, including for remote Docker contexts; authenticated readiness probes use the same TLS configuration. Service state records file fingerprints rather than certificate contents.
+
 `deps start` and its alias `deps services` forward the complete `deps-start` CLI, installing it on demand. For example, `deps services silo`, `deps start silo --runtime docker`, and `deps services stop silo`. Existing `deps svc` commands remain available.
 
 Silo provides S3 object storage through native binary, Docker, and Helm runtimes. It exposes S3 on port 9000 and Console on 9001, generates a root password, and emits an `aws` connection with endpoint, region, and `console_url`. Use `--region` to change the default `us-east-1`, or `--port` to change the S3 port.
