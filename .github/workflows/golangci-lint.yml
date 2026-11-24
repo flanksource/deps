@@ -19,18 +19,18 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.4"
+          go-version-file: go.mod
           cache: false
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.11.4
+          version: v2.15.0
           args: --timeout=5m
 
       - name: golangci-lint (start module)
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.11.4
+          version: v2.15.0
           args: --timeout=5m
           working-directory: start
