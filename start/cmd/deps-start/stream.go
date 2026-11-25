@@ -150,7 +150,11 @@ func portsLabel(ports []int) string {
 
 // printReady reports a service as ready, pointing at the ports it published.
 func printReady(name string, info start.ServiceInfo, elapsed time.Duration) {
-	if listening := portsLabel(portValues(info.Ports)); listening != "" {
+	listening := portsLabel(portValues(info.Ports))
+	if endpoint := info.Connection.URL; len(info.Ports) == 1 && (strings.HasPrefix(endpoint, "https://") || strings.HasPrefix(endpoint, "http://")) {
+		listening = endpoint
+	}
+	if listening != "" {
 		printAction(icons.Success, "text-green-600", "%s ready on %s (%s)", name, listening, elapsed.Truncate(100*time.Millisecond))
 		return
 	}

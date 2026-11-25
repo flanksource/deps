@@ -1,0 +1,18 @@
+apiVersion: canaries.flanksource.com/v1
+kind: Canary
+metadata:
+  name: aws-emulator
+spec:
+  schedule: '@every 1m'
+  folder:
+    - name: canary-object
+      path: s3://deps-canary/ready.txt
+      awsCredentialsFile: '{{ required "awsCredentialsFile is required" .awsCredentialsFile }}'
+      awsConnection:
+        endpoint: '{{ required "awsEmulatorURL is required" .awsEmulatorURL }}'
+        region: us-east-1
+        usePathStyle: true
+        skipTLSVerify: true
+      filter:
+        regex: '^ready\.txt$'
+      minCount: 1

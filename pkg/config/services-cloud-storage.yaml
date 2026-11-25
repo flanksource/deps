@@ -1,0 +1,74 @@
+services:
+    gcs: &fake-gcs-server
+        type: gcs
+        ports:
+            - {name: http, port: 4443}
+        url: 'http://{{.host}}'
+        health:
+            http: /storage/v1/b
+        binary:
+            package: fake-gcs-server
+            platforms: [darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64]
+            command: '{{.binDir}}/fake-gcs-server{{if eq .os "windows"}}.exe{{end}}'
+            args: [-scheme, http, -host, '{{.bind}}', -port, '{{.port}}', -filesystem-root, '{{.dataDir}}', -public-host, '{{.hostname}}:{{.port}}', -external-url, 'http://{{.hostname}}:{{.port}}']
+        docker:
+            image: 'fsouza/fake-gcs-server:{{.version}}'
+            default_version: '1.56.1'
+            data_path: /storage
+            args: [-scheme, http, -filesystem-root, /storage, -public-host, '{{.host}}', -external-url, 'http://{{.host}}']
+
+    fake-gcs-server: *fake-gcs-server
+
+    azurite:
+        type: azure
+        ports:
+            - {name: blob, port: 10000}
+            - {name: queue, port: 10001}
+            - {name: table, port: 10002}
+        credentials:
+            username: devstoreaccount1
+        url: 'http://{{.host}}/{{.username}}'
+        properties:
+            blob_endpoint: 'http://{{.host}}/{{.username}}'
+            queue_endpoint: 'http://{{.hostname}}:{{.ports.queue}}/{{.username}}'
+            table_endpoint: 'http://{{.hostname}}:{{.ports.table}}/{{.username}}'
+            connection_string: 'DefaultEndpointsProtocol=http;AccountName={{.username}};AccountKey={{.password}};BlobEndpoint=http://{{.host}}/{{.username}};QueueEndpoint=http://{{.hostname}}:{{.ports.queue}}/{{.username}};TableEndpoint=http://{{.hostname}}:{{.ports.table}}/{{.username}}'
+        health:
+            port: table
+        docker:
+            image: 'mcr.microsoft.com/azure-storage/azurite:{{.version}}'
+            default_version: '3.38.0'
+            data_path: /data
+            args: [azurite, --blobHost, 0.0.0.0, --queueHost, 0.0.0.0, --tableHost, 0.0.0.0, --location, /data, --disableTelemetry]
+            env:
+                AZURITE_ACCOUNTS: '{{.username}}:{{.password}}'
+
+    aws-emulator:
+        type: aws
+        ports:
+            - {name: https, port: 9297}
+        url: 'https://{{.host}}'
+        insecure_tls: true
+        properties:
+            region: us-east-1
+            ca_bundle: '{{.runDir}}/ca.pem'
+            shared_credentials_file: '{{.runDir}}/emulator_credentials'
+        health:
+            exec: [curl, --fail, --silent, --show-error, --cacert, '/home/emulator/.aws/emulator/{{.port}}/ca.pem', 'https://127.0.0.1:{{.port}}/__admin/health']
+        docker:
+            image: deps-start-aws-emulator
+            default_version: '1.0.611'
+            match_host_ports: true
+            args: [--bind, 0.0.0.0, --port, '{{.port}}', --telemetry, 'off']
+            export_files:
+                ca.pem: '/home/emulator/.aws/emulator/{{.port}}/ca.pem'
+                emulator_credentials: '/home/emulator/.aws/emulator/{{.port}}/emulator_credentials'
+            dockerfile: |
+                FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal
+                ARG DEPS_SERVICE_VERSION
+                RUN curl --fail --silent --show-error --location "https://downloads.aws.com/aws-emulator/packages/aws-emulator/LTS/aws-emulator-${DEPS_SERVICE_VERSION}-1-$(uname -m).rpm" -o /tmp/aws-emulator.rpm \
+                    && rpm -i /tmp/aws-emulator.rpm && rm /tmp/aws-emulator.rpm \
+                    && mkdir /home/emulator && chown 1000:1000 /home/emulator
+                USER 1000:1000
+                ENV HOME=/home/emulator
+                ENTRYPOINT ["aws-emulator"]

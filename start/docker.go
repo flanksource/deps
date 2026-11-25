@@ -77,18 +77,14 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	if _, err := r.client(); err != nil {
 		return nil, err
 	}
-	if _, err := r.DesiredConfig(ctx, svc); err != nil {
-		return nil, err
-	}
-	host, err := r.daemonHost(ctx)
+	desired, err := r.DesiredConfig(ctx, svc)
 	if err != nil {
 		return nil, err
 	}
-	svc.Host = host
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
 
 	name := containerName(svc.Name, svc.Opts.InstanceID)
-	id, running, created, err := r.ensureContainer(ctx, svc, data, name)
+	id, running, created, err := r.ensureContainer(ctx, svc, data, desired, name)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +101,7 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		go func() { _ = r.Logs(streamCtx, st, true, svc.Opts.LogWriter) }()
 		defer stopStream()
 	}
-	if err := awaitHealthy(ctx, svc, spec.Health, r.Watch(ctx, svc, st, logOffset{})); err != nil {
+	if err := r.awaitReady(ctx, svc, st); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		var cleanupErr error
@@ -122,14 +118,14 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return nil, errors.Join(fmt.Errorf("container %s: %w", name, err), cleanupErr)
 	}
 
-	ports := map[string]int{}
-	for _, p := range svc.Spec.Ports {
-		ports[p.Name] = p.Port
+	return &state.State{ContainerID: id, Ports: configuredPorts(svc)}, nil
+}
+
+func (r *dockerRuntime) awaitReady(ctx context.Context, svc *ServiceContext, st *state.State) error {
+	if err := awaitHealthy(ctx, svc, svc.Spec.Docker.Health, r.Watch(ctx, svc, st, logOffset{})); err != nil {
+		return err
 	}
-	if primary, ok := svc.Spec.PrimaryPort(); ok && svc.Opts.Port != 0 {
-		ports[primary.Name] = svc.Opts.Port
-	}
-	return &state.State{ContainerID: id, Ports: ports}, nil
+	return r.exportFiles(ctx, svc, st.ContainerID)
 }
 
 func (r *dockerRuntime) isRunning(ctx context.Context, id string) bool {
@@ -143,17 +139,13 @@ func (r *dockerRuntime) isRunning(ctx context.Context, id string) bool {
 
 // ensureContainer returns the id of the named service container, reusing a
 // running one, starting a stopped one, or creating a new one via the sdk.
-func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext, data map[string]any, name string) (string, bool, bool, error) {
+func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext, data map[string]any, desired *state.EffectiveConfig, name string) (string, bool, bool, error) {
 	docker, err := r.client()
 	if err != nil {
 		return "", false, false, err
 	}
 	existing, err := docker.FindContainerByName(ctx, name)
 	if err == nil && existing != nil {
-		desired, configErr := r.DesiredConfig(ctx, svc)
-		if configErr != nil {
-			return "", false, false, configErr
-		}
 		encoded, configErr := encodeManagedConfig(desired)
 		if configErr != nil {
 			return "", false, false, configErr
@@ -178,9 +170,14 @@ func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext
 		return "", false, false, err
 	}
 
-	opts, err := r.runOptions(svc, data, name)
+	opts, err := r.runOptions(svc, data, desired, name)
 	if err != nil {
 		return "", false, false, err
+	}
+	if svc.Spec.Docker.Dockerfile != "" {
+		if err := ensureDockerImage(ctx, docker, svc, desired.Image); err != nil {
+			return "", false, false, err
+		}
 	}
 	ctr, err := sdkcontainer.Run(ctx, append(opts, sdkcontainer.WithClient(docker))...)
 	if err != nil {
@@ -200,13 +197,8 @@ func (r *dockerRuntime) ensureContainer(ctx context.Context, svc *ServiceContext
 }
 
 // runOptions renders the docker spec into sdk run options.
-func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, name string) ([]sdkcontainer.ContainerCustomizer, error) {
+func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, desired *state.EffectiveConfig, name string) ([]sdkcontainer.ContainerCustomizer, error) {
 	spec := svc.Spec.Docker
-	desired, err := r.DesiredConfig(context.Background(), svc)
-	if err != nil {
-		return nil, err
-	}
-	imageRef := desired.Image
 	managedConfig, err := encodeManagedConfig(desired)
 	if err != nil {
 		return nil, err
@@ -237,22 +229,18 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 
 	var exposed []string
 	bindings := mobynetwork.PortMap{}
-	primary, _ := svc.Spec.PrimaryPort()
+	ports := configuredPorts(svc)
 	for _, p := range svc.Spec.Ports {
-		proto := p.Protocol
-		if proto == "" {
-			proto = "tcp"
+		containerPort := p.Port
+		if spec.MatchHostPorts {
+			containerPort = ports[p.Name]
 		}
-		port, err := mobynetwork.ParsePort(fmt.Sprintf("%d/%s", p.Port, proto))
+		port, err := mobynetwork.ParsePort(fmt.Sprintf("%d/%s", containerPort, protocol(p.Protocol)))
 		if err != nil {
 			return nil, err
 		}
-		hostPort := configuredPorts(svc)[p.Name]
-		if p.Name == primary.Name && svc.Opts.Port != 0 {
-			hostPort = svc.Opts.Port
-		}
 		exposed = append(exposed, port.String())
-		bindings[port] = []mobynetwork.PortBinding{{HostIP: bindIP, HostPort: fmt.Sprint(hostPort)}}
+		bindings[port] = []mobynetwork.PortBinding{{HostIP: bindIP, HostPort: fmt.Sprint(ports[p.Name])}}
 	}
 
 	var binds []string
@@ -278,7 +266,7 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, nam
 	}
 
 	opts := []sdkcontainer.ContainerCustomizer{
-		sdkcontainer.WithImage(imageRef),
+		sdkcontainer.WithImage(desired.Image),
 		sdkcontainer.WithName(name),
 		sdkcontainer.WithEnv(env),
 		sdkcontainer.WithLabels(map[string]string{serviceLabel: svc.Name, managedConfigLabel: managedConfig}),

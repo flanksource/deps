@@ -1,0 +1,138 @@
+kind: Fixture
+name: Cloud storage canaries
+steps:
+  - id: emulators
+    kind: services
+    timeout: 5m
+    services:
+      gcs:
+        deps: gcs
+        runtime: binary
+      fakeGcs:
+        deps: fake-gcs-server
+        runtime: docker
+      azurite:
+        deps: azurite
+        runtime: docker
+        export:
+          AZURITE_BLOB_ENDPOINT: '{{.outputs.connection.properties.blob_endpoint}}'
+          AZURITE_QUEUE_ENDPOINT: '{{.outputs.connection.properties.queue_endpoint}}'
+          AZURITE_TABLE_ENDPOINT: '{{.outputs.connection.properties.table_endpoint}}'
+      awsEmulator:
+        deps: aws-emulator
+        export:
+          AWS_EMULATOR_CREDENTIALS_FILE: '{{.outputs.connection.properties.shared_credentials_file}}'
+
+  - id: createGcsBucket
+    kind: exec
+    exec: curl
+    args:
+      - --fail-with-body
+      - --silent
+      - --show-error
+      - --json
+      - '{"name":"deps-canary"}'
+      - '{{.env.GCS_URL}}/storage/v1/b?project=deps-canary'
+  - id: uploadGcsMarker
+    kind: exec
+    exec: curl
+    args:
+      - --fail-with-body
+      - --silent
+      - --show-error
+      - --header
+      - 'Content-Type: text/plain'
+      - --data-binary
+      - '@{{.fixture.dir}}/canary-fixtures/ready.txt'
+      - '{{.env.GCS_URL}}/upload/storage/v1/b/deps-canary/o?uploadType=media&name=ready.txt'
+  - id: createFakeGcsBucket
+    kind: exec
+    exec: curl
+    args:
+      - --fail-with-body
+      - --silent
+      - --show-error
+      - --json
+      - '{"name":"deps-canary"}'
+      - '{{.env.FAKE_GCS_URL}}/storage/v1/b?project=deps-canary'
+  - id: uploadFakeGcsMarker
+    kind: exec
+    exec: curl
+    args:
+      - --fail-with-body
+      - --silent
+      - --show-error
+      - --header
+      - 'Content-Type: text/plain'
+      - --data-binary
+      - '@{{.fixture.dir}}/canary-fixtures/ready.txt'
+      - '{{.env.FAKE_GCS_URL}}/upload/storage/v1/b/deps-canary/o?uploadType=media&name=ready.txt'
+
+  - id: createS3Bucket
+    kind: exec
+    exec: aws
+    env: &awsEnv
+      AWS_CONFIG_FILE: /dev/null
+      AWS_SHARED_CREDENTIALS_FILE: '{{.env.AWS_EMULATOR_CREDENTIALS_FILE}}'
+      AWS_EC2_METADATA_DISABLED: 'true'
+    args:
+      - --profile=default
+      - --endpoint-url={{.env.AWS_EMULATOR_URL}}
+      - --region=us-east-1
+      - --no-cli-pager
+      - --no-verify-ssl
+      - s3api
+      - create-bucket
+      - --bucket=deps-canary
+  - id: uploadS3Marker
+    kind: exec
+    exec: aws
+    env: *awsEnv
+    args:
+      - --profile=default
+      - --endpoint-url={{.env.AWS_EMULATOR_URL}}
+      - --region=us-east-1
+      - --no-cli-pager
+      - --no-verify-ssl
+      - s3api
+      - put-object
+      - --bucket=deps-canary
+      - --key=ready.txt
+      - --body={{.fixture.dir}}/canary-fixtures/ready.txt
+
+  - id: canaryData
+    kind: exec
+    exec: yq
+    env:
+      CANARY_DATA_PATH: '{{.tmp}}/canary-data'
+    args:
+      - --null-input
+      - --output-format=json
+      - --split-exp
+      - strenv(CANARY_DATA_PATH)
+      - >-
+        {
+          "gcsURL": strenv(GCS_URL),
+          "fakeGcsURL": strenv(FAKE_GCS_URL),
+          "azuriteBlobEndpoint": strenv(AZURITE_BLOB_ENDPOINT),
+          "azuriteQueueEndpoint": strenv(AZURITE_QUEUE_ENDPOINT),
+          "azuriteTableEndpoint": strenv(AZURITE_TABLE_ENDPOINT),
+          "awsEmulatorURL": strenv(AWS_EMULATOR_URL),
+          "awsCredentialsFile": strenv(AWS_EMULATOR_CREDENTIALS_FILE)
+        }
+
+  - id: canaries
+    kind: exec
+    exec: canary-checker
+    cwd: ..
+    args:
+      - run
+      - --json
+      - --db=
+      - --data
+      - '{{.tmp}}/canary-data.json'
+      - examples/canaries/azurite.yaml
+      - examples/canaries/aws-emulator.yaml
+      - examples/canaries/fake-gcs-server.yaml
+      - examples/canaries/gcs.yaml
+    cel: size(json) == 6 && json.all(check, check.pass)

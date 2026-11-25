@@ -34,11 +34,15 @@ func styleCmdName(s string) string {
 // serviceHelp renders the long help for a service from its spec as an aligned,
 // icon-prefixed key/value block.
 func serviceHelp(name string, spec *types.ServiceSpec) string {
+	versionHelp := fmt.Sprintf("Pin a version with %s@<version> (same constraint semantics as deps install).", name)
+	if spec.Docker != nil && spec.Docker.Dockerfile != "" {
+		versionHelp = fmt.Sprintf("Use %s@<version> to build an exact release. Default: %s.", name, spec.Docker.DefaultVersion)
+	}
 	t := api.Text{}.
 		Add(icons.Play).Space().Append(name, "font-bold").
 		Appendf(" — start %s and print its %s connection.", name, spec.Type).
 		NewLine().
-		Append(fmt.Sprintf("Pin a version with %s@<version> (same constraint semantics as deps install).", name), "muted").
+		Append(versionHelp, "muted").
 		NewLine()
 
 	t = helpField(t, "Runtimes", strings.Join(spec.Runtimes(), ", "), "text-cyan-600")

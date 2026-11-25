@@ -130,6 +130,9 @@ type DockerRuntime struct {
 	ResolveVersion bool `json:"resolve_version,omitempty" yaml:"resolve_version,omitempty"`
 	// Image is a templated reference, e.g. "postgres:{{.major}}".
 	Image string `json:"image" yaml:"image"`
+	// Dockerfile builds Image as a local repository with a generated tag. The
+	// resolved service version is supplied as the DEPS_SERVICE_VERSION build arg.
+	Dockerfile string `json:"dockerfile,omitempty" yaml:"dockerfile,omitempty"`
 	// DefaultVersion is used when no version is requested, instead of
 	// resolving the latest artifact release (image registries can lag the
 	// artifact archive, e.g. apache/activemq-classic).
@@ -144,8 +147,12 @@ type DockerRuntime struct {
 	// Volumes are extra "hostTemplate:containerPath" mounts.
 	Volumes []string `json:"volumes,omitempty" yaml:"volumes,omitempty"`
 	// Files maps container paths to templated content uploaded before startup.
-	Files     map[string]string `json:"files,omitempty" yaml:"files,omitempty"`
-	Platforms []string          `json:"platforms,omitempty" yaml:"platforms,omitempty"`
+	Files map[string]string `json:"files,omitempty" yaml:"files,omitempty"`
+	// ExportFiles maps runDir filenames to templated container file paths.
+	ExportFiles map[string]string `json:"export_files,omitempty" yaml:"export_files,omitempty"`
+	// MatchHostPorts uses the published port numbers inside the container too.
+	MatchHostPorts bool     `json:"match_host_ports,omitempty" yaml:"match_host_ports,omitempty"`
+	Platforms      []string `json:"platforms,omitempty" yaml:"platforms,omitempty"`
 	// Privileged runs the container in privileged mode (k3s).
 	Privileged bool         `json:"privileged,omitempty" yaml:"privileged,omitempty"`
 	Health     *HealthCheck `json:"health,omitempty" yaml:"health,omitempty"`

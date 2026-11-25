@@ -168,6 +168,9 @@ func (i *Instance) awaitReady(ctx context.Context, since logOffset) error {
 		return err
 	}
 	svc.Parameters = parameters
+	if docker, ok := i.runtime.(*dockerRuntime); ok {
+		return docker.awaitReady(ctx, svc, i.State)
+	}
 	var watch *processWatch
 	if w, ok := i.runtime.(watcher); ok {
 		watch = w.Watch(ctx, svc, i.State, since)
