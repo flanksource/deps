@@ -87,3 +87,36 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ needs.create-release.outputs.version }}
         run: gh release edit "$TAG" --draft=false --repo "${{ github.repository }}"
+
+  publish-start-module:
+    name: Publish start Go module
+    if: needs.create-release.outputs.published == 'true'
+    needs: [create-release, publish-release]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Tag start submodule
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          commit=$(git rev-parse "v${VERSION}^{commit}")
+          tag="start/v${VERSION}"
+          if existing=$(git ls-remote --tags origin "refs/tags/${tag}^{}" "refs/tags/${tag}" | head -n1 | cut -f1) && [ -n "$existing" ]; then
+            echo "${tag} already exists at ${existing}"
+            [ "$existing" = "$commit" ]
+            exit 0
+          fi
+          git tag "$tag" "$commit"
+          git push origin "refs/tags/${tag}"
+
+      - name: Warm Go module proxy
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: curl -fsS "https://proxy.golang.org/github.com/flanksource/deps/start/@v/v${VERSION}.info"
