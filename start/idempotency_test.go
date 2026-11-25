@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/flanksource/deps/pkg/config"
 	"github.com/flanksource/deps/pkg/types"
 	"github.com/flanksource/deps/start/state"
 )
@@ -146,7 +147,9 @@ var _ = Describe("idempotent starts", func() {
 		options, err := ResolveOptions(nil)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(mergePriorOptions(&options, prior)).To(Succeed())
+		_, spec, ok := config.GetService("opensearch")
+		Expect(ok).To(BeTrue())
+		Expect(mergePriorOptions(&options, prior, *spec)).To(Succeed())
 		Expect(options.Runtime).To(Equal(RuntimeDocker))
 		Expect(options.Version).To(Equal("3.7.0"))
 		Expect(options.Port).To(Equal(19200))
@@ -169,7 +172,9 @@ var _ = Describe("idempotent starts", func() {
 		options, err := ResolveOptions([]Option{WithParameters(map[string]string{"jvm-memory": "1g"})})
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(mergePriorOptions(&options, prior)).To(Succeed())
+		_, spec, ok := config.GetService("opensearch")
+		Expect(ok).To(BeTrue())
+		Expect(mergePriorOptions(&options, prior, *spec)).To(Succeed())
 		Expect(options.Version).To(Equal("3.7.0"))
 		Expect(options.Port).To(Equal(19200))
 		Expect(options.VolumeMode).To(Equal(VolumePersistent))

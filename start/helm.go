@@ -238,7 +238,14 @@ func buildHelmArgs(svc *ServiceContext, data map[string]any, release string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if svc.Opts.Port != 0 {
+	primary, _ := svc.Spec.PrimaryPort()
+	for name := range svc.Opts.Ports {
+		if name != primary.Name {
+			return nil, fmt.Errorf("helm chart %s only supports overriding the primary port %q, got override for %q", spec.Chart, primary.Name, name)
+		}
+	}
+	_, namedPrimary := svc.Opts.Ports[primary.Name]
+	if svc.Opts.Port != 0 || namedPrimary {
 		if len(spec.PortSet) == 0 {
 			return nil, fmt.Errorf("helm chart %s does not define a primary port override", spec.Chart)
 		}

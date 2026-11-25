@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,7 +46,10 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	if err := mergePriorOptions(&options, prior); err != nil {
+	if err := mergePriorOptions(&options, prior, *spec); err != nil {
+		return nil, fmt.Errorf("service %s: %w", name, err)
+	}
+	if err := validateServiceOptions(*spec, options); err != nil {
 		return nil, fmt.Errorf("service %s: %w", name, err)
 	}
 	kind, err := selectRuntime(*spec, options.Runtime, runtime.GOOS, runtime.GOARCH)
@@ -157,7 +161,7 @@ func Start(ctx context.Context, name string, opts ...Option) (*Instance, error) 
 	return &Instance{Name: name, Runtime: kind, Connection: st.Connection, Action: action, Change: change, State: st, runtime: rt, opts: options}, nil
 }
 
-func mergePriorOptions(options *Options, prior *state.State) error {
+func mergePriorOptions(options *Options, prior *state.State, spec types.ServiceSpec) error {
 	if prior == nil || prior.StartOptions == nil {
 		return nil
 	}
@@ -165,8 +169,14 @@ func mergePriorOptions(options *Options, prior *state.State) error {
 		return nil
 	}
 	saved := prior.StartOptions
+	primary, _ := spec.PrimaryPort()
+	_, explicitNamedPrimary := options.Ports[primary.Name]
 	if options.Ports == nil {
-		options.Ports = saved.Ports
+		options.Ports = maps.Clone(saved.Ports)
+		// An explicit primary port wins over the saved named alias of it.
+		if options.supplied.port {
+			delete(options.Ports, primary.Name)
+		}
 	}
 	if !options.supplied.runtime {
 		options.Runtime = RuntimeKind(prior.Runtime)
@@ -174,7 +184,8 @@ func mergePriorOptions(options *Options, prior *state.State) error {
 	if !options.supplied.version {
 		options.Version = saved.Version
 	}
-	if !options.supplied.port {
+	// An explicit named primary override wins over the saved primary alias.
+	if !options.supplied.port && !explicitNamedPrimary {
 		options.Port = saved.Port
 	}
 	if !options.supplied.bind {

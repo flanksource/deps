@@ -108,7 +108,12 @@ jobs:
           set -euo pipefail
           commit=$(git rev-parse "v${VERSION}^{commit}")
           tag="start/v${VERSION}"
-          if existing=$(git ls-remote --tags origin "refs/tags/${tag}^{}" "refs/tags/${tag}" | head -n1 | cut -f1) && [ -n "$existing" ]; then
+          refs=$(git ls-remote --tags origin "refs/tags/${tag}^{}" "refs/tags/${tag}")
+          existing=$(printf '%s\n' "$refs" | awk -v peeled="refs/tags/${tag}^{}" '$2 == peeled {print $1; found=1} END {}' | head -n1)
+          if [ -z "$existing" ]; then
+            existing=$(printf '%s\n' "$refs" | awk -v direct="refs/tags/${tag}" '$2 == direct {print $1}' | head -n1)
+          fi
+          if [ -n "$existing" ]; then
             echo "${tag} already exists at ${existing}"
             [ "$existing" = "$commit" ]
             exit 0
@@ -119,4 +124,15 @@ jobs:
       - name: Warm Go module proxy
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
-        run: curl -fsS "https://proxy.golang.org/github.com/flanksource/deps/start/@v/v${VERSION}.info"
+        run: |
+          set -euo pipefail
+          url="https://proxy.golang.org/github.com/flanksource/deps/start/@v/v${VERSION}.info"
+          for attempt in $(seq 1 12); do
+            if curl -fsS "$url"; then
+              exit 0
+            fi
+            echo "proxy not ready (attempt ${attempt}/12), retrying in 30s"
+            sleep 30
+          done
+          echo "Go proxy did not serve ${url}" >&2
+          exit 1
