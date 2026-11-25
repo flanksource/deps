@@ -584,6 +584,8 @@ registry:
         name: node
         repo: nodejs/node
         mode: directory
+        # nodejs/node publishes vNN.0.0-alpha.* tags that have no download assets
+        version_expr: "!prerelease"
         url_template: https://nodejs.org/download/release/{{.tag}}/{{.asset}}
         asset_patterns:
             darwin-amd64: node-{{.tag}}-darwin-x64.tar.gz
