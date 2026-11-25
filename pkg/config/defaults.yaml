@@ -93,6 +93,16 @@ registry:
         version_command: --version
         version_regex: v?(\d+\.\d+\.\d+)
 
+    fake-gcs-server:
+        repo: fsouza/fake-gcs-server
+        asset_patterns:
+            darwin-amd64: fake-gcs-server_{{.version}}_Darwin_amd64.tar.gz
+            darwin-arm64: fake-gcs-server_{{.version}}_Darwin_arm64.tar.gz
+            linux-amd64: fake-gcs-server_{{.version}}_Linux_amd64.tar.gz
+            linux-arm64: fake-gcs-server_{{.version}}_Linux_arm64.tar.gz
+            windows-amd64: fake-gcs-server_{{.version}}_Windows_amd64.tar.gz
+        checksum_file: checksums.txt
+
     kubectl:
         name: kubectl
         repo: kubernetes/kubernetes

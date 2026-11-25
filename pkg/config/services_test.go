@@ -47,15 +47,19 @@ var _ = Describe("Service registry", func() {
 		}
 	})
 
-	It("defines a GCS emulator that advertises its mapped host and probes the storage API", func() {
-		pkg, spec, ok := GetService("fake-gcs-server")
-		Expect(ok).To(BeTrue())
-		Expect(pkg.Service.Binary).To(BeNil())
-		Expect(spec.Type).To(Equal("gcs"))
-		Expect(spec.Properties).To(HaveKeyWithValue("endpoint", "http://{{.host}}/storage/v1/"))
-		Expect(spec.Health.HTTP).To(Equal("/storage/v1/b"))
-		Expect(spec.Docker.Args).To(ContainElements("-scheme", "http", "-public-host", "{{.host}}"))
-	})
+	DescribeTable("registers cloud storage emulator targets",
+		func(name, connectionType string, ports []types.ServicePort, runtimes []string) {
+			_, spec, ok := GetService(name)
+			Expect(ok).To(BeTrue(), name)
+			Expect(spec.Type).To(Equal(connectionType))
+			Expect(spec.Ports).To(Equal(ports))
+			Expect(spec.Runtimes()).To(Equal(runtimes))
+		},
+		Entry("GCS", "gcs", "gcs", []types.ServicePort{{Name: "http", Port: 4443}}, []string{"binary", "docker"}),
+		Entry("fake-gcs-server", "fake-gcs-server", "gcs", []types.ServicePort{{Name: "http", Port: 4443}}, []string{"binary", "docker"}),
+		Entry("Azurite", "azurite", "azure", []types.ServicePort{{Name: "blob", Port: 10000}, {Name: "queue", Port: 10001}, {Name: "table", Port: 10002}}, []string{"docker"}),
+		Entry("AWS Emulator", "aws-emulator", "aws", []types.ServicePort{{Name: "https", Port: 9297}}, []string{"docker"}),
+	)
 
 	It("passes config validation with service-only entries present", func() {
 		Expect(ValidateConfig(config)).To(Succeed())

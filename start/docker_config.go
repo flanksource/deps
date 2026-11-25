@@ -51,6 +51,12 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 	if err != nil {
 		return nil, err
 	}
+	if spec.Dockerfile != "" {
+		if !version.LooksLikeExactVersion(svc.Version) {
+			return nil, fmt.Errorf("building the %s image requires an exact version, got %q", svc.Name, svc.Version)
+		}
+		image += fmt.Sprintf(":%x", sha256.Sum256([]byte(svc.Version+"\x00"+spec.Dockerfile)))
+	}
 	config := &state.EffectiveConfig{
 		Runtime: string(RuntimeDocker), Version: svc.Version, Image: image,
 		Parameters: cloneStrings(svc.Opts.Parameters), Ports: configuredPorts(svc),
@@ -115,12 +121,21 @@ func (r *dockerRuntime) InspectConfig(ctx context.Context, svc *ServiceContext, 
 	if prior.StartOptions != nil && len(config.Parameters) == 0 {
 		config.Parameters = cloneStrings(prior.StartOptions.Parameters)
 	}
+	managedPorts := config.Ports
 	config.Ports = map[string]int{}
 	if res.Container.Config != nil {
 		config.Image = res.Container.Config.Image
 	}
+	ports := configuredPorts(svc)
 	for _, port := range svc.Spec.Ports {
-		key := fmt.Sprintf("%d/%s", port.Port, protocol(port.Protocol))
+		containerPort := port.Port
+		if svc.Spec.Docker.MatchHostPorts {
+			containerPort = ports[port.Name]
+			if managedPort := managedPorts[port.Name]; managedPort != 0 {
+				containerPort = managedPort
+			}
+		}
+		key := fmt.Sprintf("%d/%s", containerPort, protocol(port.Protocol))
 		for exposed, bindings := range res.Container.HostConfig.PortBindings {
 			if exposed.String() != key || len(bindings) == 0 {
 				continue

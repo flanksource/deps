@@ -259,11 +259,13 @@ func ValidateConfig(config *types.DepsConfig) error {
 	// Validate registry entries
 	for name, pkg := range config.Registry {
 		if pkg.Manager == "" {
-			// Service-only entries (docker/helm runtimes) have no installable artifact
-			if pkg.Service != nil && pkg.Service.Binary == nil {
-				continue
+			if pkg.Service == nil {
+				return fmt.Errorf("package %s has no manager specified", name)
 			}
-			return fmt.Errorf("package %s has no manager specified", name)
+			if binary := pkg.Service.Binary; binary != nil && config.Registry[binary.Package].Manager == "" {
+				return fmt.Errorf("service %s requires an installable binary package, got %q", name, binary.Package)
+			}
+			continue
 		}
 
 		// Validate manager-specific requirements

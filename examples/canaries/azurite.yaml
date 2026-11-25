@@ -1,0 +1,19 @@
+apiVersion: canaries.flanksource.com/v1
+kind: Canary
+metadata:
+  name: azurite
+spec:
+  schedule: '@every 1m'
+  http:
+    - name: blob
+      url: '{{ required "azuriteBlobEndpoint is required" .azuriteBlobEndpoint }}?comp=list'
+      responseCodes: [403]
+      responseContent: '<Code>AuthorizationFailure</Code>'
+    - name: queue
+      url: '{{ required "azuriteQueueEndpoint is required" .azuriteQueueEndpoint }}?comp=list'
+      responseCodes: [403]
+      responseContent: '<Code>AuthenticationFailed</Code>'
+    - name: table
+      url: '{{ required "azuriteTableEndpoint is required" .azuriteTableEndpoint }}/Tables'
+      responseCodes: [403]
+      responseContent: '<Code>AuthorizationFailure</Code>'
