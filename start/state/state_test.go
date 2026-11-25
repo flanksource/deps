@@ -44,7 +44,9 @@ var _ = Describe("State", func() {
 				Username:   "postgres",
 				Password:   "sekret",
 				Properties: types.JSONStringMap{"database": "postgres"},
-				Warnings:   []string{"credential refresh required"},
+				// commons-db decodes absent secrets as an empty map, not nil
+				Secrets:  types.EnvVarMap{},
+				Warnings: []string{"credential refresh required"},
 			},
 		}
 		Expect(st.Save(stateDir)).To(Succeed())
