@@ -19,18 +19,22 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26.4"
+          go-version: "1.27.4"
           cache: false
 
+      # goinstall builds golangci-lint with the installed Go, which must be at
+      # least the go.mod version; the prebuilt release binary is built with 1.26.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
+          install-mode: goinstall
           args: --timeout=5m
 
       - name: golangci-lint (start module)
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
+          install-mode: goinstall
           args: --timeout=5m
           working-directory: start
