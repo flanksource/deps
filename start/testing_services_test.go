@@ -13,6 +13,19 @@ var _ = Describe("Test service isolation", func() {
 		Expect(ok).To(BeTrue())
 		Expect(validateServiceOptions(*spec, Options{Ports: ports, Port: primary})).To(HaveOccurred())
 	}, Entry("unknown name", map[string]int{"unknown": 19000}, 0), Entry("zero", map[string]int{"s3": 0}, 0), Entry("out of range", map[string]int{"s3": 65536}, 0), Entry("conflicting primary", map[string]int{"s3": 19000}, 19001))
+	DescribeTable("lets an explicit primary port replace its saved counterpart", func(saved *state.StartOptions, option Option, wantPort int, wantPorts map[string]int) {
+		_, spec, ok := config.GetService("silo")
+		Expect(ok).To(BeTrue())
+		options, err := ResolveOptions([]Option{option})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(mergePriorOptions(&options, &state.State{Runtime: "docker", StartOptions: saved}, *spec)).To(Succeed())
+		Expect(validateServiceOptions(*spec, options)).To(Succeed())
+		Expect(options.Port).To(Equal(wantPort))
+		Expect(options.Ports).To(Equal(wantPorts))
+	},
+		Entry("WithPort over saved named primary", &state.StartOptions{Ports: map[string]int{"s3": 19000, "console": 19001}}, WithPort(19002), 19002, map[string]int{"console": 19001}),
+		Entry("named primary over saved Port", &state.StartOptions{Port: 19000}, WithPorts(map[string]int{"s3": 19002}), 0, map[string]int{"s3": 19002}),
+	)
 	It("includes secondary ports when comparing persisted start options", func() {
 		a := &state.StartOptions{Ports: map[string]int{"s3": 19000, "console": 19001}}
 		b := &state.StartOptions{Ports: map[string]int{"s3": 19000, "console": 19002}}

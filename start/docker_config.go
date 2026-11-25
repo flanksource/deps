@@ -2,7 +2,9 @@ package start
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 
@@ -73,7 +75,7 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 		if config.Files == nil {
 			config.Files = map[string]string{}
 		}
-		config.Files[path] = fmt.Sprintf("%x", sha256.Sum256([]byte(rendered)))
+		config.Files[path] = fileDigest(rendered)
 	}
 	if spec.DataPath != "" {
 		config.Volume = &state.Volume{Mode: string(svc.Opts.VolumeMode), Target: spec.DataPath}
@@ -172,6 +174,15 @@ func (r *dockerRuntime) InspectConfig(ctx context.Context, svc *ServiceContext, 
 		}
 	}
 	return config, nil
+}
+
+// fileDigest is a change-detection fingerprint of rendered file content, which
+// may embed credentials. It is an HMAC rather than a bare hash: it is never
+// used to store or verify passwords.
+func fileDigest(content string) string {
+	mac := hmac.New(sha256.New, []byte("deps-start-file-digest"))
+	mac.Write([]byte(content))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func dockerBindAddress(svc *ServiceContext) string {

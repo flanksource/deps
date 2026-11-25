@@ -287,6 +287,9 @@ func (r *dockerRuntime) runOptions(svc *ServiceContext, data map[string]any, des
 		if rendered == "" {
 			continue
 		}
+		if sum := fileDigest(rendered); sum != desired.Files[path] {
+			return nil, fmt.Errorf("docker file %s changed while starting %s: rendered hash %s does not match desired config hash %s", path, svc.Name, sum, desired.Files[path])
+		}
 		opts = append(opts, sdkcontainer.WithFiles(sdkcontainer.File{Reader: strings.NewReader(rendered), ContainerPath: path, Mode: 0o644}))
 	}
 	if len(cmd) > 0 {
@@ -320,9 +323,6 @@ func renderDockerEnvironment(svc *ServiceContext, data map[string]any) (map[stri
 // Watch observes the container for readiness: liveness from the container
 // state, output from its log tail and exec probes through docker exec.
 func (r *dockerRuntime) Watch(ctx context.Context, svc *ServiceContext, st *state.State, _ logOffset) *processWatch {
-	if svc.Host == "" {
-		svc.Host = r.daemonHost(ctx)
-	}
 	if st == nil || st.ContainerID == "" {
 		return nil
 	}

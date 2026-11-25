@@ -103,7 +103,9 @@ func renderArguments(source string, templates []string, data map[string]any) ([]
 		if err != nil {
 			return nil, err
 		}
-		if rendered != "" {
+		// Only templated arguments may be omitted by rendering empty; a literal
+		// empty argument is intentional and preserved.
+		if rendered != "" || !strings.Contains(value, "{{") {
 			arguments = append(arguments, rendered)
 		}
 	}

@@ -86,7 +86,7 @@ services:
             tls: {type: bool, description: Require TLS connections, default: "false", runtimes: [docker]}
             tls-dir: {type: string, description: Absolute directory containing CA and server/client PEM files, runtimes: [docker]}
             tls-auth-clients: {type: bool, description: Require client certificates, default: "false", runtimes: [docker]}
-        url: "redis://{{.username}}:{{.password}}@{{.host}}"
+        url: '{{if index .parameters "tls"}}rediss{{else}}redis{{end}}://{{.username}}:{{.password}}@{{.host}}'
         docker:
             image: "valkey/valkey:{{.version}}"
             args: &redisTLSArgs
@@ -132,7 +132,7 @@ services:
         ports: [{name: redis, port: 6379}]
         credentials: {username: default}
         parameters: *redisTLSParameters
-        url: 'redis://{{.username}}:{{.password}}@{{.host}}'
+        url: '{{if index .parameters "tls"}}rediss{{else}}redis{{end}}://{{.username}}:{{.password}}@{{.host}}'
         docker:
             image: 'redis:{{.version}}'
             args: *redisTLSArgs
@@ -573,22 +573,4 @@ services:
         docker:
             image: "rclone/rclone:{{.version}}"
             args: ["serve", "s3", "/data", "--addr", ":8333", "--auth-key", "{{.username}},{{.password}}"]
-            data_path: /data
-
-    fake-gcs-server:
-        # Google Cloud Storage emulator: emits a gcs connection whose URL and
-        # endpoint property are the emulator's base URL (set it as the client
-        # endpoint, e.g. STORAGE_EMULATOR_HOST). Buckets are the top-level
-        # directories under the data dir. -public-host makes the emulator
-        # return URLs reachable from the caller, including through a remote
-        # docker host.
-        type: gcs
-        ports: [{name: api, port: 4443}]
-        url: "http://{{.host}}"
-        properties: {endpoint: "http://{{.host}}/storage/v1/"}
-        health: {http: /storage/v1/b, port: api, timeout: 60s}
-        docker:
-            image: "fsouza/fake-gcs-server:{{.version}}"
-            default_version: latest
-            args: ["-scheme", "http", "-port", "4443", "-public-host", "{{.host}}", "-data", "/data"]
             data_path: /data
