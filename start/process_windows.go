@@ -9,6 +9,8 @@ import (
 
 func processAlive(pid int) bool { return false }
 
+func serviceProcessAlive(pid int, startedAt time.Time) bool { return false }
+
 func killProcessGroup(pid int, grace time.Duration) error {
 	return fmt.Errorf("the binary runtime is not supported on windows")
 }

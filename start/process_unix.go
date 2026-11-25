@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"syscall"
 	"time"
+
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 func processAlive(pid int) bool {
@@ -14,6 +16,30 @@ func processAlive(pid int) bool {
 		return false
 	}
 	return syscall.Kill(pid, 0) == nil
+}
+
+// serviceProcessAlive reports whether pid is still the process of a service deps-start recorded
+// at startedAt: a process has the PID, and it started no later than that. A state kept over a
+// reboot, or restored from a CI cache onto another machine, names a PID that a newer, unrelated
+// process can have. A process whose start time can't be read is taken at its PID.
+func serviceProcessAlive(pid int, startedAt time.Time) bool {
+	if !processAlive(pid) {
+		return false
+	}
+	if startedAt.IsZero() {
+		return true
+	}
+	proc, err := process.NewProcess(int32(pid))
+	if err != nil {
+		return false
+	}
+	created, err := proc.CreateTime()
+	if err != nil {
+		return true
+	}
+	// A process's start time is read to about a second; a newer process with the PID started
+	// well after the service was recorded.
+	return time.UnixMilli(created).Before(startedAt.Add(2 * time.Second))
 }
 
 // signalSupervisor asks a supervising process to restart its service.
