@@ -46,21 +46,6 @@ func (r *dockerRuntime) client() (sdkclient.SDKClient, error) {
 	return cli, nil
 }
 
-// daemonHost returns the hostname services on the daemon are reachable at:
-// the sdk resolves it to "localhost" for unix/npipe sockets and to the
-// endpoint hostname for tcp daemons.
-func (r *dockerRuntime) daemonHost(ctx context.Context) string {
-	cli, err := r.client()
-	if err != nil {
-		return "localhost"
-	}
-	host, err := cli.DaemonHostWithContext(ctx)
-	if err != nil || host == "" {
-		return "localhost"
-	}
-	return host
-}
-
 func containerName(service, instanceID string) string {
 	name := "deps-start-" + service
 	if instanceID != "" {
@@ -95,7 +80,11 @@ func (r *dockerRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 	if _, err := r.DesiredConfig(ctx, svc); err != nil {
 		return nil, err
 	}
-	svc.Host = r.daemonHost(ctx)
+	host, err := r.daemonHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc.Host = host
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
 
 	name := containerName(svc.Name, svc.Opts.InstanceID)
@@ -336,7 +325,14 @@ func (r *dockerRuntime) Watch(ctx context.Context, svc *ServiceContext, st *stat
 	}
 	id := st.ContainerID
 	if svc.Host == "" {
-		svc.Host = r.daemonHost(ctx)
+		host, err := r.daemonHost(ctx)
+		if err != nil {
+			return &processWatch{
+				alive:  func() bool { return false },
+				output: func() string { return fmt.Sprintf("docker host unresolved: %v", err) },
+			}
+		}
+		svc.Host = host
 	}
 	data := templateData(svc, fmt.Sprintf("%s:%d", svc.serviceHost(), hostPort(svc)), "")
 	return &processWatch{

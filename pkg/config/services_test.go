@@ -47,6 +47,16 @@ var _ = Describe("Service registry", func() {
 		}
 	})
 
+	It("defines a GCS emulator that advertises its mapped host and probes the storage API", func() {
+		pkg, spec, ok := GetService("fake-gcs-server")
+		Expect(ok).To(BeTrue())
+		Expect(pkg.Service.Binary).To(BeNil())
+		Expect(spec.Type).To(Equal("gcs"))
+		Expect(spec.Properties).To(HaveKeyWithValue("endpoint", "http://{{.host}}/storage/v1/"))
+		Expect(spec.Health.HTTP).To(Equal("/storage/v1/b"))
+		Expect(spec.Docker.Args).To(ContainElements("-scheme", "http", "-public-host", "{{.host}}"))
+	})
+
 	It("passes config validation with service-only entries present", func() {
 		Expect(ValidateConfig(config)).To(Succeed())
 	})
