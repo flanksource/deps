@@ -23,18 +23,19 @@ jobs:
           cache: false
 
       # goinstall builds golangci-lint with the installed Go, which must be at
-      # least the go.mod version; the prebuilt release binary is built with 1.26.
+      # least the go.mod version. v2.11.4 cannot read Go 1.27 export data, so
+      # v2.15.0 (built against Go 1.27) is required.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.11.4
+          version: v2.15.0
           install-mode: goinstall
           args: --timeout=5m
 
       - name: golangci-lint (start module)
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.11.4
+          version: v2.15.0
           install-mode: goinstall
           args: --timeout=5m
           working-directory: start
