@@ -17,7 +17,11 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 	if spec == nil {
 		return nil, fmt.Errorf("service %s has no docker runtime", svc.Name)
 	}
-	svc.Host = r.daemonHost(ctx)
+	host, err := r.daemonHost(ctx)
+	if err != nil {
+		return nil, err
+	}
+	svc.Host = host
 	if spec.DataPath == "" {
 		if svc.Opts.VolumeMode != "" {
 			return nil, fmt.Errorf("service %s does not define a docker data volume", svc.Name)
@@ -25,7 +29,6 @@ func (r *dockerRuntime) DesiredConfig(ctx context.Context, svc *ServiceContext) 
 	} else if svc.Opts.VolumeMode == "" {
 		return nil, fmt.Errorf("docker volume mode was not resolved for %s", svc.Name)
 	}
-	var err error
 	switch {
 	case spec.ResolveVersion && svc.Tag != "":
 	case spec.ResolveVersion:

@@ -685,7 +685,7 @@ Custom Helm specs can use `source: {url: <archive-url>, sha256: <checksum>, path
 `deps-start` (a separate binary from the `start/` submodule) launches services from
 the registry — postgres, opensearch, valkey, mysql, mssql, elasticsearch, loki,
 prometheus, grafana, jaeger, otel-collector, clickhouse, nats, rabbitmq, rclone,
-ministack, k3s, kind, kube-apiserver, trivy, activemq, activemq-artemis — via four
+ministack, fake-gcs-server, k3s, kind, kube-apiserver, trivy, activemq, activemq-artemis — via four
 runtimes, and prints a
 [commons-db](https://github.com/flanksource/commons-db) connection:
 
@@ -826,6 +826,26 @@ instance, err := start.Start(ctx, "opensearch",
 // instance.Connection is a commons-db models.Connection
 defer instance.Stop(ctx)
 ```
+
+To start several services together (for example the emulators a test suite needs), use `start.StartServices`. Services start concurrently and the call waits for all of them. The result is keyed by service name, and requesting the same name twice is an error because service state is stored per name. On failure the error joins every failed start, each prefixed with the service name, and the returned map still holds the instances that did start: the caller owns them and must release them with `start.StopServices`.
+
+```go
+instances, err := start.StartServices(ctx, []start.ServiceRequest{
+    {Name: "ministack"},
+    {Name: "fake-gcs-server", Options: []start.Option{start.WithVolumeMode(start.VolumeEphemeral)}},
+})
+defer start.StopServices(ctx, instances) // also release the partial set when err != nil
+if err != nil {
+    return err
+}
+s3 := instances["ministack"].Connection
+```
+
+Emulators in the registry: `ministack` (type `aws`, edge port 4566) serves S3, SQS, KMS, STS, CloudWatch Logs including Logs Insights `StartQuery`/`GetQueryResults`, and CloudWatch metrics (`GetMetricData`, `ListMetrics`), so no separate localstack spec is needed. `fake-gcs-server` (type `gcs`, docker only, image `fsouza/fake-gcs-server`) emits a connection whose `url` and `endpoint` property are the emulator base URL; it runs with `-scheme http -public-host <host:port>` so the URLs it hands back are reachable from the caller. Buckets are the top-level directories of its data volume.
+
+The docker runtime derives the service host from the active docker endpoint (`DOCKER_HOST`, or the current docker context): the hostname of a `tcp://`, `http(s)://` or `ssh://` endpoint, and `localhost` for a local socket. A remote docker context therefore yields connection URLs that point at the remote machine, and an endpoint whose host cannot be determined fails the start instead of falling back to `localhost`. Host-directory volumes live on the docker host, so pass `WithVolumeMode(VolumeEphemeral)` or `VolumePersistent` when the daemon is remote.
+
+When only one release binary is needed, `github.com/flanksource/deps/pkg/ghrelease` installs it with the standard library and an xz decoder instead of the full installer, whose package graph includes the CLI framework, Kubernetes API types and the template engine.
 
 Service metadata (ports, typed parameters, credentials, health checks, images,
 charts, and connection templates) lives in the embedded registry under
