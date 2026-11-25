@@ -158,7 +158,7 @@ func (m *GitHubReleaseManager) discoverVersionsViaREST(ctx context.Context, owne
 		}
 		v := types.ParseVersion(versionpkg.Normalize(release.TagName), release.TagName)
 		v.Published = release.PublishedAt
-		v.Prerelease = release.Prerelease
+		v.Prerelease = isPrerelease(release)
 		if release.TargetCommitish != "" {
 			v.SHA = release.TargetCommitish
 		}
@@ -425,7 +425,7 @@ func (m *GitHubReleaseManager) fetchLatestMatchingRelease(ctx context.Context, o
 	candidates := filterReleaseCandidates(releases, stableOnly, manager.GetReleaseFilters(ctx), 0)
 	if !stableOnly {
 		for i := range candidates {
-			if !candidates[i].Prerelease {
+			if !isPrerelease(candidates[i]) {
 				return &candidates[i], nil
 			}
 		}
@@ -789,7 +789,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	// Handle "latest" - return the first non-prerelease, or first release if all are prereleases
 	if targetVersion == "latest" {
 		for _, rel := range releases {
-			if !rel.Prerelease && !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
+			if !isPrerelease(rel) && !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
 				logger.V(3).Infof("Found latest stable release: %s", rel.TagName)
 				return rel.TagName, nil
 			}
@@ -807,7 +807,7 @@ func (m *GitHubReleaseManager) findReleaseByVersion(ctx context.Context, owner, 
 	// Handle "stable" - return the first non-prerelease release only (never fall back to prereleases)
 	if targetVersion == "stable" {
 		for _, rel := range releases {
-			if !rel.Prerelease && !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
+			if !isPrerelease(rel) && !rel.Draft && releaseMatchesFilters(rel, releaseFilters) {
 				logger.V(3).Infof("Found stable release: %s", rel.TagName)
 				return rel.TagName, nil
 			}
@@ -978,7 +978,7 @@ func (i *githubReleaseIterator) FetchReleases(ctx context.Context, limit int) ([
 			Tag:          rel.TagName,
 			Version:      versionpkg.Normalize(rel.TagName),
 			PublishedAt:  rel.PublishedAt,
-			IsPrerelease: rel.Prerelease,
+			IsPrerelease: isPrerelease(rel),
 		})
 	}
 	return result, nil
