@@ -10,6 +10,7 @@ import (
 	"github.com/flanksource/deps/pkg/manager"
 	"github.com/flanksource/deps/pkg/platform"
 	"github.com/flanksource/deps/pkg/types"
+	versionpkg "github.com/flanksource/deps/pkg/version"
 )
 
 func releaseMatchesFilters(release restRelease, filters []string) bool {
@@ -144,7 +145,10 @@ func filtersTargetNonBinary(filters []string) bool {
 func filterReleaseCandidates(releases []restRelease, stableOnly bool, filters []string, limit int) []restRelease {
 	filtered := make([]restRelease, 0, len(releases))
 	for _, release := range releases {
-		if release.Draft || (stableOnly && release.Prerelease) || !releaseMatchesFilters(release, filters) {
+		// A stable release is neither flagged a prerelease nor versioned like one: a release
+		// such as nodejs/node's v27.0.0-alpha.0.1.1 can be published without the flag.
+		prerelease := release.Prerelease || versionpkg.IsPrerelease(release.TagName)
+		if release.Draft || (stableOnly && prerelease) || !releaseMatchesFilters(release, filters) {
 			continue
 		}
 		filtered = append(filtered, release)

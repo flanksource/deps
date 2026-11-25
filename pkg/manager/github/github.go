@@ -480,6 +480,7 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(ctx context.Context, p
 				return nil, patternErr
 			}
 		}
+		namedPattern := assetPattern != ""
 		if assetPattern == "" {
 			assetPattern = "{{.name}}-{{.os}}-{{.arch}}"
 		}
@@ -494,7 +495,10 @@ func (m *GitHubReleaseManager) buildResolutionFromRelease(ctx context.Context, p
 
 		matched = selectAssetByPattern(release.Assets, templatedPattern, selection)
 
-		if matched == nil {
+		// A pattern the package names is the only asset it takes: the release's one asset for
+		// the platform may be another program's, such as the ocb builder in an
+		// opentelemetry-collector-releases component release.
+		if matched == nil && !namedPattern {
 			assets := make([]manager.AssetInfo, len(release.Assets))
 			for i, asset := range release.Assets {
 				assets[i] = manager.AssetInfo{

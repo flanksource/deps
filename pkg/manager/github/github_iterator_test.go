@@ -48,6 +48,18 @@ var _ = Describe("githubReleaseIterator", func() {
 				Expect(result[1].TagName).To(Equal("v0.9.0"))
 			})
 
+			// nodejs/node published v27.0.0-alpha.0.1.1 without GitHub's prerelease flag.
+			It("should filter out a semver prerelease GitHub doesn't flag", func() {
+				releases := []restRelease{
+					{TagName: "v27.0.0-alpha.0.1.1", Prerelease: false},
+					{TagName: "v26.13.1", Prerelease: false},
+				}
+
+				result := filterReleaseCandidates(releases, true, nil, 10)
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].TagName).To(Equal("v26.13.1"))
+			})
+
 			It("should respect limit after filtering", func() {
 				iterator := &githubReleaseIterator{
 					stableOnly: true,
