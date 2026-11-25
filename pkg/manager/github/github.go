@@ -1127,9 +1127,10 @@ func (m *GitHubReleaseManager) handleRateLimitFallback(ctx context.Context, pkg 
 		logger.Warnf("GitHub rate limited, using fallback version '%s' without checksum verification", fallbackVersion)
 	}
 
-	// Use the requested version for templating if it looks like a specific version
+	// Use the requested version for templating if it looks like a specific version. "stable" is
+	// the newest release that isn't a prerelease, which is what GitHub's latest release is.
 	versionForTemplate := version
-	if version == "latest" || version == "" {
+	if version == "latest" || version == "stable" || version == "" {
 		versionForTemplate = fallbackVersion
 	}
 
