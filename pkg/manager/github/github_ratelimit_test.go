@@ -84,6 +84,24 @@ var _ = Describe("Rate Limit Fallback", func() {
 				Expect(resolution.Version).To(Equal("0.9.0"))
 			})
 
+			It("should template the latest release's tag, not the word, when 'stable' is requested", func() {
+				previous := gitRefsHTTPClient
+				DeferCleanup(func() { gitRefsHTTPClient = previous })
+				gitRefsHTTPClient = func() *http.Client {
+					return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						Expect(req.URL.String()).To(Equal("https://github.com/owner/test-tool/releases/latest"))
+						header := http.Header{"Location": []string{"https://github.com/owner/test-tool/releases/tag/v2.3.4"}}
+						return &http.Response{StatusCode: http.StatusFound, Body: io.NopCloser(strings.NewReader("")), Header: header}, nil
+					})}
+				}
+
+				nonStrictCtx := manager.WithStrictChecksum(ctx, false)
+				resolution, err := mgr.handleRateLimitFallback(nonStrictCtx, pkg, "stable", plat, rateLimitErr)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resolution.Version).To(Equal("2.3.4"))
+				Expect(resolution.DownloadURL).To(Equal("https://github.com/owner/test-tool/releases/download/v2.3.4/test-tool-linux-amd64.tar.gz"))
+			})
+
 			It("should work with asset_patterns when url_template is not configured", func() {
 				pkg.URLTemplate = ""
 				pkg.AssetPatterns = map[string]string{

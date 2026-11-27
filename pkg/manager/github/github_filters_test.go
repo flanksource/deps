@@ -133,6 +133,36 @@ var _ = Describe("GitHub install filters", func() {
 		})
 	})
 
+	Describe("the asset for the platform", func() {
+		linux := platform.Platform{OS: "linux", Arch: "amd64"}
+
+		// open-telemetry/opentelemetry-collector-releases' cmd/builder release has one linux
+		// amd64 asset, the ocb builder, which otelcol-contrib's pattern doesn't name.
+		It("is only one the package's asset pattern names", func() {
+			pkg := types.Package{
+				Name: "otelcol-contrib", Repo: "open-telemetry/opentelemetry-collector-releases",
+				AssetPatterns: map[string]string{"linux-amd64": "otelcol-contrib_{{.version}}_linux_amd64.tar.gz"},
+			}
+			release := &restRelease{TagName: "cmd/builder/v0.166.0", Assets: []restAsset{
+				{Name: "ocb_0.166.0_linux_amd64", BrowserDownloadURL: "https://example.com/ocb"},
+			}}
+
+			_, err := NewGitHubReleaseManager().buildResolutionFromRelease(context.Background(), pkg, release, linux)
+			Expect(manager.IsAssetNotFoundError(err)).To(BeTrue(), "%v", err)
+		})
+
+		It("is the release's one asset for the platform when the package names no pattern", func() {
+			release := &restRelease{TagName: "v1.0.0", Assets: []restAsset{
+				{Name: "tool_linux_amd64", BrowserDownloadURL: "https://example.com/tool-linux"},
+				{Name: "tool_darwin_arm64", BrowserDownloadURL: "https://example.com/tool-darwin"},
+			}}
+
+			resolution, err := NewGitHubReleaseManager().buildResolutionFromRelease(context.Background(), types.Package{Name: "tool", Repo: "owner/tool"}, release, linux)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resolution.DownloadURL).To(Equal("https://example.com/tool-linux"))
+		})
+	})
+
 	Describe("filtered resolution", func() {
 		It("builds a resolution from the explicitly selected asset", func() {
 			ctx := manager.WithAssetFilters(context.Background(), []string{"cli-linux"})

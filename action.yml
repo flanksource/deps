@@ -69,9 +69,12 @@ runs:
       id: cache-tools
       uses: actions/cache@v4
       with:
+        # Installed tools only: a started service's state under services/ belongs to the run that
+        # started it, and a later run restoring it takes another process with its PID for it.
         path: |
           ${{ steps.cache-paths.outputs.tools-dir }}
           ${{ steps.cache-paths.outputs.deps-cache }}
+          !${{ steps.cache-paths.outputs.deps-cache }}/services
         key: >-
           deps-tools-${{ runner.os }}-${{ runner.arch }}-
           ${{ hashFiles(inputs.tools) }}

@@ -1,6 +1,11 @@
 package github
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -47,6 +52,33 @@ var _ = Describe("githubReleaseIterator", func() {
 				Expect(result[0].TagName).To(Equal("v1.0.0"))
 				Expect(result[1].TagName).To(Equal("v0.9.0"))
 			})
+
+			// nodejs/node published v27.0.0-alpha.0.1.1 without GitHub's prerelease flag.
+			It("should filter out a semver prerelease GitHub doesn't flag", func() {
+				releases := []restRelease{
+					{TagName: "v27.0.0-alpha.0.1.1", Prerelease: false},
+					{TagName: "v26.13.1", Prerelease: false},
+				}
+
+				result := filterReleaseCandidates(releases, true, nil, 10)
+				Expect(result).To(HaveLen(1))
+				Expect(result[0].TagName).To(Equal("v26.13.1"))
+			})
+
+			// A package with a url_template, like node, resolves stable and latest by listing releases.
+			DescribeTable("resolving by version skips a semver prerelease GitHub doesn't flag", func(version string) {
+				useGitHubRESTTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					Expect(req.URL.Path).To(Equal("/repos/nodejs/node/releases"))
+					body := `[{"tag_name":"v27.0.0-alpha.0.1.1","prerelease":false},{"tag_name":"v26.13.1","prerelease":false}]`
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+				}))
+				tag, err := NewGitHubReleaseManager().findReleaseByVersion(context.Background(), "nodejs", "node", version, "")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(tag).To(Equal("v26.13.1"))
+			},
+				Entry("stable", "stable"),
+				Entry("latest", "latest"),
+			)
 
 			It("should respect limit after filtering", func() {
 				iterator := &githubReleaseIterator{

@@ -26,7 +26,7 @@ type binaryRuntime struct {
 func (r *binaryRuntime) Kind() RuntimeKind { return RuntimeBinary }
 
 func (r *binaryRuntime) Reconcile(ctx context.Context, svc *ServiceContext, prior *state.State) (*state.State, error) {
-	if processAlive(prior.PID) {
+	if serviceProcessAlive(prior.PID, prior.StartedAt) {
 		if err := r.Stop(ctx, prior); err != nil {
 			return nil, fmt.Errorf("failed to stop binary for reconciliation: %w", err)
 		}
@@ -40,7 +40,7 @@ func (r *binaryRuntime) Start(ctx context.Context, svc *ServiceContext) (*state.
 		return nil, err
 	}
 
-	if prior, err := state.Load(svc.Opts.StateDir, svc.Name); err == nil && processAlive(prior.PID) {
+	if prior, err := state.Load(svc.Opts.StateDir, svc.Name); err == nil && serviceProcessAlive(prior.PID, prior.StartedAt) {
 		return prior, nil
 	}
 
@@ -344,7 +344,7 @@ func (r *binaryRuntime) Restart(ctx context.Context, stateDir string, st *state.
 		return r.restartInProcess(ctx, stateDir, st, sup)
 	}
 
-	if st.SupervisorPID <= 0 || !processAlive(st.SupervisorPID) {
+	if st.SupervisorPID <= 0 || !serviceProcessAlive(st.SupervisorPID, st.StartedAt) {
 		return fmt.Errorf("no supervisor running for %s", st.Name)
 	}
 	oldPID := st.PID
@@ -407,7 +407,7 @@ func (r *binaryRuntime) Stop(ctx context.Context, st *state.State) error {
 }
 
 func (r *binaryRuntime) Status(ctx context.Context, st *state.State) (state.Status, error) {
-	if processAlive(st.PID) {
+	if serviceProcessAlive(st.PID, st.StartedAt) {
 		return state.StatusRunning, nil
 	}
 	return state.StatusStopped, nil
